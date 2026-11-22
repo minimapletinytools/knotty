@@ -211,17 +211,19 @@ async function checkLanternWaddle(page) {
     await page.goto(base + "drawings/circle-creation/");
     await page.locator("#stage svg circle").first().click();
     const code = page.locator("#source-editor .view-lines");
+    const sourceLines = await code.elementHandle();
+    await page.waitForFunction(lines => lines.innerText.replaceAll("\u00a0", " ").includes("radius = 24"), sourceLines);
     const original = await code.innerText();
     for (const finish of ["cancel", "ok"]) {
       await page.locator("#field-r").click();
       await page.locator("dialog input").fill("42");
       await page.waitForFunction(() => Number(document.querySelector("#stage svg circle").getAttribute("r")) === 42);
-      assert.match((await code.innerText()).replaceAll("\u00a0", " "), /radius = \(42/);
+      await page.waitForFunction(lines => /radius = \(42/.test(lines.innerText.replaceAll("\u00a0", " ")), sourceLines);
       await page.locator(`dialog [data-action=${finish}]`).click();
       await page.locator("dialog").waitFor({ state: "detached" });
       if (finish === "ok") await page.locator("#undo-edit").click();
       await page.waitForFunction(() => Number(document.querySelector("#stage svg circle").getAttribute("r")) === 24);
-      assert.equal(await code.innerText(), original);
+      await page.waitForFunction(({ lines, expected }) => lines.innerText === expected, { lines: sourceLines, expected: original });
     }
     await page.locator("#stage svg").first().click({position: { x: 4, y: 4 }});
     await page.locator("#add-circle").click();
