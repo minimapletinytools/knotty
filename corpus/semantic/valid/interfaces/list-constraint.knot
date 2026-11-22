@@ -1,0 +1,25 @@
+-- expect: An author-chosen structural constraint uses Constriction on both types.
+-- type: validate :: Constriction a b => a -> b -> Bool
+-- type: rule :: ListConstraint (Maybe Bool)
+-- type: result :: Bool
+
+type ListConstraint s = AnyRemainder | ExactEnd | Prepend s (ListConstraint s)
+
+instance Constriction s t => Constriction (ListConstraint s) (List t) where
+  fits constraint xs = case constraint of
+    AnyRemainder -> True
+    ExactEnd -> case xs of
+      [] -> True
+      _ : _ -> False
+    Prepend s rest -> case xs of
+      [] -> False
+      x : tail -> fits s x && fits rest tail
+
+validate s t = fits s t
+
+ignored :: Maybe Bool
+ignored = Nothing
+
+-- Ignore the first element, require the second to be True, ignore the rest.
+rule = Prepend ignored (Prepend (Just True) AnyRemainder)
+result = validate rule [False, True, False]

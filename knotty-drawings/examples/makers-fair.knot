@@ -1,0 +1,138 @@
+module MakersFair exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+-- A practical event floor plan: reusable booth components, shared design tokens,
+-- authored exhibitor data, furniture, wayfinding and a print-ready legend.
+-- Keep this fixture deterministic; benchmark edits happen on disposable copies.
+ink = rgb 36 54 61
+muted = rgb 103 120 124
+paper = rgb 248 246 239
+accent = rgb 215 91 62
+craft = rgb 230 191 112
+tech = rgb 142 187 179
+food = rgb 188 194 141
+boothHeight :: Float
+boothHeight = 75
+
+type alias Booth = { id : String, name : String, x : Float, y : Float, width : Float, category : Int }
+
+exhibitors :: List Booth
+exhibitors =
+    [ { id = "A1", name = "Clay House", x = 80, y = 265, width = 140, category = 0 }
+    , { id = "A2", name = "Paper Works", x = 245, y = 265, width = 140, category = 0 }
+    , { id = "A3", name = "Thread Lab", x = 410, y = 265, width = 140, category = 0 }
+    , { id = "A4", name = "Tiny Machines", x = 575, y = 265, width = 140, category = 1 }
+    , { id = "A5", name = "Print Club", x = 740, y = 265, width = 140, category = 1 }
+    , { id = "B1", name = "Oak + Ash", x = 80, y = 405, width = 140, category = 0 }
+    , { id = "B2", name = "Studio Glass", x = 245, y = 405, width = 140, category = 0 }
+    , { id = "B3", name = "Repair Cafe", x = 410, y = 405, width = 140, category = 1 }
+    , { id = "B4", name = "Circuit Garden", x = 575, y = 405, width = 140, category = 1 }
+    , { id = "B5", name = "Local Loaves", x = 740, y = 405, width = 140, category = 2 }
+    , { id = "C1", name = "Natural Dyes", x = 80, y = 545, width = 140, category = 0 }
+    , { id = "C2", name = "Field Press", x = 245, y = 545, width = 140, category = 0 }
+    , { id = "C3", name = "Open Hardware", x = 410, y = 545, width = 140, category = 1 }
+    , { id = "C4", name = "Seed Exchange", x = 575, y = 545, width = 140, category = 2 }
+    , { id = "C5", name = "Small Batch", x = 740, y = 545, width = 140, category = 2 }
+    ]
+
+category_color :: Int -> Color
+category_color category = case category of
+    0 -> craft
+    1 -> tech
+    _ -> food
+
+label :: Float -> Float -> Float -> String -> Node
+label x y size content =
+    text x y content |> set_font_family "sans-serif" |> set_font_size size |> set_fill ink
+
+booth :: Booth -> Node
+booth data =
+    group
+        [ rounded_rect data.x data.y data.width boothHeight 5
+            |> set_fill (category_color data.category)
+            |> set_stroke ink |> set_stroke_width 1
+            |> set_id ("booth-" <> data.id)
+        , label (data.x + 10) (data.y + 20) 10 data.id
+        , label (data.x + 10) (data.y + 44) 12 data.name
+        , line (data.x + 10) (data.y + 60) (data.x + data.width - 10) (data.y + 60)
+            |> set_stroke ink |> set_stroke_width 2
+        ]
+
+cafe_table :: (Float, Float) -> Node
+cafe_table (x, y) =
+    group
+        [ circle x y 22 |> set_fill white |> set_stroke muted |> set_stroke_width 1
+        , circle (x - 30) y 7 |> set_fill food
+        , circle (x + 30) y 7 |> set_fill food
+        , circle x (y - 30) 7 |> set_fill food
+        , circle x (y + 30) 7 |> set_fill food
+        ]
+
+-- Sample arguments and viewport for the Tangle definition preview.
+cafe_table_preview :: Container
+cafe_table_preview = svg 160 120 [cafe_table (80, 60)]
+
+legend_item :: Float -> Color -> String -> Node
+legend_item x color content =
+    group [rect x 783 12 12 |> set_fill color, label (x + 20) 794 12 content]
+
+program :: Container
+program = svg 1200 900
+    [ rect 0 0 1200 900 |> set_fill paper
+    , group
+        [ label 60 59 13 "FIELD NOTES / COMMUNITY MAKERS FAIR"
+        , label 60 104 36 "A place to make things."
+        , label 60 132 14 "SATURDAY  /  10:00 - 18:00  /  NORTH HALL"
+        , rounded_rect 960 51 180 44 7 |> set_fill accent |> set_id "date-badge"
+        , text 1050 79 "24 OCTOBER" |> set_font_family "sans-serif" |> set_font_size 15
+            |> set_text_anchor AnchorMiddle |> set_fill white
+        ]
+    , group
+        [ rounded_rect 60 170 840 520 14 |> set_no_fill |> set_stroke ink |> set_stroke_width 2
+        , label 80 208 18 "EXHIBITION HALL"
+        , label 80 232 11 "Meet the makers. Try something new. Take a little inspiration home."
+        , group (map booth exhibitors)
+        , group
+            [ line 150 370 810 370 |> set_stroke muted |> set_stroke_width 1 |> set_stroke_dasharray [4, 6]
+            , line 150 510 810 510 |> set_stroke muted |> set_stroke_width 1 |> set_stroke_dasharray [4, 6]
+            , label 80 661 11 "MAIN AISLE / KEEP CLEAR"
+            ]
+        ]
+    , group
+        [ rounded_rect 940 170 200 125 10 |> set_fill tech |> set_stroke ink |> set_stroke_width 1 |> set_id "stage"
+        , label 958 198 17 "DEMO STAGE"
+        , label 958 226 11 "11:00 / Build a tiny robot"
+        , label 958 246 11 "13:30 / Print with plants"
+        , label 958 266 11 "16:00 / Repair together"
+        ]
+    , group
+        [ label 940 343 18 "CAFE + CONVERSATION"
+        , group (map cafe_table [(980, 400), (1100, 400), (980, 505), (1100, 505)])
+        , rounded_rect 944 568 190 42 7 |> set_fill food |> set_id "coffee-counter"
+        , label 967 595 12 "COFFEE / WATER / CAKE"
+        ]
+    , group
+        [ rounded_rect 60 718 200 40 6 |> set_fill accent |> set_id "welcome-desk"
+        , text 160 744 "WELCOME + INFO" |> set_font_family "sans-serif" |> set_font_size 13
+            |> set_text_anchor AnchorMiddle |> set_fill white
+        , path [MoveTo 310 738, LineTo 420 738, LineTo 420 710]
+            |> set_no_fill |> set_stroke accent |> set_stroke_width 3
+        , polygon [point 414 718, point 420 707, point 426 718] |> set_fill accent
+        , label 455 744 12 "STEP-FREE ENTRY"
+        , circle 1084 729 18 |> set_fill tech |> set_id "info-marker"
+        , text 1084 735 "i" |> set_font_family "serif" |> set_font_size 22 |> set_text_anchor AnchorMiddle |> set_fill ink
+        ]
+    , group
+        [ legend_item 60 craft "CRAFT + MATERIALS"
+        , legend_item 295 tech "TOOLS + TECHNOLOGY"
+        , legend_item 555 food "FOOD + GROWING"
+        , line 60 823 1140 823 |> set_stroke muted |> set_stroke_width 1
+        , label 60 853 11 "Plan your visit / www.fieldnotes.example"
+        , label 850 853 11 "NORTH HALL  /  FLOOR PLAN 01" |> set_id "footer-label"
+        ]
+    ] |> set_view_box 0 0 1200 900
+
+tip :: IO Unit
+tip = putStrLn (render program)

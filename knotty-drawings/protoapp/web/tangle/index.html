@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tangle · Definition editor</title>
+    <link rel="stylesheet" href="/tangle.css" />
+    <script src="/tangle.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <strong class="brand">Tangle</strong><span class="slash">/</span><span id="module"></span>
+      <div class="actions">
+        <a id="gallery-link" href="/tangle/stories">Syntax storybook</a>
+        <button id="undo">Undo</button><button id="save" class="primary">Save</button>
+      </div>
+    </header>
+    <main>
+      <nav id="stories" aria-label="Syntax stories" hidden></nav>
+      <section class="workspace">
+        <div class="toolbar">
+          <h1 id="definition">Definition graph</h1>
+          <button id="fit">Fit graph</button>
+        </div>
+        <div id="viewport" aria-label="Definition graph">
+          <div id="extent">
+            <div id="board"><svg id="wires" aria-hidden="true">
+              <defs>
+                <marker id="bind-tip" orient="auto" markerUnits="userSpaceOnUse" viewBox="0 0 16 10"
+                        markerWidth="16" markerHeight="10" refX="16" refY="5">
+                  <rect width="16" height="10" fill="#eff5f8"/>
+                  <path d="M1 1l4 4-4 4 M6 1l4 4-4 4 M11 3h5 M11 7h5"/>
+                </marker>
+              </defs>
+            </svg></div>
+          </div>
+        </div>
+        <footer>
+          <span id="status" role="status"></span
+          ><button id="reload" hidden>Reload from disk</button>
+        </footer>
+      </section>
+      <aside>
+        <div id="preview-heading" class="pane-title">
+          <h2>Definition preview</h2>
+          <a href="/" target="_blank" rel="noopener">Full drawing ↗</a>
+        </div>
+        <img id="preview" alt="Saved definition preview" hidden />
+        <p id="preview-message" hidden></p>
+        <div class="pane-title"><h2>Saved source</h2></div>
+        <pre id="source"></pre>
+      </aside>
+    </main>
+    <div id="port-tip" role="tooltip" hidden></div>
+  </body>
+</html>

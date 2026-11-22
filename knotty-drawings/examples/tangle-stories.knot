@@ -1,0 +1,338 @@
+module TangleStories exposing (..)
+
+import Map as M
+import String
+
+@story("Values")
+numbers :: (Int, Float)
+numbers = (0x10, 2.5)
+
+@story("Values")
+grouped_numbers :: (Int, Float)
+grouped_numbers = ((({- warp -} 0x10)), (2.5))
+
+@story("Values")
+text_and_booleans :: (String, Bool)
+text_and_booleans = ("linen", True)
+
+@story("Values")
+lists_and_tuples :: List (Int, String)
+lists_and_tuples = [(1, "warp"), (2, "weft")]
+
+@story("Functions")
+inferred_swap x y = (y, x)
+
+@story("Functions")
+named_call :: Int -> Int
+named_call x = max x 4
+
+@story("Functions")
+operators :: Int -> Int -> Int
+operators a b = a + b * 3
+
+@story("Functions")
+infix_function :: Int -> Int -> Int
+infix_function a b = a `max` b
+
+@story("Functions")
+qualified_infix :: String -> M.Map String Int -> Bool
+qualified_infix key table = key `M.member` table
+
+@story("Functions")
+infix_callback :: (Int -> Int -> Int) -> Int -> Int -> Int
+infix_callback choose a b = a `choose` b
+
+@story("Functions")
+composed_functions :: String -> Int
+composed_functions = String.length >> max 1
+
+@story("Functions")
+composed_callbacks :: (Int -> Int) -> (Int -> Int) -> Int -> Int
+composed_callbacks f g = f >> g >> (\x -> x + 1)
+
+@story("Functions")
+qualified_call :: String -> Int
+qualified_call word = String.length word
+
+@story("Functions")
+function_value :: Int -> Int -> Int
+function_value = (+)
+
+@story("Functions")
+partial_application :: Int -> Int
+partial_application = max 4
+
+@story("Functions")
+function_input :: (Int -> Int) -> Int -> Int
+function_input f x = f x
+
+@story("Functions")
+captured_lambda :: Int -> List Int -> List Int
+captured_lambda offset xs = map (\x -> x + offset) xs
+
+@story("Functions")
+slub_chain :: List Int -> List Int
+slub_chain xs = xs |> reverse |> take 3
+
+@story("Functions")
+pipeline_with_lambda :: Int -> Int
+pipeline_with_lambda x = x |> \n -> n + 1
+
+@story("Branches and patterns")
+conditional :: Bool -> String
+conditional bright = if bright then "gold" else "indigo"
+
+type Stitch = Knit Int | Purl
+
+@story("Branches and patterns")
+constructor_values :: List Stitch
+constructor_values = [Knit 3, Purl]
+
+@story("Branches and patterns")
+constructor_function :: Int -> Stitch
+constructor_function n = Knit n
+
+@story("Branches and patterns")
+constructor_as_value :: Int -> Stitch
+constructor_as_value = Knit
+
+@story("Branches and patterns")
+constructor_callback :: List Int -> List Stitch
+constructor_callback counts = map Knit counts
+
+@story("Branches and patterns")
+case_arms :: Stitch -> Int
+case_arms stitch = case stitch of
+    Knit count -> count
+    Purl -> 0
+
+@story("Branches and patterns")
+pattern_inputs :: (Int, Int) -> Int
+pattern_inputs (x, y) = x + y
+
+@story("Branches and patterns")
+list_patterns :: List Int -> Int
+list_patterns xs = case xs of
+    [] -> 0
+    first : _ -> first
+
+@story("Branches and patterns")
+fixed_length_pattern :: List Int -> Int
+fixed_length_pattern items = case items of
+    [a, b] -> a + b
+    _ -> 0
+
+@story("Branches and patterns")
+incomplete_case :: Maybe Int -> Int
+incomplete_case value = case value of
+    Just n -> n
+
+@story("Branches and patterns")
+unreachable_case :: Maybe Int -> Int
+unreachable_case value = case value of
+    Just n -> n
+    Nothing -> 0
+    Just 1 -> 1
+
+@story("Branches and patterns")
+aliased_pattern :: List Int -> List Int
+aliased_pattern xs = case xs of
+    (1 : _) as ones -> ones
+    _ -> []
+
+@story("Branches and patterns")
+nested_tuple_pattern :: Maybe (Int, Int) -> Int
+nested_tuple_pattern pair = case pair of
+    Just (x, y) -> x + y
+    Nothing -> 0
+
+@story("Branches and patterns")
+nested_list_pattern :: List (Maybe Int) -> List (Maybe Int)
+nested_list_pattern values = case values of
+    (Just n : rest) as all -> if n > 0 then all else rest
+    _ -> []
+
+@story("Recursion")
+self_recursion :: Int -> Int
+self_recursion n = if n <= 0 then 0 else 1 + self_recursion (n - 1)
+
+@story("Recursion")
+local_self_recursion :: List Int -> Int
+local_self_recursion xs =
+    let count items = case items of
+            [] -> 0
+            _ : rest -> 1 + count rest
+    in count xs
+
+@story("Recursion")
+mutual_recursion :: Int -> Bool
+mutual_recursion n =
+    let
+        even k = if k <= 0 then True else odd (k - 1)
+        odd k = if k <= 0 then False else even (k - 1)
+    in even n
+
+@story("Recursion")
+recursive_values :: (a -> a) -> a
+recursive_values f =
+    let
+        x = f y
+        y = x
+    in x
+
+@story("Branches and patterns")
+literal_patterns :: String -> Bool
+literal_patterns name = case name of
+    "wool" -> True
+    _ -> False
+
+@story("Do blocks")
+pattern_bind :: Maybe (Int, Int) -> Maybe Int
+pattern_bind pair = do
+    (a, b) <- pair
+    pure (a + b)
+
+@story("Do blocks")
+monadic_bind :: Maybe Int -> Maybe Int
+monadic_bind mx = do
+    x <- mx
+    pure (x + 1)
+
+@story("Do blocks")
+sequence_without_values :: Maybe Int -> Maybe Int -> Maybe Int
+sequence_without_values first second = do
+    first
+    second
+    Just 3
+
+@story("Do blocks")
+discard_and_let :: Maybe Int -> Maybe Int
+discard_and_let action = do
+    action
+    let n = 4
+    pure n
+
+@story("Do blocks")
+grouped_do_let :: Int -> Maybe Int
+grouped_do_let margin = do
+    let
+        total = margin + 1
+        margin = 4
+    pure total
+
+@story("Do blocks")
+sequential_do_lets :: Int -> Maybe Int
+sequential_do_lets margin = do
+    let total = margin + 1
+    let margin = 4
+    pure total
+
+@story("Do blocks")
+final_expression :: Maybe Int
+final_expression = do
+    Just 3
+
+@story("Layout")
+@position(24, 18)
+positioned_node :: Int -> Int
+positioned_node x = x + @position(32, 12) 4
+
+@story("Layout")
+computed_position :: Int -> Int
+computed_position x = x + @position(x, 12) 1
+
+@story("Values")
+unary_minus_and_unit :: Int -> (Int, Unit)
+unary_minus_and_unit n = (-n, ())
+
+@story("Bindings")
+grouped_reference :: Int -> Int -> List Int -> List Int
+grouped_reference offset spare xs =
+    map (\x -> let spare = x + x in spare + (offset)) xs
+
+@story("Bindings")
+shared_binding :: Int -> (Int, Int)
+shared_binding x =
+    let doubled = x * 2
+    in (doubled, doubled + 1)
+
+@story("Bindings")
+binding_group :: Int -> Int
+binding_group width =
+    let
+        total = width + margin
+        margin = 4
+    in total
+
+@story("Bindings")
+pattern_binding :: (Int, Int) -> Int
+pattern_binding pair =
+    let (warp, weft) = pair
+    in warp + weft
+
+@story("Bindings")
+local_function :: Int -> List Int -> List Int
+local_function offset xs =
+    let shift n = n + offset
+    in map shift xs
+
+@story("Bindings")
+nested_shadow :: Int -> (Int, Int)
+nested_shadow n = (n, (let n = 4 in n + 1))
+
+type alias Point = { x : Float, y : Float }
+
+@story("Records")
+record_literal :: Float -> Point
+record_literal x = { x = x, y = 12 }
+
+@story("Records")
+field_read :: { r | x : Float } -> Float
+field_read p = p.x
+
+@story("Records")
+record_update :: Point -> Point
+record_update p = { p | y = p.x + 3 }
+
+@story("Records")
+record_pattern :: Point -> Float
+record_pattern { x, y } = x + y
+
+@story("Records")
+nested_fields :: { r | origin : Point } -> Float
+nested_fields canvas = canvas.origin.x
+
+@story("Compositions")
+woven_grid :: List (Int, Int, Int)
+woven_grid = do
+    x <- [1, 2, 3]
+    y <- [10, 20]
+    let weight = x + y
+    pure (x, y, weight)
+
+@story("Compositions")
+thread_lengths :: Int -> List Stitch -> List Int
+thread_lengths scale stitches =
+    map (\stitch -> case stitch of
+        Knit n -> if n > 0 then n * scale else 0
+        Purl -> scale) stitches
+
+@story("Compositions")
+nested_captures :: Int -> List Int -> List (List Int)
+nested_captures bias xs = map (\x -> map (\y -> x + y + bias) xs) xs
+
+point :: Float -> Float -> Point
+point x y = { x = x, y = y }
+
+@story("Compositions")
+cubic_point :: Point -> Point -> Point -> Point -> Float -> Point
+cubic_point a b c d t =
+    let
+        u = 1 - t
+        weightA = u * u * u
+        weightB = 3 * u * u * t
+        weightC = 3 * u * t * t
+        weightD = t * t * t
+        coordinate = \w x y z -> weightA * w + weightB * x + weightC * y + weightD * z
+    in
+    point (coordinate a.x b.x c.x d.x) (coordinate a.y b.y c.y d.y)

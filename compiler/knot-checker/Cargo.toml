@@ -1,0 +1,13 @@
+[package]
+name = "knot-checker"
+version = "0.1.0"
+edition = "2021"
+description = "Type-checks and dictionary-elaborates a knot-canonical Canonical AST."
+license = "GPL-3.0-only"
+
+[dependencies]
+num-bigint = { version = "0.4", features = ["serde"] }
+knot-syntax = { path = "../knot-syntax" }
+knot-canonical = { path = "../knot-canonical" }
+
+serde = { version = "1", features = ["derive"] }

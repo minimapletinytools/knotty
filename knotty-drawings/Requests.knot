@@ -1,0 +1,224 @@
+module Requests exposing (..)
+
+-- Drawing-specific constraints; the engine knows neither field names nor SVG.
+import Types exposing (..)
+
+type alias FillRequest =
+    { paint : Maybe (Paint)
+    , opacity : Maybe (Float)
+    , rule : Maybe (FillRule)
+    }
+
+anyFill :: FillRequest
+anyFill = { paint = Nothing, opacity = Nothing, rule = Nothing }
+
+type alias StrokeRequest =
+    { paint : Maybe (Paint)
+    , width : Maybe (Float)
+    , opacity : Maybe (Float)
+    , cap : Maybe (LineCap)
+    , join : Maybe (LineJoin)
+    , miterLimit : Maybe (Float)
+    , dashes : Maybe (List Float)
+    , dashOffset : Maybe (Float)
+    }
+
+anyStroke :: StrokeRequest
+anyStroke = { paint = Nothing, width = Nothing, opacity = Nothing, cap = Nothing, join = Nothing, miterLimit = Nothing, dashes = Nothing, dashOffset = Nothing }
+
+type alias FontRequest =
+    { family : Maybe (String)
+    , size : Maybe (Float)
+    , anchor : Maybe (TextAnchor)
+    , baseline : Maybe (DominantBaseline)
+    }
+
+anyFont :: FontRequest
+anyFont = { family = Nothing, size = Nothing, anchor = Nothing, baseline = Nothing }
+
+type alias CommonRequest =
+    { id : Maybe (Maybe Id)
+    , transform : Maybe (Transform)
+    , opacity : Maybe (Float)
+    , visible : Maybe (Bool)
+    }
+
+anyCommon :: CommonRequest
+anyCommon = { id = Nothing, transform = Nothing, opacity = Nothing, visible = Nothing }
+
+type alias RectRequest =
+    { x : Maybe (Float)
+    , y : Maybe (Float)
+    , width : Maybe (Float)
+    , height : Maybe (Float)
+    , rx : Maybe (Float)
+    , ry : Maybe (Float)
+    , fill : FillRequest
+    , stroke : StrokeRequest
+    }
+
+anyRect :: RectRequest
+anyRect = { x = Nothing, y = Nothing, width = Nothing, height = Nothing, rx = Nothing, ry = Nothing, fill = anyFill, stroke = anyStroke }
+
+type alias CircleRequest =
+    { cx : Maybe (Float)
+    , cy : Maybe (Float)
+    , r : Maybe (Float)
+    , fill : FillRequest
+    , stroke : StrokeRequest
+    }
+
+anyCircle :: CircleRequest
+anyCircle = { cx = Nothing, cy = Nothing, r = Nothing, fill = anyFill, stroke = anyStroke }
+
+type alias EllipseRequest =
+    { cx : Maybe (Float)
+    , cy : Maybe (Float)
+    , rx : Maybe (Float)
+    , ry : Maybe (Float)
+    , fill : FillRequest
+    , stroke : StrokeRequest
+    }
+
+anyEllipse :: EllipseRequest
+anyEllipse = { cx = Nothing, cy = Nothing, rx = Nothing, ry = Nothing, fill = anyFill, stroke = anyStroke }
+
+type alias LineRequest =
+    { x1 : Maybe (Float)
+    , y1 : Maybe (Float)
+    , x2 : Maybe (Float)
+    , y2 : Maybe (Float)
+    , stroke : StrokeRequest
+    }
+
+anyLine :: LineRequest
+anyLine = { x1 = Nothing, y1 = Nothing, x2 = Nothing, y2 = Nothing, stroke = anyStroke }
+
+type alias PolylineRequest =
+    { points : Maybe (List Point)
+    , closed : Maybe (Bool)
+    , fill : FillRequest
+    , stroke : StrokeRequest
+    }
+
+anyPolyline :: PolylineRequest
+anyPolyline = { points = Nothing, closed = Nothing, fill = anyFill, stroke = anyStroke }
+
+type alias PathRequest =
+    { commands : Maybe (List PathCommand)
+    , fill : FillRequest
+    , stroke : StrokeRequest
+    }
+
+anyPath :: PathRequest
+anyPath = { commands = Nothing, fill = anyFill, stroke = anyStroke }
+
+type alias TextRequest =
+    { x : Maybe (Float)
+    , y : Maybe (Float)
+    , content : Maybe (String)
+    , font : FontRequest
+    , fill : FillRequest
+    , stroke : StrokeRequest
+    }
+
+anyText :: TextRequest
+anyText = { x = Nothing, y = Nothing, content = Nothing, font = anyFont, fill = anyFill, stroke = anyStroke }
+
+type alias ViewportRequest =
+    { width : Maybe (Float)
+    , height : Maybe (Float)
+    , viewBox : Maybe (Maybe ViewBox)
+    }
+
+anyViewport :: ViewportRequest
+anyViewport = { width = Nothing, height = Nothing, viewBox = Nothing }
+
+type ShapeRequest
+    = AnyShape
+    | RequestRect RectRequest
+    | RequestCircle CircleRequest
+    | RequestEllipse EllipseRequest
+    | RequestLine LineRequest
+    | RequestPolyline PolylineRequest
+    | RequestPath PathRequest
+    | RequestText TextRequest
+
+instance Constriction ShapeRequest Shape where
+  fits request actual = case request of
+    AnyShape -> True
+    RequestRect r -> case actual of
+      Rect v -> fits r v
+      _ -> False
+    RequestCircle r -> case actual of
+      Circle v -> fits r v
+      _ -> False
+    RequestEllipse r -> case actual of
+      Ellipse v -> fits r v
+      _ -> False
+    RequestLine r -> case actual of
+      Line v -> fits r v
+      _ -> False
+    RequestPolyline r -> case actual of
+      Polyline v -> fits r v
+      _ -> False
+    RequestPath r -> case actual of
+      Path v -> fits r v
+      _ -> False
+    RequestText r -> case actual of
+      Text v -> fits r v
+      _ -> False
+
+type KindRequest = AnyKind | GroupKind | ViewportKind ViewportRequest
+
+instance Constriction KindRequest ContainerKind where
+  fits request actual = case request of
+    AnyKind -> True
+    GroupKind -> case actual of
+      Group -> True
+      _ -> False
+    ViewportKind r -> case actual of
+      Viewport v -> fits r v
+      _ -> False
+
+type alias ContainerRequest =
+    { kind : KindRequest
+    , common : CommonRequest
+    , children : ListConstraint NodeRequest
+    }
+
+type NodeRequest
+    = AnyNode
+    | ShapeNodeRequest CommonRequest ShapeRequest
+    | ContainerNodeRequest ContainerRequest
+
+instance Constriction NodeRequest Node where
+  fits request actual = case request of
+    AnyNode -> True
+    ShapeNodeRequest common geometry -> case actual of
+      ShapeNode c g -> fits common c && fits geometry g
+      _ -> False
+    ContainerNodeRequest r -> case actual of
+      ContainerNode c -> fits r c
+      _ -> False
+
+anyContainer :: ContainerRequest
+anyContainer = { kind = AnyKind, common = anyCommon, children = AnyRemainder }
+
+-- Positions are revision-local. An out-of-range request fails validation;
+-- negative indices are rejected before building a constraint.
+nodeAt :: List Int -> NodeRequest -> Maybe ContainerRequest
+nodeAt path request = case path of
+  [] -> Nothing
+  index : rest ->
+    if index < 0 then Nothing else
+      case rest of
+        [] -> Just { anyContainer | children = slot index request }
+        _ -> case nodeAt rest request of
+          Nothing -> Nothing
+          Just child -> Just { anyContainer | children = slot index (ContainerNodeRequest child) }
+
+slot :: Int -> NodeRequest -> ListConstraint NodeRequest
+slot index request =
+  if index <= 0 then Prepend request AnyRemainder
+  else Prepend AnyNode (slot (index - 1) request)

@@ -1,0 +1,16 @@
+module Drawing exposing (..)
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 500 400
+    [ rect 20 20 80 60 |> set_fill_paint (Solid tomato) |> set_opacity 1
+    , rounded_rect 130 20 80 60 8 |> set_fill blue
+    , ellipse 280 50 40 25 |> set_fill orange
+    , line 20 120 320 120 |> set_stroke blue |> set_stroke_width 3 |> set_stroke_linecap Butt
+    , text 20 180 "Hello Knot" |> set_fill purple |> set_font_size 24 |> set_text_anchor AnchorStart |> set_visible True
+    , polyline [point 20 220, point 80 200, point 140 240] |> set_closed False |> set_fill_paint NoPaint |> set_stroke blue
+    , path [MoveTo 200 220, CurveTo 220 180 280 260 300 220, ClosePath] |> set_fill orange
+    , group (map (\w -> rect 20 300 (2 * w) 20 |> set_fill tomato) [10, 30])
+    , polygon [point 350 200, point 400 250, point 320 270] |> set_fill green
+    , nested_svg 100 100 [circle 50 50 15 |> set_fill blue] |> set_transform [Translate 350 10]
+    ] |> set_view_box 0 0 500 400

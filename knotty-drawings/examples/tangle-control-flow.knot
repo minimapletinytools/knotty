@@ -1,0 +1,44 @@
+module ControlFlow exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+teal = rgb 33 137 132
+coral = rgb 226 104 77
+gold = rgb 228 167 62
+
+-- Each column is paired with every row by the List monad.
+dot_grid :: List Node
+dot_grid = do
+    x <- [24, 60, 96]
+    y <- [24, 56]
+    let radius = 8
+    pure (circle x y radius |> set_fill teal)
+
+dot_grid_preview = svg 120 80 dot_grid
+
+-- The preview calls both branches.
+signal :: Float -> Node
+signal level =
+    if level > 50 then circle level 40 14 |> set_fill coral
+    else circle level 40 7 |> set_fill teal
+
+signals = [signal 28, signal 88]
+signal_preview = svg 120 80 signals
+
+type Stamp = Disc Float | Tile Float Float
+
+stamp :: Float -> Stamp -> Node
+stamp x shape =
+    case shape of
+        Disc radius -> circle x 40 radius |> set_fill teal
+        Tile width height -> rect x 26 width height |> set_fill gold
+
+stamps = [stamp 30 (Disc 12), stamp 68 (Tile 26 28)]
+stamp_preview = svg 120 80 stamps
+
+program = svg 360 80
+    [ group dot_grid
+    , group signals |> add_transform (Translate 120 0)
+    , group stamps |> add_transform (Translate 240 0)
+    ]

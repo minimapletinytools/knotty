@@ -1,0 +1,43 @@
+module Demo exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program :: Container
+program =
+    svg 400 300
+        (editableShapes
+        [ rect 0 0 400 300 |> set_fill alice_blue
+        , circle 120 130 70
+            |> set_fill tomato
+            |> set_stroke dark_red
+            |> set_stroke_width 4
+        , group
+            [ rounded_rect 230 70 120 120 16
+            , line 230 220 350 220
+            , polyline [ point 230 250, point 270 230, point 310 250, point 350 230 ]
+            ]
+            |> set_no_fill
+            |> set_stroke slate_gray
+            |> set_stroke_width 3
+            |> set_stroke_linecap RoundCap
+        , path [ MoveTo 250 130, CurveTo 270 90 310 170 330 130 ]
+            |> set_no_fill
+            |> set_stroke (hsl 210 0.8 0.5)
+            |> set_stroke_width 3
+            |> set_stroke_dasharray [ 6, 4 ]
+        , rect 100 110 40 40
+            |> set_fill white
+            |> set_fill_opacity 0.6
+            |> add_transform (Rotate 45 (Just (120, 130)))
+        , text 200 280 "knotty drawings & friends"
+            |> set_font_family "sans-serif"
+            |> set_font_size 20
+            |> set_text_anchor AnchorMiddle
+            |> set_fill dark_slate_gray
+        ]
+        [])
+        |> set_view_box 0 0 400 300
+
+tip :: IO Unit
+tip = putStrLn (render program)

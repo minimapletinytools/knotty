@@ -1,0 +1,13 @@
+[package]
+name = "knot-core"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+
+[dependencies]
+knot-checker = { path = "../knot-checker" }
+knot-canonical = { path = "../knot-canonical" }
+knot-syntax = { path = "../knot-syntax" }
+num-bigint = { version = "0.4", features = ["serde"] }
+
+serde = { version = "1", features = ["derive"] }

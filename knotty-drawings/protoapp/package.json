@@ -1,0 +1,16 @@
+{
+  "name": "knotty-drawings",
+  "private": true,
+  "scripts": {
+    "build": "node monaco/build.mjs",
+    "pages": "node pages/build.mjs",
+    "test:pages": "node tests/pages.browser.cjs"
+  },
+  "devDependencies": {
+    "@bjorn3/browser_wasi_shim": "0.4.2",
+    "esbuild": "0.28.2",
+    "monaco-editor": "0.57.0",
+    "playwright": "1.61.1"
+  },
+  "license": "GPL-3.0-only"
+}

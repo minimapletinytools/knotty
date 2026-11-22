@@ -1,0 +1,20 @@
+module Drawing exposing (..)
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program :: Container
+program = { kind = Group, common = { defaultCommon | opacity = 0.75 }, children =
+    [ rect 0.000001 2 30 40 |> set_fill (rgb 0 0 0) |> set_stroke blue
+        |> set_fill_opacity 0.05 |> set_fill_rule EvenOdd
+        |> set_stroke_width 2 |> set_stroke_opacity 0.4 |> set_stroke_linecap Square
+        |> set_stroke_linejoin Bevel |> set_stroke_miterlimit 8
+        |> set_stroke_dasharray [0.0001, 2] |> set_stroke_dashoffset 1
+    , text 5 30 "é & <tag> \"quoted\"" |> set_font_family "A&B \"font\""
+        |> set_font_size 14 |> set_text_anchor AnchorMiddle |> set_dominant_baseline BaselineHanging
+        |> set_id "id<&\"" |> set_transform [Translate 1 2, Scale 2 3, Rotate 15 (Just (2, 3)), SkewX 5, SkewY 6]
+    , text 10 50 "middle" |> set_dominant_baseline BaselineMiddle
+    , text 10 70 "central" |> set_dominant_baseline BaselineCentral
+    , circle 40 40 10 |> set_fill_paint NoPaint |> set_visible False
+    , path [MoveTo 0 0, LineTo 10 10, CurveTo 20 0 30 20 40 10, ClosePath] |> set_fill purple
+    , ContainerNode (svg 200 100 [ellipse 20 30 10 15 |> set_fill blue] |> set_view_box 0 0 100 50)
+    ] }

@@ -1,0 +1,208 @@
+module Types exposing (..)
+
+-- Every shape carries its own complete style. Nothing is inherited from
+-- containers, so a value is never "unset": constructors start from SVG's
+-- initial values, and export may omit attributes that still equal them.
+
+type alias Id = String
+
+-- Colors ---------------------------------------------------------------------
+
+-- Red, green and blue channels, 0-255. Transparency lives in the fill and
+-- stroke opacities.
+type Color = Rgb Int Int Int deriving Eq
+
+-- One editable input schema for mapped drawings. growMap itself is generic.
+type alias CircleInput = { x : Float, y : Float, radius : Float, color : Color }
+
+type Paint
+    = NoPaint
+    | Solid Color deriving Eq
+
+-- Style pieces ---------------------------------------------------------------
+
+type FillRule = NonZero | EvenOdd deriving Eq
+type LineCap = Butt | RoundCap | Square deriving Eq
+type LineJoin = Miter | RoundJoin | Bevel deriving Eq
+type TextAnchor = AnchorStart | AnchorMiddle | AnchorEnd deriving Eq
+type DominantBaseline = BaselineAlphabetic | BaselineMiddle | BaselineCentral | BaselineHanging deriving Eq
+
+type alias Fill =
+    { paint : Paint
+    , opacity : Float
+    , rule : FillRule
+    }
+
+type alias Stroke =
+    { paint : Paint
+    , width : Float
+    , opacity : Float
+    , cap : LineCap
+    , join : LineJoin
+    , miterLimit : Float
+    , dashes : List Float
+    , dashOffset : Float
+    }
+
+type alias Font =
+    { family : String
+    , size : Float
+    , anchor : TextAnchor
+    , baseline : DominantBaseline
+    }
+
+-- Properties every node has, shapes and containers alike.
+type alias Common =
+    { id : Maybe Id
+    , transform : Transform
+    , opacity : Float
+    , visible : Bool
+    }
+
+type alias Transform = List TransformOp
+
+type TransformOp
+    = Translate Float Float
+    | Scale Float Float
+    | Rotate Float (Maybe (Float, Float))
+    | SkewX Float
+    | SkewY Float deriving Eq
+
+-- Shapes: each carries only the style it uses ---------------------------------
+
+type alias Point = { x : Float, y : Float }
+
+type PathCommand
+    = MoveTo Float Float
+    | LineTo Float Float
+    | CurveTo Float Float Float Float Float Float
+    | ClosePath deriving Eq
+
+type alias Rect =
+    { x : Float
+    , y : Float
+    , width : Float
+    , height : Float
+    , rx : Float
+    , ry : Float
+    , fill : Fill
+    , stroke : Stroke
+    }
+
+type alias Circle =
+    { cx : Float
+    , cy : Float
+    , r : Float
+    , fill : Fill
+    , stroke : Stroke
+    }
+
+type alias Ellipse =
+    { cx : Float
+    , cy : Float
+    , rx : Float
+    , ry : Float
+    , fill : Fill
+    , stroke : Stroke
+    }
+
+-- A line never fills, so it has no fill.
+type alias Line =
+    { x1 : Float
+    , y1 : Float
+    , x2 : Float
+    , y2 : Float
+    , stroke : Stroke
+    }
+
+-- One type for open and closed point lists: exported as <polygon> when
+-- closed, <polyline> otherwise.
+type alias Polyline =
+    { points : List Point
+    , closed : Bool
+    , fill : Fill
+    , stroke : Stroke
+    }
+
+type alias Path =
+    { commands : List PathCommand
+    , fill : Fill
+    , stroke : Stroke
+    }
+
+type alias Text =
+    { x : Float
+    , y : Float
+    , content : String
+    , font : Font
+    , fill : Fill
+    , stroke : Stroke
+    }
+
+type Shape
+    = Rect Rect
+    | Circle Circle
+    | Ellipse Ellipse
+    | Line Line
+    | Polyline Polyline
+    | Path Path
+    | Text Text
+
+-- Containers -------------------------------------------------------------------
+
+type alias ViewBox = { minX : Float, minY : Float, width : Float, height : Float }
+
+type alias Viewport =
+    { width : Float
+    , height : Float
+    , viewBox : Maybe ViewBox
+    }
+
+-- One container type. Its kind decides which SVG element it becomes.
+type ContainerKind
+    = Group              -- <g>
+    | Viewport Viewport  -- <svg> deriving Eq
+
+type alias Container =
+    { kind : ContainerKind
+    , common : Common
+    , children : List Node
+    }
+
+type Node
+    = ShapeNode Common Shape
+    | ContainerNode Container
+
+-- Defaults (SVG initial values) ------------------------------------------------
+
+black :: Color
+black = Rgb 0 0 0
+
+defaultFill :: Fill
+defaultFill = { paint = Solid black, opacity = 1, rule = NonZero }
+
+defaultStroke :: Stroke
+defaultStroke =
+    { paint = NoPaint
+    , width = 1
+    , opacity = 1
+    , cap = Butt
+    , join = Miter
+    , miterLimit = 4
+    , dashes = []
+    , dashOffset = 0
+    }
+
+defaultFont :: Font
+defaultFont =
+    { family = "sans-serif"
+    , size = 16
+    , anchor = AnchorStart
+    , baseline = BaselineAlphabetic
+    }
+
+defaultCommon :: Common
+defaultCommon = { id = Nothing, transform = [], opacity = 1, visible = True }
+
+defaultViewport :: Viewport
+defaultViewport = { width = 300, height = 150, viewBox = Nothing }

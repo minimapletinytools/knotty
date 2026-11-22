@@ -1,0 +1,12 @@
+[package]
+name = "knot-syntax"
+version = "0.1.0"
+edition = "2021"
+description = "Parses Knot source text into an AST."
+license = "GPL-3.0-only"
+
+[dependencies]
+num-bigint = { version = "0.4", features = ["serde"] }
+
+serde = { version = "1", features = ["derive"] }
+unicode-general-category = "=1.1.0"

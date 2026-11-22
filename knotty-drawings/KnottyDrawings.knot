@@ -1,0 +1,677 @@
+module KnottyDrawings exposing (..)
+
+import String
+import Types exposing (..)
+import DrawingBack
+
+-- Controls in the properties pane can be parked on a drawing node.
+type DrawingWhip = IntSlider String Int Int | OnNode Node DrawingWhip
+
+-- Opt in to adding new shapes separately from the generated part of a drawing.
+-- The unravel routes new slots to additions; existing shapes keep their routes.
+@unravel(DrawingBack.🧶EditableShapes)
+editableShapes :: List Node -> List Node -> List Node
+editableShapes generated additions = generated <> additions
+
+-- Mapped creation inserts input data, preserving this rendering computation.
+defaultCircleInput :: CircleInput
+defaultCircleInput = { x = 0, y = 0, radius = 10, color = Rgb 0 0 0 }
+
+circleFromInput :: CircleInput -> Node
+circleFromInput input = circle input.x input.y input.radius |> set_fill input.color
+
+-- Colors ---------------------------------------------------------------------
+
+rgb :: Int -> Int -> Int -> Color
+rgb red green blue = Rgb red green blue
+
+-- Hue in degrees; saturation and lightness from 0 to 1. Produces an RGB color.
+hsl :: Float -> Float -> Float -> Color
+hsl hue saturation lightness =
+    let
+        chroma = (1 - abs (2 * lightness - 1)) * saturation
+        sector = (hue - 360 * floor_float (hue / 360)) / 60
+        second = chroma * (1 - abs (sector - 2 * floor_float (sector / 2) - 1))
+        offset = lightness - chroma / 2
+        to_rgb = \red green blue -> Rgb (channel (red + offset)) (channel (green + offset)) (channel (blue + offset))
+    in
+    case floor_int sector of
+        0 -> to_rgb chroma second 0
+        1 -> to_rgb second chroma 0
+        2 -> to_rgb 0 chroma second
+        3 -> to_rgb 0 second chroma
+        4 -> to_rgb second 0 chroma
+        _ -> to_rgb chroma 0 second
+
+channel :: Float -> Int
+channel fraction = max 0 (min 255 (round (fraction * 255)))
+
+floor_int :: Float -> Int
+floor_int x = floor x
+
+floor_float :: Float -> Float
+floor_float x = fromIntegral (floor_int x)
+
+white :: Color
+white = Rgb 255 255 255
+
+red :: Color
+red = Rgb 255 0 0
+
+green :: Color
+green = Rgb 0 128 0
+
+blue :: Color
+blue = Rgb 0 0 255
+
+yellow :: Color
+yellow = Rgb 255 255 0
+
+orange :: Color
+orange = Rgb 255 165 0
+
+purple :: Color
+purple = Rgb 128 0 128
+
+gray :: Color
+gray = Rgb 128 128 128
+
+dark_gray :: Color
+dark_gray = Rgb 169 169 169
+
+gainsboro :: Color
+gainsboro = Rgb 220 220 220
+
+slate_gray :: Color
+slate_gray = Rgb 112 128 144
+
+dark_slate_gray :: Color
+dark_slate_gray = Rgb 47 79 79
+
+alice_blue :: Color
+alice_blue = Rgb 240 248 255
+
+tomato :: Color
+tomato = Rgb 255 99 71
+
+dark_red :: Color
+dark_red = Rgb 139 0 0
+
+-- Constructors ---------------------------------------------------------------
+-- Shapes start with SVG's initial style: black fill, no stroke.
+
+point :: Float -> Float -> Point
+point x y = { x = x, y = y }
+
+shape :: Shape -> Node
+shape geometry = ShapeNode defaultCommon geometry
+
+@unravel(DrawingBack.🧶Rect)
+rect :: Float -> Float -> Float -> Float -> Node
+rect x y width height =
+    shape (Rect { x = x, y = y, width = width, height = height, rx = 0, ry = 0, fill = defaultFill, stroke = defaultStroke })
+
+@unravel(DrawingBack.🧶RoundedRect)
+rounded_rect :: Float -> Float -> Float -> Float -> Float -> Node
+rounded_rect x y width height cornerRadius =
+    shape (Rect { x = x, y = y, width = width, height = height, rx = cornerRadius, ry = cornerRadius, fill = defaultFill, stroke = defaultStroke })
+
+@unravel(DrawingBack.🧶Circle)
+circle :: Float -> Float -> Float -> Node
+circle centerX centerY radius =
+    shape (Circle { cx = centerX, cy = centerY, r = radius, fill = defaultFill, stroke = defaultStroke })
+
+@unravel(DrawingBack.🧶Ellipse)
+ellipse :: Float -> Float -> Float -> Float -> Node
+ellipse centerX centerY radiusX radiusY =
+    shape (Ellipse { cx = centerX, cy = centerY, rx = radiusX, ry = radiusY, fill = defaultFill, stroke = defaultStroke })
+
+@unravel(DrawingBack.🧶Line)
+line :: Float -> Float -> Float -> Float -> Node
+line startX startY endX endY =
+    shape (Line { x1 = startX, y1 = startY, x2 = endX, y2 = endY, stroke = defaultStroke })
+
+@unravel(DrawingBack.🧶Polyline)
+polyline :: List Point -> Node
+polyline points =
+    shape (Polyline { points = points, closed = False, fill = defaultFill, stroke = defaultStroke })
+
+-- A closed polyline; exported as <polygon>.
+@unravel(DrawingBack.🧶Polygon)
+polygon :: List Point -> Node
+polygon points =
+    shape (Polyline { points = points, closed = True, fill = defaultFill, stroke = defaultStroke })
+
+@unravel(DrawingBack.🧶Path)
+path :: List PathCommand -> Node
+path commands = shape (Path { commands = commands, fill = defaultFill, stroke = defaultStroke })
+
+@unravel(DrawingBack.🧶Text)
+text :: Float -> Float -> String -> Node
+text x y content =
+    shape (Text { x = x, y = y, content = content, font = defaultFont, fill = defaultFill, stroke = defaultStroke })
+
+@unravel(DrawingBack.🧶Group)
+group :: List Node -> Node
+group children = ContainerNode { kind = Group, common = defaultCommon, children = children }
+
+-- The program's output: a single <svg> container.
+@unravel(DrawingBack.🧶Svg)
+svg :: Float -> Float -> List Node -> Container
+svg width height children =
+    { kind = Viewport { width = width, height = height, viewBox = Nothing }
+    , common = defaultCommon
+    , children = children
+    }
+
+-- An <svg> nested inside another container.
+@unravel(DrawingBack.🧶NestedSvg)
+nested_svg :: Float -> Float -> List Node -> Node
+nested_svg width height children = ContainerNode (svg width height children)
+
+@unravel(DrawingBack.🧶ViewBox)
+set_view_box :: Float -> Float -> Float -> Float -> Container -> Container
+set_view_box minX minY width height document =
+    case document.kind of
+        Viewport viewport ->
+            { document | kind = Viewport { viewport | viewBox = Just { minX = minX, minY = minY, width = width, height = height } } }
+        Group -> document
+
+-- Use an optional value when the view box must also be removable.
+@unravel(DrawingBack.🧶OptionalViewBox)
+set_optional_view_box :: Maybe ViewBox -> Container -> Container
+set_optional_view_box box document = case document.kind of
+    Viewport viewport -> { document | kind = Viewport { viewport | viewBox = box } }
+    Group -> document
+
+-- Mapping --------------------------------------------------------------------
+-- Shape and style mappers reach every shape inside containers, since
+-- containers carry no style of their own.
+
+map_shape :: (Shape -> Shape) -> Node -> Node
+map_shape update target =
+    case target of
+        ShapeNode common geometry -> ShapeNode common (update geometry)
+        ContainerNode container ->
+            ContainerNode { container | children = map (map_shape update) container.children }
+
+-- Affects only the node itself, not its children.
+map_common :: (Common -> Common) -> Node -> Node
+map_common update target =
+    case target of
+        ShapeNode common geometry -> ShapeNode (update common) geometry
+        ContainerNode container -> ContainerNode { container | common = update container.common }
+
+map_children :: (List Node -> List Node) -> Node -> Node
+map_children update target =
+    case target of
+        ShapeNode _ _ -> target
+        ContainerNode container -> ContainerNode { container | children = update container.children }
+
+map_fill :: (Fill -> Fill) -> Node -> Node
+map_fill update = map_shape (shape_fill update)
+
+shape_fill :: (Fill -> Fill) -> Shape -> Shape
+shape_fill update geometry =
+    case geometry of
+        Rect g -> Rect { g | fill = update g.fill }
+        Circle g -> Circle { g | fill = update g.fill }
+        Ellipse g -> Ellipse { g | fill = update g.fill }
+        Line g -> Line g
+        Polyline g -> Polyline { g | fill = update g.fill }
+        Path g -> Path { g | fill = update g.fill }
+        Text g -> Text { g | fill = update g.fill }
+
+map_stroke :: (Stroke -> Stroke) -> Node -> Node
+map_stroke update = map_shape (shape_stroke update)
+
+shape_stroke :: (Stroke -> Stroke) -> Shape -> Shape
+shape_stroke update geometry =
+    case geometry of
+        Rect g -> Rect { g | stroke = update g.stroke }
+        Circle g -> Circle { g | stroke = update g.stroke }
+        Ellipse g -> Ellipse { g | stroke = update g.stroke }
+        Line g -> Line { g | stroke = update g.stroke }
+        Polyline g -> Polyline { g | stroke = update g.stroke }
+        Path g -> Path { g | stroke = update g.stroke }
+        Text g -> Text { g | stroke = update g.stroke }
+
+map_font :: (Font -> Font) -> Node -> Node
+map_font update =
+    map_shape
+        (\geometry ->
+            case geometry of
+                Text g -> Text { g | font = update g.font }
+                _ -> geometry)
+
+map_rect :: (Rect -> Rect) -> Node -> Node
+map_rect update =
+    map_shape
+        (\geometry ->
+            case geometry of
+                Rect g -> Rect (update g)
+                _ -> geometry)
+
+map_circle :: (Circle -> Circle) -> Node -> Node
+map_circle update =
+    map_shape
+        (\geometry ->
+            case geometry of
+                Circle g -> Circle (update g)
+                _ -> geometry)
+
+map_ellipse :: (Ellipse -> Ellipse) -> Node -> Node
+map_ellipse update =
+    map_shape
+        (\geometry ->
+            case geometry of
+                Ellipse g -> Ellipse (update g)
+                _ -> geometry)
+
+map_line :: (Line -> Line) -> Node -> Node
+map_line update =
+    map_shape
+        (\geometry ->
+            case geometry of
+                Line g -> Line (update g)
+                _ -> geometry)
+
+map_polyline :: (Polyline -> Polyline) -> Node -> Node
+map_polyline update =
+    map_shape
+        (\geometry ->
+            case geometry of
+                Polyline g -> Polyline (update g)
+                _ -> geometry)
+
+map_path :: (Path -> Path) -> Node -> Node
+map_path update =
+    map_shape
+        (\geometry ->
+            case geometry of
+                Path g -> Path (update g)
+                _ -> geometry)
+
+map_text :: (Text -> Text) -> Node -> Node
+map_text update =
+    map_shape
+        (\geometry ->
+            case geometry of
+                Text g -> Text (update g)
+                _ -> geometry)
+
+-- Style setters (reach every shape that has the property) ---------------------
+
+@unravel(DrawingBack.🧶Fill)
+set_fill :: Color -> Node -> Node
+set_fill color = map_fill (\fill -> { fill | paint = Solid color })
+
+@unravel(DrawingBack.🧶FillPaint)
+set_fill_paint :: Paint -> Node -> Node
+set_fill_paint paint = map_fill (\fill -> { fill | paint = paint })
+
+@unravel(DrawingBack.🧶NoFill)
+set_no_fill :: Node -> Node
+set_no_fill = map_fill (\fill -> { fill | paint = NoPaint })
+
+@unravel(DrawingBack.🧶FillOpacity)
+set_fill_opacity :: Float -> Node -> Node
+set_fill_opacity opacity = map_fill (\fill -> { fill | opacity = opacity })
+
+@unravel(DrawingBack.🧶FillRule)
+set_fill_rule :: FillRule -> Node -> Node
+set_fill_rule rule = map_fill (\fill -> { fill | rule = rule })
+
+@unravel(DrawingBack.🧶Stroke)
+set_stroke :: Color -> Node -> Node
+set_stroke color = map_stroke (\stroke -> { stroke | paint = Solid color })
+
+@unravel(DrawingBack.🧶StrokePaint)
+set_stroke_paint :: Paint -> Node -> Node
+set_stroke_paint paint = map_stroke (\stroke -> { stroke | paint = paint })
+
+@unravel(DrawingBack.🧶NoStroke)
+set_no_stroke :: Node -> Node
+set_no_stroke = map_stroke (\stroke -> { stroke | paint = NoPaint })
+
+@unravel(DrawingBack.🧶StrokeOpacity)
+set_stroke_opacity :: Float -> Node -> Node
+set_stroke_opacity opacity = map_stroke (\stroke -> { stroke | opacity = opacity })
+
+@unravel(DrawingBack.🧶StrokeWidth)
+set_stroke_width :: Float -> Node -> Node
+set_stroke_width width = map_stroke (\stroke -> { stroke | width = width })
+
+@unravel(DrawingBack.🧶StrokeCap)
+set_stroke_linecap :: LineCap -> Node -> Node
+set_stroke_linecap cap = map_stroke (\stroke -> { stroke | cap = cap })
+
+@unravel(DrawingBack.🧶StrokeJoin)
+set_stroke_linejoin :: LineJoin -> Node -> Node
+set_stroke_linejoin join = map_stroke (\stroke -> { stroke | join = join })
+
+@unravel(DrawingBack.🧶StrokeDashes)
+set_stroke_dasharray :: List Float -> Node -> Node
+set_stroke_dasharray dashes = map_stroke (\stroke -> { stroke | dashes = dashes })
+
+@unravel(DrawingBack.🧶StrokeDashOffset)
+set_stroke_dashoffset :: Float -> Node -> Node
+set_stroke_dashoffset offset = map_stroke (\stroke -> { stroke | dashOffset = offset })
+
+@unravel(DrawingBack.🧶StrokeMiterLimit)
+set_stroke_miterlimit :: Float -> Node -> Node
+set_stroke_miterlimit limit = map_stroke (\stroke -> { stroke | miterLimit = limit })
+
+@unravel(DrawingBack.🧶FontFamily)
+set_font_family :: String -> Node -> Node
+set_font_family family = map_font (\font -> { font | family = family })
+
+@unravel(DrawingBack.🧶FontSize)
+set_font_size :: Float -> Node -> Node
+set_font_size size = map_font (\font -> { font | size = size })
+
+@unravel(DrawingBack.🧶FontAnchor)
+set_text_anchor :: TextAnchor -> Node -> Node
+set_text_anchor anchor = map_font (\font -> { font | anchor = anchor })
+
+@unravel(DrawingBack.🧶FontBaseline)
+set_dominant_baseline :: DominantBaseline -> Node -> Node
+set_dominant_baseline baseline = map_font (\font -> { font | baseline = baseline })
+
+@unravel(DrawingBack.🧶Closed)
+set_closed :: Bool -> Node -> Node
+set_closed closed = map_polyline (\p -> { p | closed = closed })
+
+-- Node setters (affect only the node itself) -----------------------------------
+
+@unravel(DrawingBack.🧶OptionalId)
+set_optional_id :: Maybe Id -> Node -> Node
+set_optional_id nodeId = map_common (\common -> { common | id = nodeId })
+
+@unravel(DrawingBack.🧶Id)
+set_id :: Id -> Node -> Node
+set_id nodeId = map_common (\common -> { common | id = Just nodeId })
+
+@unravel(DrawingBack.🧶Transform)
+set_transform :: Transform -> Node -> Node
+set_transform transform = map_common (\common -> { common | transform = transform })
+
+@unravel(DrawingBack.🧶AddTransform)
+add_transform :: TransformOp -> Node -> Node
+add_transform operation = map_common (\common -> { common | transform = operation : common.transform })
+
+@unravel(DrawingBack.🧶Opacity)
+set_opacity :: Float -> Node -> Node
+set_opacity opacity = map_common (\common -> { common | opacity = opacity })
+
+@unravel(DrawingBack.🧶Visible)
+set_visible :: Bool -> Node -> Node
+set_visible visible = map_common (\common -> { common | visible = visible })
+
+-- Export -----------------------------------------------------------------------
+-- Every shape writes its own style. Attributes equal to SVG's initial values
+-- are left out: nothing is ever set on a <g>, so an omitted attribute always
+-- means the initial value.
+
+render :: Container -> String
+render document = render_with (\_ -> "") document
+
+-- Renders with extra attributes per node, computed from the node's key: the
+-- path of child indices from the root. The viewer uses this for data-key.
+render_with :: (List Int -> String) -> Container -> String
+render_with extra document = render_container extra [] True (as_document document)
+
+-- The output is always an <svg>; a group root is wrapped in a default one.
+as_document :: Container -> Container
+as_document document =
+    case document.kind of
+        Viewport _ -> document
+        Group -> { kind = Viewport defaultViewport, common = defaultCommon, children = [ ContainerNode document ] }
+
+-- Children paired with their keys.
+keyed_children :: List Int -> List Node -> List (List Int, Node)
+keyed_children key children =
+    zipWith (\index child -> (key <> [ index ], child)) (intRange 0 1 (length children - 1)) children
+
+render_container :: (List Int -> String) -> List Int -> Bool -> Container -> String
+render_container extra key root container =
+    let
+        body = String.concat (map (\(childKey, child) -> render_node extra childKey child) (keyed_children key container.children))
+        attributes = render_common container.common <> extra key
+    in
+    case container.kind of
+        Group -> element "g" attributes body
+        Viewport viewport ->
+            element "svg"
+                ((if root then " xmlns=\"http://www.w3.org/2000/svg\"" else "")
+                    <> attribute "width" (show viewport.width)
+                    <> attribute "height" (show viewport.height)
+                    <> optional "viewBox" render_view_box viewport.viewBox
+                    <> attributes)
+                body
+
+render_node :: (List Int -> String) -> List Int -> Node -> String
+render_node extra key target =
+    case target of
+        ShapeNode common geometry -> render_shape (render_common common <> extra key) geometry
+        ContainerNode container -> render_container extra key False container
+
+render_shape :: String -> Shape -> String
+render_shape nodeAttributes geometry =
+    case geometry of
+        Rect g ->
+            element "rect"
+                (attribute "x" (show g.x)
+                    <> attribute "y" (show g.y)
+                    <> attribute "width" (show g.width)
+                    <> attribute "height" (show g.height)
+                    <> number_unless "rx" 0 g.rx
+                    <> number_unless "ry" 0 g.ry
+                    <> render_fill g.fill
+                    <> render_stroke g.stroke
+                    <> nodeAttributes)
+                ""
+        Circle g ->
+            element "circle"
+                (attribute "cx" (show g.cx)
+                    <> attribute "cy" (show g.cy)
+                    <> attribute "r" (show g.r)
+                    <> render_fill g.fill
+                    <> render_stroke g.stroke
+                    <> nodeAttributes)
+                ""
+        Ellipse g ->
+            element "ellipse"
+                (attribute "cx" (show g.cx)
+                    <> attribute "cy" (show g.cy)
+                    <> attribute "rx" (show g.rx)
+                    <> attribute "ry" (show g.ry)
+                    <> render_fill g.fill
+                    <> render_stroke g.stroke
+                    <> nodeAttributes)
+                ""
+        Line g ->
+            element "line"
+                (attribute "x1" (show g.x1)
+                    <> attribute "y1" (show g.y1)
+                    <> attribute "x2" (show g.x2)
+                    <> attribute "y2" (show g.y2)
+                    <> render_stroke g.stroke
+                    <> nodeAttributes)
+                ""
+        Polyline g ->
+            element (if g.closed then "polygon" else "polyline")
+                (attribute "points" (render_points g.points)
+                    <> render_fill g.fill
+                    <> render_stroke g.stroke
+                    <> nodeAttributes)
+                ""
+        Path g ->
+            element "path"
+                (attribute "d" (render_path g.commands)
+                    <> render_fill g.fill
+                    <> render_stroke g.stroke
+                    <> nodeAttributes)
+                ""
+        Text g ->
+            element "text"
+                (attribute "x" (show g.x)
+                    <> attribute "y" (show g.y)
+                    <> render_font g.font
+                    <> render_fill g.fill
+                    <> render_stroke g.stroke
+                    <> nodeAttributes)
+                (escape g.content)
+
+element :: String -> String -> String -> String
+element name attributes body =
+    "<" <> name <> attributes <> ">" <> body <> "</" <> name <> ">"
+
+attribute :: String -> String -> String
+attribute name value = " " <> name <> "=\"" <> escape value <> "\""
+
+optional :: String -> (a -> String) -> Maybe a -> String
+optional name toText value =
+    case value of
+        Nothing -> ""
+        Just present -> attribute name (toText present)
+
+-- Writes the attribute only when the value differs from SVG's initial value.
+number_unless :: String -> Float -> Float -> String
+number_unless name initial value =
+    if value == initial then "" else attribute name (show value)
+
+escape :: String -> String
+escape raw =
+    String.replace "\"" "&quot;"
+        (String.replace ">" "&gt;"
+            (String.replace "<" "&lt;"
+                (String.replace "&" "&amp;" raw)))
+
+render_fill :: Fill -> String
+render_fill fill =
+    case fill.paint of
+        NoPaint -> attribute "fill" "none"
+        Solid color ->
+            (if is_black color then "" else attribute "fill" (render_color color))
+                <> number_unless "fill-opacity" 1 fill.opacity
+                <> render_fill_rule fill.rule
+
+-- With no stroke paint, the other stroke properties have no effect.
+render_stroke :: Stroke -> String
+render_stroke stroke =
+    case stroke.paint of
+        NoPaint -> ""
+        Solid color ->
+            attribute "stroke" (render_color color)
+                <> number_unless "stroke-width" 1 stroke.width
+                <> number_unless "stroke-opacity" 1 stroke.opacity
+                <> render_line_cap stroke.cap
+                <> render_line_join stroke.join
+                <> number_unless "stroke-miterlimit" 4 stroke.miterLimit
+                <> render_dashes stroke.dashes
+                <> number_unless "stroke-dashoffset" 0 stroke.dashOffset
+
+render_font :: Font -> String
+render_font font =
+    attribute "font-family" font.family
+        <> attribute "font-size" (show font.size)
+        <> render_text_anchor font.anchor
+        <> render_dominant_baseline font.baseline
+
+render_common :: Common -> String
+render_common common =
+    optional "id" id common.id
+        <> render_transform_attribute common.transform
+        <> number_unless "opacity" 1 common.opacity
+        <> (if common.visible then "" else attribute "display" "none")
+
+is_black :: Color -> Bool
+is_black color =
+    case color of
+        Rgb red green blue -> red == 0 && green == 0 && blue == 0
+
+render_color :: Color -> String
+render_color color =
+    case color of
+        Rgb red green blue -> "rgb(" <> show red <> "," <> show green <> "," <> show blue <> ")"
+
+render_dashes :: List Float -> String
+render_dashes dashes =
+    case dashes of
+        [] -> ""
+        _ -> attribute "stroke-dasharray" (render_numbers dashes)
+
+render_transform_attribute :: Transform -> String
+render_transform_attribute operations =
+    case operations of
+        [] -> ""
+        _ -> attribute "transform" (String.intercalate " " (map render_transform_op operations))
+
+render_transform_op :: TransformOp -> String
+render_transform_op operation =
+    case operation of
+        Translate dx dy -> "translate(" <> show dx <> "," <> show dy <> ")"
+        Scale sx sy -> "scale(" <> show sx <> "," <> show sy <> ")"
+        Rotate degrees Nothing -> "rotate(" <> show degrees <> ")"
+        Rotate degrees (Just (pivotX, pivotY)) ->
+            "rotate(" <> show degrees <> "," <> show pivotX <> "," <> show pivotY <> ")"
+        SkewX degrees -> "skewX(" <> show degrees <> ")"
+        SkewY degrees -> "skewY(" <> show degrees <> ")"
+
+render_view_box :: ViewBox -> String
+render_view_box box =
+    render_numbers [box.minX, box.minY, box.width, box.height]
+
+render_numbers :: List Float -> String
+render_numbers numbers = String.intercalate " " (map show numbers)
+
+render_points :: List Point -> String
+render_points points =
+    String.intercalate " " (map (\p -> show p.x <> "," <> show p.y) points)
+
+render_path :: List PathCommand -> String
+render_path commands = String.intercalate " " (map render_path_command commands)
+
+render_path_command :: PathCommand -> String
+render_path_command command =
+    case command of
+        MoveTo x y -> "M " <> render_numbers [x, y]
+        LineTo x y -> "L " <> render_numbers [x, y]
+        CurveTo x1 y1 x2 y2 x y -> "C " <> render_numbers [x1, y1, x2, y2, x, y]
+        ClosePath -> "Z"
+
+render_fill_rule :: FillRule -> String
+render_fill_rule rule =
+    case rule of
+        NonZero -> ""
+        EvenOdd -> attribute "fill-rule" "evenodd"
+
+render_line_cap :: LineCap -> String
+render_line_cap cap =
+    case cap of
+        Butt -> ""
+        RoundCap -> attribute "stroke-linecap" "round"
+        Square -> attribute "stroke-linecap" "square"
+
+render_line_join :: LineJoin -> String
+render_line_join join =
+    case join of
+        Miter -> ""
+        RoundJoin -> attribute "stroke-linejoin" "round"
+        Bevel -> attribute "stroke-linejoin" "bevel"
+
+render_text_anchor :: TextAnchor -> String
+render_text_anchor anchor =
+    case anchor of
+        AnchorStart -> ""
+        AnchorMiddle -> attribute "text-anchor" "middle"
+        AnchorEnd -> attribute "text-anchor" "end"
+
+render_dominant_baseline :: DominantBaseline -> String
+render_dominant_baseline baseline =
+    case baseline of
+        BaselineAlphabetic -> ""
+        BaselineMiddle -> attribute "dominant-baseline" "middle"
+        BaselineCentral -> attribute "dominant-baseline" "central"
+        BaselineHanging -> attribute "dominant-baseline" "hanging"

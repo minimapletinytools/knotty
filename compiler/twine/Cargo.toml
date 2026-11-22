@@ -1,0 +1,24 @@
+[package]
+name = "twine"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+
+[features]
+# Measurement-only prototype. Does not change memo admission or retention.
+cost-accounting = []
+# Representation experiment; does not alter cache keys or retention.
+compact-captures = []
+# Developing the replacement incremental engine; current defaults stay available
+# as a fresh-evaluation/performance control until integration is complete.
+incremental = ["compact-captures", "cost-accounting"]
+
+[dependencies]
+knot-core = { path = "../knot-core" }
+num-bigint = "0.4"
+unicode-general-category = "=1.1.0"
+
+[dev-dependencies]
+knot-checker = { path = "../knot-checker" }
+knot-canonical = { path = "../knot-canonical" }
+knot-syntax = { path = "../knot-syntax" }

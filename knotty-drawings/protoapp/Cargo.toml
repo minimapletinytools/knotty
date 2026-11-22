@@ -1,0 +1,40 @@
+[package]
+name = "knottydrawings"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+description = "Prototype viewer/editor for knotty drawings"
+
+[features]
+cost-accounting = ["twine/cost-accounting"]
+compact-captures = ["twine/compact-captures"]
+incremental = ["twine/incremental", "knot-workbench/incremental"]
+# Experimental embedding cache, validated by Twine's deep data receipts.
+scene-observations = ["incremental"]
+# Experimental exact sharing of code/read validity summaries.
+compact-evidence = ["incremental"]
+# Experimental lexical code guards and bounded internal-proof reduction.
+region-evidence = ["compact-evidence"]
+# Experimental marginal result/proof/source-context storage ranking.
+joint-retention = ["region-evidence"]
+
+# Standalone: not a member of the compiler workspace.
+[workspace]
+
+[dependencies]
+knot-canonical = { path = "../../compiler/knot-canonical" }
+knot-checker = { path = "../../compiler/knot-checker" }
+knot-core = { path = "../../compiler/knot-core" }
+knot-workbench = { path = "../../compiler/knot-workbench" }
+twine = { path = "../../compiler/twine" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+[target.'cfg(not(target_os = "wasi"))'.dependencies]
+tiny_http = "0.12"
+
+# The Knot interpreter is far faster optimized; keep the app itself debuggable.
+[profile.dev.package."*"]
+opt-level = 3
+
+[lib]
+crate-type = ["rlib", "cdylib"]

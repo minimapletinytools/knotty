@@ -1,0 +1,273 @@
+module Scene exposing (..)
+
+-- Scene export for the protoapp viewer: the drawing's tree as JSON, and the
+-- SVG with a data-key attribute on every node. A key is the path of child
+-- indices from the root container, written "2.0" (the root's key is "").
+
+import String
+import Types exposing (..)
+import KnottyDrawings exposing (..)
+
+-- The SVG renderer inserts a synthetic root for group-valued documents.
+-- Map displayed keys under this prefix back to the actual program output.
+source_root_key :: Container -> String
+source_root_key document = case document.kind of
+    Group -> "0"
+    Viewport _ -> ""
+
+scene_json :: Container -> String
+scene_json document = encode (scene_value document)
+
+-- Typed host boundary: the viewer serializes this value directly.
+-- The text export above remains available to Knot callers.
+type Json = JsonNull | JsonBool Bool | JsonNumber Float | JsonInt Int | JsonString String | JsonArray (List Json) | JsonObject (List (String, Json))
+
+scene_value :: Container -> Json
+scene_value document = container_json [] (as_document document)
+
+render_keyed :: Container -> String
+render_keyed document = render_with (\key -> attribute "data-key" (key_text key)) document
+
+key_text :: List Int -> String
+key_text key = String.intercalate "." (map show key)
+
+-- Nodes ------------------------------------------------------------------------
+-- Each node is {"key", "kind", "id", "props", "children"}. "props" is a flat
+-- object keyed by dotted field paths ("cx", "fill.opacity"): the names an edit
+-- request uses. The viewer knows each field's type and grouping.
+
+container_json :: List Int -> Container -> Json
+container_json key container =
+    object
+        [ ("key", quoted (key_text key))
+        , ("kind", quoted (container_kind container.kind))
+        , ("id", json_maybe_string container.common.id)
+        , ("props", object (viewport_props container.kind <> common_props container.common))
+        , ("children", json_array (map (\pair -> node_json (fst pair) (snd pair)) (keyed_children key container.children)))
+        ]
+
+container_kind :: ContainerKind -> String
+container_kind kind =
+    case kind of
+        Group -> "group"
+        Viewport _ -> "svg"
+
+viewport_props :: ContainerKind -> List (String, Json)
+viewport_props kind =
+    case kind of
+        Group -> []
+        Viewport viewport ->
+            [ ("width", JsonNumber viewport.width)
+            , ("height", JsonNumber viewport.height)
+            , ("viewBox", view_box_json viewport.viewBox)
+            ]
+
+node_json :: List Int -> Node -> Json
+node_json key target =
+    case target of
+        ContainerNode container -> container_json key container
+        ShapeNode common geometry ->
+            object
+                [ ("key", quoted (key_text key))
+                , ("kind", quoted (shape_kind geometry))
+                , ("id", json_maybe_string common.id)
+                , ("props", object (shape_props geometry <> common_props common))
+                , ("children", JsonArray [])
+                ]
+
+shape_kind :: Shape -> String
+shape_kind geometry =
+    case geometry of
+        Rect _ -> "rect"
+        Circle _ -> "circle"
+        Ellipse _ -> "ellipse"
+        Line _ -> "line"
+        Polyline g -> if g.closed then "polygon" else "polyline"
+        Path _ -> "path"
+        Text _ -> "text"
+
+shape_props :: Shape -> List (String, Json)
+shape_props geometry =
+    case geometry of
+        Rect g ->
+            [ ("x", JsonNumber g.x), ("y", JsonNumber g.y), ("width", JsonNumber g.width), ("height", JsonNumber g.height)
+            , ("rx", JsonNumber g.rx), ("ry", JsonNumber g.ry)
+            ]
+                <> fill_props g.fill
+                <> stroke_props g.stroke
+        Circle g ->
+            [ ("cx", JsonNumber g.cx), ("cy", JsonNumber g.cy), ("r", JsonNumber g.r) ]
+                <> fill_props g.fill
+                <> stroke_props g.stroke
+        Ellipse g ->
+            [ ("cx", JsonNumber g.cx), ("cy", JsonNumber g.cy), ("rx", JsonNumber g.rx), ("ry", JsonNumber g.ry) ]
+                <> fill_props g.fill
+                <> stroke_props g.stroke
+        Line g ->
+            [ ("x1", JsonNumber g.x1), ("y1", JsonNumber g.y1), ("x2", JsonNumber g.x2), ("y2", JsonNumber g.y2) ]
+                <> stroke_props g.stroke
+        Polyline g ->
+            [ ("points", json_array (map point_json g.points))
+            , ("closed", json_bool g.closed)
+            ]
+                <> fill_props g.fill
+                <> stroke_props g.stroke
+        Path g ->
+            [ ("commands", json_array (map command_json g.commands)) ]
+                <> fill_props g.fill
+                <> stroke_props g.stroke
+        Text g ->
+            [ ("x", JsonNumber g.x), ("y", JsonNumber g.y), ("content", json_string g.content)
+            , ("font.family", json_string g.font.family)
+            , ("font.size", JsonNumber g.font.size)
+            , ("font.anchor", quoted (anchor_name g.font.anchor))
+            , ("font.baseline", quoted (baseline_name g.font.baseline))
+            ]
+                <> fill_props g.fill
+                <> stroke_props g.stroke
+
+fill_props :: Fill -> List (String, Json)
+fill_props fill =
+    [ ("fill.paint", paint_json fill.paint)
+    , ("fill.opacity", JsonNumber fill.opacity)
+    , ("fill.rule", quoted (fill_rule_name fill.rule))
+    ]
+
+stroke_props :: Stroke -> List (String, Json)
+stroke_props stroke =
+    [ ("stroke.paint", paint_json stroke.paint)
+    , ("stroke.width", JsonNumber stroke.width)
+    , ("stroke.opacity", JsonNumber stroke.opacity)
+    , ("stroke.cap", quoted (cap_name stroke.cap))
+    , ("stroke.join", quoted (join_name stroke.join))
+    , ("stroke.miterLimit", JsonNumber stroke.miterLimit)
+    , ("stroke.dashes", json_array (map JsonNumber stroke.dashes))
+    , ("stroke.dashOffset", JsonNumber stroke.dashOffset)
+    ]
+
+common_props :: Common -> List (String, Json)
+common_props common =
+    [ ("id", json_maybe_string common.id)
+    , ("transform", json_array (map transform_json common.transform))
+    , ("opacity", JsonNumber common.opacity)
+    , ("visible", json_bool common.visible)
+    ]
+
+-- A paint is null for none, otherwise [r, g, b].
+paint_json :: Paint -> Json
+paint_json paint =
+    case paint of
+        NoPaint -> JsonNull
+        Solid color ->
+            case color of
+                Rgb red green blue -> json_array [ JsonInt red, JsonInt green, JsonInt blue ]
+
+-- Names ---------------------------------------------------------------------------
+
+anchor_name :: TextAnchor -> String
+anchor_name anchor =
+    case anchor of
+        AnchorStart -> "start"
+        AnchorMiddle -> "middle"
+        AnchorEnd -> "end"
+
+baseline_name :: DominantBaseline -> String
+baseline_name baseline =
+    case baseline of
+        BaselineAlphabetic -> "alphabetic"
+        BaselineMiddle -> "middle"
+        BaselineCentral -> "central"
+        BaselineHanging -> "hanging"
+
+fill_rule_name :: FillRule -> String
+fill_rule_name rule =
+    case rule of
+        NonZero -> "nonzero"
+        EvenOdd -> "evenodd"
+
+cap_name :: LineCap -> String
+cap_name cap =
+    case cap of
+        Butt -> "butt"
+        RoundCap -> "round"
+        Square -> "square"
+
+join_name :: LineJoin -> String
+join_name join =
+    case join of
+        Miter -> "miter"
+        RoundJoin -> "round"
+        Bevel -> "bevel"
+
+view_box_text :: Maybe ViewBox -> String
+view_box_text box =
+    case box of
+        Nothing -> ""
+        Just b -> render_view_box b
+
+-- Typed JSON and backwards-compatible text encoding -------------------------------
+
+object :: List (String, Json) -> Json
+object entries = JsonObject entries
+
+quoted :: String -> Json
+quoted text = JsonString text
+
+json_bool :: Bool -> Json
+json_bool value = JsonBool value
+
+json_array :: List Json -> Json
+json_array items = JsonArray items
+
+json_string :: String -> Json
+json_string raw = JsonString raw
+
+json_maybe_string :: Maybe String -> Json
+json_maybe_string value = case value of
+    Nothing -> JsonNull
+    Just text -> JsonString text
+
+encode :: Json -> String
+encode value = case value of
+    JsonNull -> "null"
+    JsonBool b -> if b then "true" else "false"
+    JsonNumber n -> show n
+    JsonInt n -> show n
+    JsonString text -> escaped text
+    JsonArray items -> "[" <> String.intercalate "," (map encode items) <> "]"
+    JsonObject entries -> "{" <> String.intercalate "," (map (\entry -> escaped (fst entry) <> ":" <> encode (snd entry)) entries) <> "}"
+
+escaped :: String -> String
+escaped raw =
+    "\""
+        <> String.replace "\t" "\\t"
+            (String.replace "\r" "\\r"
+                (String.replace "\n" "\\n"
+                    (String.replace "\"" "\\\""
+                        (String.replace "\\" "\\\\" raw))))
+        <> "\""
+
+-- Structured property editors exchange data, never executable source snippets.
+point_json :: Point -> Json
+point_json p = json_array [JsonNumber p.x, JsonNumber p.y]
+
+command_json :: PathCommand -> Json
+command_json command = case command of
+    MoveTo x y -> json_array [quoted "M", JsonNumber x, JsonNumber y]
+    LineTo x y -> json_array [quoted "L", JsonNumber x, JsonNumber y]
+    CurveTo a b c d e f -> json_array [quoted "C", JsonNumber a, JsonNumber b, JsonNumber c, JsonNumber d, JsonNumber e, JsonNumber f]
+    ClosePath -> json_array [quoted "Z"]
+
+transform_json :: TransformOp -> Json
+transform_json operation = case operation of
+    Translate x y -> json_array [quoted "translate", JsonNumber x, JsonNumber y]
+    Scale x y -> json_array [quoted "scale", JsonNumber x, JsonNumber y]
+    Rotate angle Nothing -> json_array [quoted "rotate", JsonNumber angle]
+    Rotate angle (Just (x, y)) -> json_array [quoted "rotate", JsonNumber angle, JsonNumber x, JsonNumber y]
+    SkewX angle -> json_array [quoted "skewX", JsonNumber angle]
+    SkewY angle -> json_array [quoted "skewY", JsonNumber angle]
+
+view_box_json :: Maybe ViewBox -> Json
+view_box_json box = case box of
+    Nothing -> JsonNull
+    Just b -> json_array [JsonNumber b.minX, JsonNumber b.minY, JsonNumber b.width, JsonNumber b.height]

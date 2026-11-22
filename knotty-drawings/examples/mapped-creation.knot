@@ -1,0 +1,14 @@
+module MappedCreation exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+-- Select the root and use Circle (C). New shapes become records in dots.
+-- The callback, seed and existing source computations stay intact.
+dots :: List CircleInput
+dots =
+  [ { x = 40 + 40, y = 90, radius = 24, color = tomato }
+  , { x = 180, y = 150, radius = 32, color = rgb 70 130 180 }
+  ]
+
+program = svg 500 320 (growMap defaultCircleInput circleFromInput dots)

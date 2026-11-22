@@ -1,0 +1,1621 @@
+//! Expression grammar: atoms (literals, identifiers, holes, parens/tuple/unit,
+//! list, record/update, field access) -> application -> unary negation ->
+//! infix operator chains (spec §7.4, kept flat as `Expr::OpChain` and grouped
+//! by fixity in `knot-canonical`) -> the layout-heavy forms
+//! (`if`/`let`/`case`/lambda/`do`).
+//!
+//! `if`/`let`/`case`/`do`/lambda are only ever dispatched from the top-level
+//! `expr()` entry point, never from `expr_atom` — matching Haskell/Elm, these are
+//! not valid as a bare, unparenthesized application argument or operator operand;
+//! `f (if c then a else b)` needs the parens.
+//!
+//! Layout: `expr_app`'s trailing-argument loop and `expr_op_chain`'s
+//! operator-continuation loop both check `continues_layout` before trying to
+//! consume more — this is what stops a `let`/`case`/`do` block's *next binding*
+//! from being misread as one more application argument or operand of the
+//! *previous* one, since it sits at the block's reference column rather than
+//! strictly past it.
+
+use crate::ast::expr::{DoStmt, Expr};
+use crate::ast::pattern::Pattern;
+use crate::ast::Name;
+use crate::error::{ErrorKind, ParseError};
+use crate::lex::literal::NumberLiteral;
+use crate::span::{Span, Spanned};
+use crate::state::ParseState;
+
+type LetBinding = (Spanned<Pattern>, Spanned<Expr>);
+
+/// One parsed `do` statement; retain the let offset for end-of-block errors.
+enum DoItem {
+    Stmt(DoStmt),
+    Let(Vec<LetBinding>, u32),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MinusKind {
+    /// Space before, none after: unary negation of the following atom.
+    Negation,
+    /// Same spacing both sides (both present or both absent): binary subtraction.
+    Subtraction,
+    /// No space before, but space after: neither pattern, always invalid (spec §7.5).
+    Ambiguous,
+}
+
+impl<'a> ParseState<'a> {
+    /// A full expression. `if`/`let`/`case`/`do`/lambda are recognized here only —
+    /// everything else falls through to the operator/application grammar.
+    pub fn expr(&mut self) -> Result<Spanned<Expr>, ParseError> {
+        self.skip_trivia()?;
+        if self.peek_keyword("if") {
+            self.expr_if()
+        } else if self.peek_keyword("let") {
+            self.expr_let()
+        } else if self.peek_keyword("case") {
+            self.expr_case()
+        } else if self.peek_keyword("do") {
+            self.expr_do()
+        } else if self.peek() == Some(b'\\') {
+            self.expr_lambda()
+        } else {
+            self.expr_op_chain()
+        }
+    }
+
+    /// Operands separated by infix operators, kept flat in source order —
+    /// grouping needs fixities, which `knot-canonical` knows (see
+    /// `Expr::OpChain`). A lone operand is returned as itself.
+    fn expr_op_chain(&mut self) -> Result<Spanned<Expr>, ParseError> {
+        let first = self.expr_app()?;
+        let mut rest = Vec::new();
+        loop {
+            let checkpoint = self.clone();
+            self.skip_trivia()?;
+            if !self.continues_layout() {
+                *self = checkpoint;
+                break;
+            }
+            let Some(op) = self.infix_operator()? else {
+                *self = checkpoint;
+                break;
+            };
+            self.skip_trivia()?;
+            // As in Haskell, the last operand may be a lambda or a
+            // block-forming expression (`xs |> \x -> ...`); it extends as
+            // far right as it can, so it ends the chain.
+            if self.starts_block_expr() {
+                rest.push((op, self.expr()?));
+                break;
+            }
+            let operand = self.expr_app()?;
+            rest.push((op, operand));
+        }
+        if rest.is_empty() {
+            return Ok(first);
+        }
+        let end = rest
+            .last()
+            .map(|(_, e)| e.span.end)
+            .unwrap_or(first.span.end);
+        let span = Span::new(first.span.start, end);
+        Ok(Spanned::new(span, Expr::OpChain(Box::new(first), rest)))
+    }
+
+    fn starts_block_expr(&self) -> bool {
+        self.peek() == Some(b'\\')
+            || ["if", "let", "case", "do"]
+                .iter()
+                .any(|k| self.peek_keyword(k))
+    }
+
+    /// Consumes an infix operator at the cursor: a symbol (`+`, `+++`) or a
+    /// backticked name (`` `div` ``, `` `Map.member` ``). `Ok(None)`, with
+    /// nothing consumed, if there isn't one. A `-` only counts when its
+    /// spacing makes it subtraction (spec §7.5).
+    fn infix_operator(&mut self) -> Result<Option<Spanned<Name>>, ParseError> {
+        let start = self.pos;
+        if self.peek() == Some(b'`') {
+            self.bump();
+            let name = match self.peek() {
+                _ if self.starts_value_ident() => self.lower_ident()?.node,
+                Some(b) if b.is_ascii_uppercase() => {
+                    let name = self.qualified_upper_start()?.node;
+                    let last = name.rsplit('.').next().unwrap_or(&name);
+                    if !last.starts_with(crate::lex::ident::is_value_ident_start) {
+                        return Err(ParseError::new(
+                            ErrorKind::Custom(format!(
+                                "only a function name can be used infix in backticks, not `{name}`"
+                            )),
+                            Span::new(start.offset, self.pos.offset),
+                        )
+                        .fatal());
+                    }
+                    name
+                }
+                _ => {
+                    return Err(ParseError::new(
+                        ErrorKind::Expected("a function name after `` ` ``"),
+                        Span::new(self.pos.offset, self.pos.offset),
+                    )
+                    .fatal())
+                }
+            };
+            if self.peek() != Some(b'`') {
+                return Err(ParseError::new(
+                    ErrorKind::Expected("a closing `` ` ``"),
+                    Span::new(self.pos.offset, self.pos.offset),
+                )
+                .fatal());
+            }
+            self.bump();
+            return Ok(Some(Spanned::new(
+                Span::new(start.offset, self.pos.offset),
+                name,
+            )));
+        }
+        let Some(symbol) = self.peek_operator_symbol() else {
+            return Ok(None);
+        };
+        if symbol == "-" && self.classify_minus() != MinusKind::Subtraction {
+            return Ok(None);
+        }
+        for _ in 0..symbol.len() {
+            self.bump();
+        }
+        Ok(Some(Spanned::new(
+            Span::new(start.offset, self.pos.offset),
+            symbol.to_string(),
+        )))
+    }
+
+    /// Classifies a `-` at the current position by its surrounding whitespace,
+    /// per spec §7.5. Must be called with the cursor positioned exactly at the
+    /// `-` (after `skip_trivia`, never before).
+    fn classify_minus(&self) -> MinusKind {
+        debug_assert_eq!(self.peek(), Some(b'-'));
+        let space_before = self.pos.offset > 0
+            && matches!(
+                self.src[self.pos.offset as usize - 1],
+                b' ' | b'\t' | b'\n' | b'\r'
+            );
+        let space_after = !matches!(self.peek_at(1), Some(b) if !b.is_ascii_whitespace());
+        match (space_before, space_after) {
+            (true, false) => MinusKind::Negation,
+            (false, true) => MinusKind::Ambiguous,
+            _ => MinusKind::Subtraction,
+        }
+    }
+
+    /// One or more atoms in a row (`f a b`), left-associative. Application
+    /// arguments must be strictly deeper than the enclosing layout block's
+    /// reference column, or a sibling `let`/`case`/`do` item would be misread as
+    /// one more argument of the previous one.
+    fn expr_app(&mut self) -> Result<Spanned<Expr>, ParseError> {
+        let start = self.pos.offset;
+        let head = self.expr_atom()?;
+        let mut args = Vec::new();
+        loop {
+            let checkpoint = self.clone();
+            self.skip_trivia()?;
+            if !self.continues_layout() {
+                *self = checkpoint;
+                break;
+            }
+            // A `-` shaped like binary subtraction (symmetric spacing) can never
+            // start a *new* trailing argument here -- if we let `expr_atom` try
+            // it, there is no argument to produce, only an operator for the
+            // enclosing `expr_op_chain` to pick up via `infix_operator`. Bail out
+            // before attempting the atom so that case is reached; every other
+            // caller of `expr_atom`/`expr_atom_base` has no such fallback (they
+            // sit at the very start of a (sub)expression, e.g. right after `(`,
+            // `[`, or `=`), so a `-` there is unambiguously negation.
+            if self.peek() == Some(b'-') && self.classify_minus() == MinusKind::Subtraction {
+                *self = checkpoint;
+                break;
+            }
+            match self.expr_atom() {
+                Ok(arg) => args.push((arg, self.pos.offset)),
+                Err(err) if err.fatal => return Err(err),
+                Err(_) => {
+                    *self = checkpoint;
+                    break;
+                }
+            }
+        }
+        let mut result = head;
+        for (arg, end) in args {
+            // Transparent grouping stays outside the child span, but belongs
+            // to the enclosing application when replacing the whole call.
+            let span = Span::new(start, end);
+            result = Spanned::new(span, Expr::App(Box::new(result), Box::new(arg)));
+        }
+        Ok(result)
+    }
+
+    /// An atom, plus any immediately-following (no whitespace) `.field` chain —
+    /// field access binds tighter than application. A qualified name like
+    /// `List.map` is already fully consumed by the identifier lexer itself before
+    /// this ever runs; this only handles chains on top of a *value*, e.g.
+    /// `point.x.y` or `(getPoint x).x`.
+    ///
+    /// Also where prefix `@annotation`s attach (spec §13.3): a leading `@`
+    /// here binds only to the single atom this call recurses into next
+    /// (including its own field-access chain) — never to a wider application
+    /// or operator expression, which is exactly why annotating one of those
+    /// needs explicit parens (`@{...} (f a b)`, not `@{...} f a b`). Holes
+    /// can't carry annotations at all (spec §15.3).
+    fn expr_atom(&mut self) -> Result<Spanned<Expr>, ParseError> {
+        self.skip_trivia()?;
+        if self.peek() == Some(b'@') {
+            if self.in_annotation_value {
+                return Err(ParseError::new(
+                    ErrorKind::Custom(
+                        "annotation values cannot themselves carry annotations".to_string(),
+                    ),
+                    Span::new(self.pos.offset, self.pos.offset),
+                )
+                .fatal());
+            }
+            let start = self.pos;
+            let annotations = self.annotation_list()?;
+            self.skip_trivia()?;
+            let target = self.expr_atom()?;
+            if target.node == Expr::Hole {
+                return Err(ParseError::new(
+                    ErrorKind::Custom("holes cannot carry annotations".to_string()),
+                    Span::new(start.offset, target.span.end),
+                )
+                .fatal());
+            }
+            let span = Span::new(start.offset, target.span.end);
+            return Ok(Spanned::new(
+                span,
+                Expr::Annotated(annotations, Box::new(target)),
+            ));
+        }
+        let mut current = self.expr_atom_base()?;
+        loop {
+            if self.peek() == Some(b'.') && self.value_ident_at(1) {
+                self.bump(); // '.'
+                let field = self.lower_ident()?.node;
+                let span = Span::new(current.span.start, self.pos.offset);
+                current = Spanned::new(span, Expr::FieldAccess(Box::new(current), field));
+            } else {
+                break;
+            }
+        }
+        Ok(current)
+    }
+
+    fn expr_atom_base(&mut self) -> Result<Spanned<Expr>, ParseError> {
+        self.skip_trivia()?;
+        let start = self.pos;
+        match self.peek() {
+            Some(b'_') => {
+                let hole = self.hole()?;
+                if hole.node.is_some() {
+                    return Err(ParseError::new(
+                        ErrorKind::Custom(
+                            "named holes (_name) are not valid expression placeholders; use a bare `_`"
+                                .to_string(),
+                        ),
+                        hole.span,
+                    )
+                    .fatal());
+                }
+                Ok(Spanned::new(hole.span, Expr::Hole))
+            }
+            Some(b'(') => self.expr_paren_tuple_or_unit(),
+            Some(b'[') => self.expr_list(),
+            Some(b'{') => self.expr_record_or_update(),
+            Some(b'"') => {
+                let lit = self.string_literal()?;
+                Ok(Spanned::new(lit.span, Expr::StringLit(lit.node)))
+            }
+            Some(b'-') => match self.classify_minus() {
+                // `Subtraction`-shaped spacing (symmetric, e.g. both absent as in
+                // `(-40.0)`/`[-5]`, or both present) still means negation here:
+                // `expr_atom_base` only ever runs at the start of a (sub)expression
+                // -- right after `(`, `[`, `=`, a binop, etc. -- where there is no
+                // preceding operand for `-` to subtract from. The one place that
+                // spacing pattern legitimately means "stop, this is a binary
+                // operator" is `expr_app`'s trailing-argument loop, which checks
+                // for it *before* ever calling down into here.
+                MinusKind::Negation | MinusKind::Subtraction => {
+                    self.bump();
+                    let inner = self.expr_atom()?;
+                    let span = Span::new(start.offset, inner.span.end);
+                    Ok(Spanned::new(span, Expr::Negate(Box::new(inner))))
+                }
+                MinusKind::Ambiguous => Err(ParseError::new(
+                    ErrorKind::Custom(
+                        "ambiguous spacing around `-` -- add parentheses or fix spacing to disambiguate \
+                         subtraction from negation"
+                            .to_string(),
+                    ),
+                    Span::new(start.offset, start.offset),
+                )
+                .fatal()),
+            },
+            Some(b) if b.is_ascii_digit() => {
+                let lit = self.number_literal()?;
+                let node = match lit.node {
+                    NumberLiteral::Int(v) => Expr::IntLit(v),
+                    NumberLiteral::Float(v) => Expr::FloatLit(v),
+                };
+                Ok(Spanned::new(lit.span, node))
+            }
+            Some(b) if b.is_ascii_uppercase() => {
+                let name = self.qualified_upper_start()?;
+                // Ends in a lowercase segment (`List.map`) -> qualified value
+                // reference; ends in an uppercase segment (`Shape.Circle`, or a
+                // bare `Circle`) -> constructor. `qualified_upper_start` always
+                // starts uppercase, so only the *last* segment's case matters.
+                let last_segment = name.node.rsplit('.').next().unwrap_or(&name.node);
+                let is_value_ref = last_segment.starts_with(crate::lex::ident::is_value_ident_start);
+                let node = if is_value_ref { Expr::Var(name.node) } else { Expr::Ctor(name.node) };
+                Ok(Spanned::new(name.span, node))
+            }
+            _ if self.starts_value_ident() => {
+                let name = self.lower_ident()?;
+                Ok(Spanned::new(name.span, Expr::Var(name.node)))
+            }
+            _ => Err(ParseError::new(ErrorKind::Expected("an expression"), Span::new(start.offset, start.offset))),
+        }
+    }
+
+    /// `()` (Unit), `(expr)` (transparent grouping), or `(e, e, ...)` (tuple —
+    /// arity isn't checked here, see `validate.rs`).
+    fn expr_paren_tuple_or_unit(&mut self) -> Result<Spanned<Expr>, ParseError> {
+        let start = self.pos;
+        self.bump(); // '('
+        self.skip_trivia()?;
+        if self.peek() == Some(b')') {
+            self.bump();
+            return Ok(Spanned::new(
+                Span::new(start.offset, self.pos.offset),
+                Expr::Unit,
+            ));
+        }
+        if let Some(section) = self.try_operator_section(start)? {
+            return Ok(section);
+        }
+        let first = self.expr()?;
+        self.skip_trivia()?;
+        if self.peek() == Some(b',') {
+            let mut elements = vec![first];
+            while self.peek() == Some(b',') {
+                self.bump();
+                self.skip_trivia()?;
+                elements.push(self.expr()?);
+                self.skip_trivia()?;
+            }
+            self.expect_byte(b')')?;
+            Ok(Spanned::new(
+                Span::new(start.offset, self.pos.offset),
+                Expr::Tuple(elements),
+            ))
+        } else {
+            self.expect_byte(b')')?;
+            // Grouping is transparent in the AST, but a source replacement must
+            // own both delimiters. Retain the complete expression extent.
+            Ok(Spanned::new(
+                Span::new(start.offset, self.pos.offset),
+                first.node,
+            ))
+        }
+    }
+
+    /// A bare operator section (`(+)`, `(:)`, `(+++)`): a first-class
+    /// reference to that operator's own function -- `Expr::OpRef`, not a
+    /// synthesized lambda (spec §7.6: this does not desugar). Elm-style
+    /// only -- no Haskell partial sections (`(+ 1)`/`(1 +)`), by spec
+    /// decision. Must be called with the cursor immediately after `(`
+    /// (trivia already skipped, already confirmed not to be `)`) -- returns
+    /// `Ok(None)` with the cursor untouched if no operator symbol follows,
+    /// so the caller parses an ordinary parenthesized expression.
+    ///
+    /// A bare `(-)` is the subtraction function, matching Haskell. A `-`
+    /// followed by anything else (`(-40.0)`, `(-x)`) isn't a failed section:
+    /// it falls through to the ordinary expression path, which reads it as
+    /// negation.
+    fn try_operator_section(
+        &mut self,
+        start: crate::span::Cursor,
+    ) -> Result<Option<Spanned<Expr>>, ParseError> {
+        let checkpoint = self.clone();
+        let Some(symbol) = self.peek_operator_symbol() else {
+            return Ok(None);
+        };
+        let op_start = self.pos;
+        for _ in 0..symbol.len() {
+            self.bump();
+        }
+        let op_end = self.pos;
+        self.skip_trivia()?;
+        if self.peek() != Some(b')') {
+            if symbol == "-" {
+                *self = checkpoint;
+                return Ok(None);
+            }
+            return Err(ParseError::new(
+                ErrorKind::Custom(
+                    "operator sections only support the bare form `(op)` -- partial \
+                     application like `(+ 1)` isn't supported; write a lambda instead, \
+                     e.g. `(\\x -> x + 1)`"
+                        .to_string(),
+                ),
+                Span::new(op_start.offset, op_end.offset),
+            )
+            .fatal());
+        }
+        self.bump(); // ')'
+        let span = Span::new(start.offset, self.pos.offset);
+        Ok(Some(Spanned::new(span, Expr::OpRef(symbol.to_string()))))
+    }
+
+    fn expr_list(&mut self) -> Result<Spanned<Expr>, ParseError> {
+        let start = self.pos;
+        self.bump(); // '['
+        self.skip_trivia()?;
+        if self.peek() == Some(b']') {
+            self.bump();
+            return Ok(Spanned::new(
+                Span::new(start.offset, self.pos.offset),
+                Expr::List(Vec::new()),
+            ));
+        }
+        let mut elements = vec![self.expr()?];
+        self.skip_trivia()?;
+        while self.peek() == Some(b',') {
+            self.bump();
+            self.skip_trivia()?;
+            elements.push(self.expr()?);
+            self.skip_trivia()?;
+        }
+        self.expect_byte(b']')?;
+        Ok(Spanned::new(
+            Span::new(start.offset, self.pos.offset),
+            Expr::List(elements),
+        ))
+    }
+
+    /// `{ field = expr, ... }` (construction, including `{}`) or
+    /// `{ base | field = expr, ... }` (update). Both start with `{`; disambiguated
+    /// by one identifier of lookahead then a peek for `=` vs `|`. An update's base
+    /// must be a plain lowercase variable reference, matching Elm's own
+    /// restriction (not an arbitrary expression).
+    fn expr_record_or_update(&mut self) -> Result<Spanned<Expr>, ParseError> {
+        let start = self.pos;
+        self.bump(); // '{'
+        self.skip_trivia()?;
+        if self.peek() == Some(b'}') {
+            self.bump();
+            return Ok(Spanned::new(
+                Span::new(start.offset, self.pos.offset),
+                Expr::Record(Vec::new()),
+            ));
+        }
+        let first_name = self.lower_ident()?;
+        self.skip_trivia()?;
+        match self.peek() {
+            Some(b'|') => {
+                self.bump();
+                self.skip_trivia()?;
+                let base = Spanned::new(first_name.span, Expr::Var(first_name.node));
+                let fields = self.expr_record_field_list()?;
+                self.expect_byte(b'}')?;
+                let span = Span::new(start.offset, self.pos.offset);
+                Ok(Spanned::new(
+                    span,
+                    Expr::RecordUpdate(Box::new(base), fields),
+                ))
+            }
+            Some(b'=') => {
+                self.bump();
+                self.skip_trivia()?;
+                let value = self.expr()?;
+                self.skip_trivia()?;
+                let mut fields = vec![(first_name.node, value)];
+                while self.peek() == Some(b',') {
+                    self.bump();
+                    self.skip_trivia()?;
+                    fields.push(self.expr_record_field()?);
+                    self.skip_trivia()?;
+                }
+                self.expect_byte(b'}')?;
+                let span = Span::new(start.offset, self.pos.offset);
+                Ok(Spanned::new(span, Expr::Record(fields)))
+            }
+            _ => Err(ParseError::new(
+                ErrorKind::Expected("`=` or `|`"),
+                Span::new(self.pos.offset, self.pos.offset),
+            )),
+        }
+    }
+
+    /// `pub(crate)`: M6's `@{ key = value, ... }` annotation block is
+    /// identical grammar to a record's field list, so `annotation.rs` reuses
+    /// this directly rather than duplicating it.
+    pub(crate) fn expr_record_field_list(
+        &mut self,
+    ) -> Result<Vec<(String, Spanned<Expr>)>, ParseError> {
+        let mut fields = vec![self.expr_record_field()?];
+        self.skip_trivia()?;
+        while self.peek() == Some(b',') {
+            self.bump();
+            self.skip_trivia()?;
+            fields.push(self.expr_record_field()?);
+            self.skip_trivia()?;
+        }
+        Ok(fields)
+    }
+
+    fn expr_record_field(&mut self) -> Result<(String, Spanned<Expr>), ParseError> {
+        let name = self.lower_ident()?.node;
+        self.skip_trivia()?;
+        self.expect_byte(b'=')?;
+        self.skip_trivia()?;
+        let value = self.expr()?;
+        Ok((name, value))
+    }
+
+    fn expr_if(&mut self) -> Result<Spanned<Expr>, ParseError> {
+        let start = self.pos;
+        self.expect_keyword("if")?;
+        self.skip_trivia()?;
+        let cond = self.expr()?;
+        self.skip_trivia()?;
+        self.expect_keyword("then")?;
+        self.skip_trivia()?;
+        let then_branch = self.expr()?;
+        self.skip_trivia()?;
+        self.expect_keyword("else")?;
+        self.skip_trivia()?;
+        let else_branch = self.expr()?;
+        let span = Span::new(start.offset, else_branch.span.end);
+        Ok(Spanned::new(
+            span,
+            Expr::If(Box::new(cond), Box::new(then_branch), Box::new(else_branch)),
+        ))
+    }
+
+    fn expr_let(&mut self) -> Result<Spanned<Expr>, ParseError> {
+        let start = self.pos;
+        let bindings = self.let_block()?;
+        self.skip_trivia()?;
+        self.expect_keyword("in")?;
+        self.skip_trivia()?;
+        let body = self.expr()?;
+        let span = Span::new(start.offset, body.span.end);
+        Ok(Spanned::new(span, Expr::Let(bindings, Box::new(body))))
+    }
+
+    /// `let` and its layout block of bindings, shared by `let ... in` and a
+    /// `do` block's `let` statement.
+    fn let_block(&mut self) -> Result<Vec<LetBinding>, ParseError> {
+        self.expect_keyword("let")?;
+        self.skip_trivia()?;
+        self.with_indent(|state| {
+            let col = state.pos.col;
+            let mut bindings = vec![state.let_binding()?];
+            loop {
+                let checkpoint = state.clone();
+                state.skip_trivia()?;
+                if state.check_aligned(col).is_err() {
+                    *state = checkpoint;
+                    break;
+                }
+                bindings.push(state.let_binding()?);
+            }
+            Ok(bindings)
+        })
+    }
+
+    /// A `let`-bound value has no dedicated declaration struct to hold
+    /// annotations the way `FnDef` does, so a leading `@` here (spec §13.1's
+    /// stacked/block forms, above the binding just like a top-level
+    /// signature) wraps the *value* in `Expr::Annotated` instead — the same
+    /// representation prefix inline annotations already use, rather than
+    /// inventing a second one.
+    ///
+    /// A bare `Var` pattern may be followed by a parameter list (`let go
+    /// acc rest = ... in ...`), exactly like a top-level `FnDef` -- reusing
+    /// the identical loop (`pattern_atom` collected until `=` or the
+    /// enclosing layout block ends) and desugaring the same way top-level
+    /// bindings already do: fold the params into a `Lambda` wrapping the
+    /// body, rather than inventing a second representation for "a let
+    /// binding with parameters." Any other pattern (tuple/cons/literal/etc.
+    /// destructuring) can't take params at all -- there's no "call" a
+    /// `(a, b)` makes sense as the head of -- so the loop is skipped
+    /// entirely for those, same as before this fix.
+    fn let_binding(
+        &mut self,
+    ) -> Result<(Spanned<crate::ast::pattern::Pattern>, Spanned<Expr>), ParseError> {
+        self.skip_trivia()?;
+        let start = self.pos;
+        let annotations = if self.peek() == Some(b'@') {
+            self.annotation_list()?
+        } else {
+            Vec::new()
+        };
+        self.skip_trivia()?;
+        let pat = self.pattern()?;
+        self.skip_trivia()?;
+
+        let mut params = Vec::new();
+        if matches!(pat.node, Pattern::Var(_)) {
+            loop {
+                let checkpoint = self.clone();
+                self.skip_trivia()?;
+                if self.peek() == Some(b'=') || !self.continues_layout() {
+                    *self = checkpoint;
+                    break;
+                }
+                match self.pattern_atom() {
+                    Ok(p) => params.push(p),
+                    Err(err) if err.fatal => return Err(err),
+                    Err(_) => {
+                        *self = checkpoint;
+                        break;
+                    }
+                }
+            }
+        }
+
+        self.expect_byte(b'=')?;
+        self.skip_trivia()?;
+        let raw_value = self.expr()?;
+        let value = if params.is_empty() {
+            raw_value
+        } else {
+            let span = Span::new(pat.span.start, raw_value.span.end);
+            Spanned::new(span, Expr::Lambda(params, Box::new(raw_value)))
+        };
+        let value = if annotations.is_empty() {
+            value
+        } else {
+            let span = Span::new(start.offset, value.span.end);
+            Spanned::new(span, Expr::Annotated(annotations, Box::new(value)))
+        };
+        Ok((pat, value))
+    }
+
+    fn expr_case(&mut self) -> Result<Spanned<Expr>, ParseError> {
+        let start = self.pos;
+        self.expect_keyword("case")?;
+        self.skip_trivia()?;
+        let scrutinee = self.expr()?;
+        self.skip_trivia()?;
+        self.expect_keyword("of")?;
+        self.skip_trivia()?;
+        let arms = self.with_indent(|state| {
+            let col = state.pos.col;
+            let mut arms = vec![state.case_arm()?];
+            loop {
+                let checkpoint = state.clone();
+                state.skip_trivia()?;
+                if state.check_aligned(col).is_err() {
+                    *state = checkpoint;
+                    break;
+                }
+                arms.push(state.case_arm()?);
+            }
+            Ok(arms)
+        })?;
+        let end = arms
+            .last()
+            .expect("with_indent always produces >= 1 arm")
+            .1
+            .span
+            .end;
+        let span = Span::new(start.offset, end);
+        Ok(Spanned::new(span, Expr::Case(Box::new(scrutinee), arms)))
+    }
+
+    fn case_arm(
+        &mut self,
+    ) -> Result<(Spanned<crate::ast::pattern::Pattern>, Spanned<Expr>), ParseError> {
+        let pat = self.pattern()?;
+        self.skip_trivia()?;
+        self.expect_arrow()?;
+        self.skip_trivia()?;
+        let body = self.expr()?;
+        Ok((pat, body))
+    }
+
+    fn expr_lambda(&mut self) -> Result<Spanned<Expr>, ParseError> {
+        let start = self.pos;
+        self.bump(); // '\'
+        self.skip_trivia()?;
+        let mut params = vec![self.pattern_atom()?];
+        loop {
+            self.skip_trivia()?;
+            if self.peek() == Some(b'-') && self.peek_at(1) == Some(b'>') {
+                break;
+            }
+            params.push(self.pattern_atom()?);
+        }
+        self.expect_arrow()?;
+        self.skip_trivia()?;
+        let body = self.expr()?;
+        let span = Span::new(start.offset, body.span.end);
+        Ok(Spanned::new(span, Expr::Lambda(params, Box::new(body))))
+    }
+
+    fn expr_do(&mut self) -> Result<Spanned<Expr>, ParseError> {
+        let start = self.pos;
+        self.expect_keyword("do")?;
+        self.skip_trivia()?;
+        let stmts = self.with_indent(|state| {
+            let col = state.pos.col;
+            let mut stmts = vec![state.do_stmt()?];
+            loop {
+                let checkpoint = state.clone();
+                state.skip_trivia()?;
+                if state.check_aligned(col).is_err() {
+                    *state = checkpoint;
+                    break;
+                }
+                stmts.push(state.do_stmt()?);
+            }
+            Ok(stmts)
+        })?;
+        Self::build_do(start.offset, stmts)
+    }
+
+    /// Keep the complete sequencing block, including do-let statements.
+    /// Executable desugaring belongs in knot-core, after graph construction.
+    fn build_do(start: u32, mut items: Vec<DoItem>) -> Result<Spanned<Expr>, ParseError> {
+        let last = items.pop().expect("a do block has at least one statement");
+        let body = match last {
+            DoItem::Stmt(DoStmt::Expr(e)) => e,
+            DoItem::Stmt(DoStmt::Bind(_, e)) => {
+                return Err(ParseError::new(
+                    ErrorKind::Custom(
+                        "a `do` block must end with a plain expression, not a `<-` bind"
+                            .to_string(),
+                    ),
+                    e.span,
+                ));
+            }
+            DoItem::Let(_, offset) => {
+                return Err(ParseError::new(
+                    ErrorKind::Custom(
+                        "a `do` block must end with a plain expression, not a `let`".to_string(),
+                    ),
+                    Span::new(offset, offset),
+                ));
+            }
+            DoItem::Stmt(DoStmt::Let(_)) => unreachable!("do_stmt uses DoItem::Let"),
+        };
+        let stmts = items
+            .into_iter()
+            .map(|item| match item {
+                DoItem::Stmt(stmt) => stmt,
+                DoItem::Let(bindings, _) => DoStmt::Let(bindings),
+            })
+            .collect();
+        Ok(Spanned::new(
+            Span::new(start, body.span.end),
+            Expr::Do(stmts, Box::new(body)),
+        ))
+    }
+
+    /// `pat <- e`, `e`, or `let bindings` (with no `in`; a `let ... in`
+    /// is just an expression statement).
+    fn do_stmt(&mut self) -> Result<DoItem, ParseError> {
+        if self.peek_keyword("let") {
+            let checkpoint = self.clone();
+            let start = self.pos.offset;
+            let bindings = self.let_block()?;
+            let after = self.clone();
+            self.skip_trivia()?;
+            if !self.peek_keyword("in") {
+                *self = after;
+                return Ok(DoItem::Let(bindings, start));
+            }
+            *self = checkpoint;
+        }
+        self.do_stmt_plain().map(DoItem::Stmt)
+    }
+
+    fn do_stmt_plain(&mut self) -> Result<DoStmt, ParseError> {
+        let bind_attempt = self.try_parse(|state| {
+            let pat = state.pattern()?;
+            state.skip_trivia()?;
+            if !(state.peek() == Some(b'<') && state.peek_at(1) == Some(b'-')) {
+                return Err(ParseError::new(
+                    ErrorKind::Expected("`<-`"),
+                    Span::new(state.pos.offset, state.pos.offset),
+                ));
+            }
+            state.bump();
+            state.bump();
+            state.skip_trivia()?;
+            let value = state.expr()?;
+            Ok(DoStmt::Bind(pat, value))
+        });
+        match bind_attempt {
+            Ok(stmt) => Ok(stmt),
+            Err(err) if err.fatal => Err(err),
+            Err(_) => {
+                let value = self.expr()?;
+                Ok(DoStmt::Expr(value))
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::pattern::{Pattern, PatternLiteral};
+
+    fn ex(src: &str) -> Expr {
+        let mut s = ParseState::new(src);
+        let result = s.expr().unwrap();
+        assert!(
+            s.is_eof(),
+            "leftover input: {:?}",
+            s.text_since(s.pos.offset)
+        );
+        result.node
+    }
+
+    fn err(src: &str) -> ParseError {
+        let mut s = ParseState::new(src);
+        match s.expr() {
+            Err(e) => e,
+            Ok(v) if !s.is_eof() => {
+                // Treat "parsed something but left input over" as a failure too,
+                // for the fixtures where that's how invalidity actually shows up
+                // (e.g. `.`/`$` aren't recognized tokens at all).
+                ParseError::new(ErrorKind::Custom("leftover input".to_string()), v.span)
+            }
+            Ok(v) => panic!("expected a parse failure, got {v:?}"),
+        }
+    }
+
+    /// The operator names of a flat chain, in order.
+    fn chain_ops(e: &Expr) -> Vec<String> {
+        match e {
+            Expr::OpChain(_, rest) => rest.iter().map(|(op, _)| op.node.clone()).collect(),
+            other => panic!("expected an OpChain, got {other:?}"),
+        }
+    }
+
+    fn chain1(l: Spanned<Expr>, op: Spanned<String>, r: Spanned<Expr>) -> Expr {
+        Expr::OpChain(Box::new(l), vec![(op, r)])
+    }
+
+    #[test]
+    fn int_and_float_literals() {
+        assert_eq!(ex("42"), Expr::IntLit(42.into()));
+        // 2.5, not e.g. 3.14: exactly representable in binary (see lex::literal's
+        // plain_float test for the same reasoning).
+        assert_eq!(ex("2.5"), Expr::FloatLit("2.5".parse().unwrap()));
+    }
+
+    #[test]
+    fn bool_ctors() {
+        assert_eq!(ex("True"), Expr::Ctor("True".to_string()));
+        assert_eq!(ex("False"), Expr::Ctor("False".to_string()));
+    }
+
+    #[test]
+    fn application_span_includes_grouping_around_head_and_arguments() {
+        for source in [
+            "Box (x + 1)",
+            "(f x) (y)",
+            "Box ( {- note -} x )",
+            "f ((let x = 1 in (x + 2)))",
+        ] {
+            let mut parser = ParseState::new(source);
+            let expr = parser.expr().unwrap();
+            assert_eq!(
+                &source[expr.span.start as usize..expr.span.end as usize],
+                source
+            );
+            let Expr::App(_, child) = expr.node else {
+                panic!("application");
+            };
+            let fragment = &source[child.span.start as usize..child.span.end as usize];
+            assert!(fragment.starts_with('(') && fragment.ends_with(')'));
+            let mut standalone = ParseState::new(fragment);
+            standalone.expr().unwrap();
+            assert!(standalone.is_eof());
+        }
+    }
+
+    #[test]
+    fn application() {
+        let Expr::App(f, y) = ex("f x y") else {
+            panic!("expected App")
+        };
+        let Expr::App(f2, x) = f.node else {
+            panic!("expected nested App")
+        };
+        assert_eq!(f2.node, Expr::Var("f".to_string()));
+        assert_eq!(x.node, Expr::Var("x".to_string()));
+        assert_eq!(y.node, Expr::Var("y".to_string()));
+    }
+
+    #[test]
+    fn field_access_chain() {
+        let Expr::FieldAccess(inner, z) = ex("scene.camera.z") else {
+            panic!("expected FieldAccess")
+        };
+        assert_eq!(z, "z");
+        let Expr::FieldAccess(base, y) = inner.node else {
+            panic!("expected nested FieldAccess")
+        };
+        assert_eq!(y, "camera");
+        assert_eq!(base.node, Expr::Var("scene".to_string()));
+    }
+
+    #[test]
+    fn qualified_name_is_var() {
+        assert_eq!(ex("List.map"), Expr::Var("List.map".to_string()));
+    }
+
+    #[test]
+    fn field_access_binds_tighter_than_application() {
+        // "f point.x" is "f (point.x)", not "(f point).x"
+        let Expr::App(f, arg) = ex("f point.x") else {
+            panic!("expected App")
+        };
+        assert_eq!(f.node, Expr::Var("f".to_string()));
+        assert!(matches!(arg.node, Expr::FieldAccess(_, _)));
+    }
+
+    #[test]
+    fn negate_literal_argument() {
+        let Expr::App(f, arg) = ex("f -1") else {
+            panic!("expected App")
+        };
+        assert_eq!(f.node, Expr::Var("f".to_string()));
+        assert_eq!(
+            arg.node,
+            Expr::Negate(Box::new(Spanned::new(
+                Span::new(3, 4),
+                Expr::IntLit(1.into())
+            )))
+        );
+    }
+
+    #[test]
+    fn negate_variable_argument() {
+        let Expr::App(_, arg) = ex("f -y") else {
+            panic!("expected App")
+        };
+        assert_eq!(
+            arg.node,
+            Expr::Negate(Box::new(Spanned::new(
+                Span::new(3, 4),
+                Expr::Var("y".to_string())
+            )))
+        );
+    }
+
+    #[test]
+    fn subtraction_spaced() {
+        assert_eq!(
+            ex("a - 1"),
+            chain1(
+                Spanned::new(Span::new(0, 1), Expr::Var("a".to_string())),
+                Spanned::new(Span::new(2, 3), "-".to_string()),
+                Spanned::new(Span::new(4, 5), Expr::IntLit(1.into()))
+            )
+        );
+    }
+
+    #[test]
+    fn subtraction_unspaced() {
+        assert_eq!(
+            ex("a-1"),
+            chain1(
+                Spanned::new(Span::new(0, 1), Expr::Var("a".to_string())),
+                Spanned::new(Span::new(1, 2), "-".to_string()),
+                Spanned::new(Span::new(2, 3), Expr::IntLit(1.into()))
+            )
+        );
+    }
+
+    #[test]
+    fn ambiguous_minus_spacing_is_fatal_not_swallowed() {
+        // "f- 1" -- must hard-fail, not be silently reinterpreted as `f` applied
+        // to nothing (which is what a non-fatal treatment would produce).
+        let mut s = ParseState::new("f- 1");
+        let e = s.expr().unwrap_err();
+        assert!(e.fatal);
+    }
+
+    #[test]
+    fn negative_literal_immediately_inside_parens() {
+        // "(-40.0)" -- the `-` sits at the very start of a fresh atom (right
+        // after `(`), symmetric-spacing-wise indistinguishable from `a-b`'s
+        // own `-`, but there is no left operand here for it to subtract
+        // from. Used to be a hard "Expected an expression" parse error
+        // (found via `corpus/programs/numeric/clamp-and-abs.knot`).
+        let Expr::Negate(inner) = ex("(-40.0)") else {
+            panic!("expected Negate")
+        };
+        assert_eq!(inner.node, Expr::FloatLit("40.0".parse().unwrap()));
+    }
+
+    #[test]
+    fn negative_literal_as_first_list_element() {
+        // "[-5, -6]" -- same root cause as the parens case above, just after
+        // `[` instead. The second element (after `, `, so genuinely
+        // space-before/no-space-after) already worked before this fix.
+        let Expr::List(elems) = ex("[-5, -6]") else {
+            panic!("expected List")
+        };
+        assert_eq!(elems.len(), 2);
+        assert!(matches!(elems[0].node, Expr::Negate(_)));
+        assert!(matches!(elems[1].node, Expr::Negate(_)));
+    }
+
+    #[test]
+    fn negative_literal_as_a_parenthesized_application_argument() {
+        // "f (-5)" -- an application argument that's itself a parenthesized
+        // negative literal; distinct from `negate_literal_argument`'s bare
+        // `f -1` (no parens at all).
+        let Expr::App(f, arg) = ex("f (-5)") else {
+            panic!("expected App")
+        };
+        assert_eq!(f.node, Expr::Var("f".to_string()));
+        assert!(matches!(arg.node, Expr::Negate(_)));
+    }
+
+    #[test]
+    fn subtraction_still_wins_over_negation_for_a_real_left_operand() {
+        // Fixing the parenthesized/bracketed cases above must not turn `f -
+        // g` (a trailing application argument shaped like subtraction) back
+        // into `f` applied to `(-g)` -- it's still subtraction, resolved by
+        // `expr_app`'s own trailing-argument loop backing off before ever
+        // calling into `expr_atom`.
+        assert_eq!(
+            ex("f - g"),
+            chain1(
+                Spanned::new(Span::new(0, 1), Expr::Var("f".to_string())),
+                Spanned::new(Span::new(2, 3), "-".to_string()),
+                Spanned::new(Span::new(4, 5), Expr::Var("g".to_string()))
+            )
+        );
+    }
+
+    #[test]
+    fn bare_operator_section_is_an_opref_not_a_lambda() {
+        // "(+)" -- Elm-style bare section only, no Haskell partial sections.
+        // Does not desugar (spec §7.6): it's a first-class reference to the
+        // operator's own function, the same "regular function call"
+        // representation any other name would have, not a synthesized lambda.
+        assert_eq!(ex("(+)"), Expr::OpRef("+".to_string()));
+    }
+
+    #[test]
+    fn cons_and_append_sections_use_their_own_operator() {
+        assert_eq!(ex("(:)"), Expr::OpRef(":".to_string()));
+        assert_eq!(ex("(<>)"), Expr::OpRef("<>".to_string()));
+    }
+
+    #[test]
+    fn bare_minus_section_is_subtraction_not_negation() {
+        // "(-)" -- immediately followed by `)`, so unambiguously the
+        // subtraction function, matching Haskell's own convention (never
+        // negation, which always needs a following operand).
+        assert_eq!(ex("(-)"), Expr::OpRef("-".to_string()));
+    }
+
+    #[test]
+    fn operator_section_used_as_an_application_argument() {
+        // "zipWith (+) xs ys" -- the whole motivating use case. `(+)` is an
+        // ordinary atom now, so this is ordinary nested application, exactly
+        // as if `zipWith`'s second argument were any other named function.
+        let Expr::App(f, arg) = ex("zipWith (+) xs") else {
+            panic!("expected App")
+        };
+        let Expr::App(f2, arg1) = f.node else {
+            panic!("expected nested App")
+        };
+        assert_eq!(f2.node, Expr::Var("zipWith".to_string()));
+        assert_eq!(arg1.node, Expr::OpRef("+".to_string()));
+        assert_eq!(arg.node, Expr::Var("xs".to_string()));
+    }
+
+    #[test]
+    fn partial_section_is_a_fatal_parse_error_not_silently_dropped() {
+        // "(+ 1)" -- Knot deliberately doesn't support Haskell-style partial
+        // sections; this must hard-fail with a helpful message, not silently
+        // parse as something else or leave confusing leftover input.
+        let mut s = ParseState::new("(+ 1)");
+        let e = s.expr().unwrap_err();
+        assert!(e.fatal);
+    }
+
+    #[test]
+    fn negative_literal_in_parens_is_unaffected_by_section_support() {
+        // "(-40.0)" must still mean negation, not an attempted `(-...)`
+        // section -- guards against try_operator_section over-firing on
+        // `-`'s own dual meaning (regression check for this exact fix).
+        let Expr::Negate(inner) = ex("(-40.0)") else {
+            panic!("expected Negate")
+        };
+        assert_eq!(inner.node, Expr::FloatLit("40.0".parse().unwrap()));
+    }
+
+    #[test]
+    fn operator_chains_stay_flat_in_source_order() {
+        // Grouping by fixity happens in knot-canonical; the parser only
+        // records operands and operators in order.
+        assert_eq!(chain_ops(&ex("1 + 2 * 3")), ["+", "*"]);
+        assert_eq!(chain_ops(&ex("2 ^ 3 ^ 2")), ["^", "^"]);
+        assert_eq!(chain_ops(&ex("a == b == c")), ["==", "=="]);
+        let Expr::OpChain(first, rest) = ex("f x + g y") else {
+            panic!("expected OpChain")
+        };
+        assert!(matches!(first.node, Expr::App(_, _)));
+        assert!(matches!(rest[0].1.node, Expr::App(_, _)));
+    }
+
+    #[test]
+    fn longest_operator_symbol_wins() {
+        // `>>=` mustn't stop short at `>>` and strand `= f`, nor `<*>` at `<`.
+        assert_eq!(chain_ops(&ex("m >>= f >>= g")), [">>=", ">>="]);
+        assert_eq!(chain_ops(&ex("mf <*> ma")), ["<*>"]);
+        assert_eq!(chain_ops(&ex("a |> f >> g")), ["|>", ">>"]);
+    }
+
+    #[test]
+    fn user_defined_operator_symbols_parse() {
+        assert_eq!(chain_ops(&ex("a +++ b <+> c")), ["+++", "<+>"]);
+        assert_eq!(chain_ops(&ex("a ~= b")), ["~="]);
+        assert_eq!(ex("(+++)"), Expr::OpRef("+++".to_string()));
+    }
+
+    #[test]
+    fn backticked_names_are_infix_operators() {
+        assert_eq!(chain_ops(&ex("7 `div` 2")), ["div"]);
+        assert_eq!(chain_ops(&ex("k `Map.member` m + 1")), ["Map.member", "+"]);
+        assert!(err("a `Foo` b").fatal);
+        assert!(err("a `div b").fatal);
+    }
+
+    #[test]
+    fn a_bare_div_is_an_ordinary_argument_not_an_operator() {
+        // Only backticks make a name infix.
+        let Expr::App(_, arg) = ex("a div") else {
+            panic!("expected App")
+        };
+        assert_eq!(arg.node, Expr::Var("div".to_string()));
+    }
+
+    #[test]
+    fn a_comment_ends_an_operator_symbol() {
+        let mut s = ParseState::new(
+            "a +-- trailing comment
+",
+        );
+        let result = s.expr();
+        assert!(result.is_err() || !s.is_eof());
+    }
+
+    #[test]
+    fn a_lambda_or_block_can_end_an_operator_chain() {
+        let Expr::OpChain(_, rest) = ex("xs |> \\x -> x + 1") else {
+            panic!("expected OpChain")
+        };
+        assert_eq!(rest.len(), 1);
+        assert!(matches!(rest[0].1.node, Expr::Lambda(_, _)));
+        let Expr::OpChain(_, rest) = ex("a + if c then 1 else 2") else {
+            panic!("expected OpChain")
+        };
+        assert!(matches!(rest[0].1.node, Expr::If(_, _, _)));
+        assert!(matches!(
+            ex("m >>= do\n  pure 1"),
+            Expr::OpChain(_, ref rest) if matches!(rest[0].1.node, Expr::Do(_, _))
+        ));
+    }
+
+    #[test]
+    fn identifiers_may_contain_apostrophes() {
+        assert_eq!(ex("x'"), Expr::Var("x'".to_string()));
+        assert_eq!(ex("foldl'"), Expr::Var("foldl'".to_string()));
+    }
+
+    #[test]
+    fn do_let_statement_scopes_over_the_rest_of_the_block() {
+        let src = "do\n  x <- a\n  let y = x\n      z = y\n  pure z";
+        let Expr::Do(stmts, body) = ex(src) else {
+            panic!("expected Do")
+        };
+        assert_eq!(stmts.len(), 2);
+        assert!(matches!(&stmts[1], DoStmt::Let(bindings) if bindings.len() == 2));
+        assert!(matches!(body.node, Expr::App(_, _)));
+    }
+
+    #[test]
+    fn do_let_preserves_the_original_block() {
+        let src = "do\n  let y = 1\n  x <- a\n  pure x";
+        let Expr::Do(stmts, _) = ex(src) else {
+            panic!("expected Do even with a leading let")
+        };
+        assert_eq!(stmts.len(), 2);
+        assert!(matches!(&stmts[0], DoStmt::Let(_)));
+        assert!(matches!(&stmts[1], DoStmt::Bind(_, _)));
+        assert!(matches!(ex("do\n  pure 1"), Expr::Do(ref stmts, _) if stmts.is_empty()));
+    }
+
+    #[test]
+    fn let_in_inside_do_is_an_ordinary_expression_statement() {
+        let src = "do\n  let y = 1 in f y\n  pure 2";
+        let Expr::Do(stmts, _) = ex(src) else {
+            panic!("expected Do")
+        };
+        assert!(matches!(stmts[0], DoStmt::Expr(ref e) if matches!(e.node, Expr::Let(_, _))));
+    }
+
+    #[test]
+    fn do_cannot_end_with_a_let() {
+        let mut s = ParseState::new("do\n  x <- a\n  let y = x");
+        assert!(s.expr().is_err());
+    }
+
+    #[test]
+    fn double_colon_is_not_cons_in_expressions_either() {
+        // leftover "::" input makes this fail via the `ex`/`err` harness's
+        // is_eof check, same mechanism as the corpus's cons-double-colon fixture
+        let mut s = ParseState::new("1 :: []");
+        let result = s.expr().unwrap();
+        assert_eq!(result.node, Expr::IntLit(1.into()));
+        assert!(!s.is_eof());
+    }
+
+    #[test]
+    fn dot_composition_is_gone() {
+        // "f . g" -- `.` is never a recognized standalone token, so this leaves
+        // " . g" unconsumed after parsing just `f`.
+        let mut s = ParseState::new("f . g");
+        let result = s.expr().unwrap();
+        assert_eq!(result.node, Expr::Var("f".to_string()));
+        assert!(!s.is_eof());
+    }
+
+    #[test]
+    fn dollar_is_not_supported() {
+        let mut s = ParseState::new("f $ y");
+        let result = s.expr().unwrap();
+        assert_eq!(result.node, Expr::Var("f".to_string()));
+        assert!(!s.is_eof());
+    }
+
+    #[test]
+    fn if_then_else() {
+        let Expr::If(cond, then_b, else_b) = ex("if x < 0 then negate x else x") else {
+            panic!("expected If")
+        };
+        assert_eq!(chain_ops(&cond.node), ["<"]);
+        assert!(matches!(then_b.node, Expr::App(_, _)));
+        assert_eq!(else_b.node, Expr::Var("x".to_string()));
+    }
+
+    #[test]
+    fn let_multi_binding() {
+        let src = "let\n  radius = 5.0\n  pi = 3.14159\nin pi * radius * radius";
+        let Expr::Let(bindings, body) = ex(src) else {
+            panic!("expected Let")
+        };
+        assert_eq!(bindings.len(), 2);
+        assert_eq!(bindings[0].0.node, Pattern::Var("radius".to_string()));
+        assert_eq!(bindings[1].0.node, Pattern::Var("pi".to_string()));
+        assert_eq!(chain_ops(&body.node), ["*", "*"]);
+    }
+
+    #[test]
+    fn let_bound_local_function_takes_parameters() {
+        // "let go acc rest = ... in ..." -- previously a hard "expected `=`"
+        // parse error (found via corpus/programs/data_structures/
+        // linked-list-reverse.knot); desugars to the same shape the
+        // existing `let go = \acc rest -> ...` workaround already produced.
+        let src = "let\n  addPair acc x = acc + x\nin addPair 1 2";
+        let Expr::Let(bindings, body) = ex(src) else {
+            panic!("expected Let")
+        };
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].0.node, Pattern::Var("addPair".to_string()));
+        let Expr::Lambda(params, lambda_body) = &bindings[0].1.node else {
+            panic!(
+                "expected the params folded into a Lambda, got {:?}",
+                bindings[0].1.node
+            )
+        };
+        assert_eq!(params.len(), 2);
+        assert!(matches!(params[0].node, Pattern::Var(ref n) if n == "acc"));
+        assert!(matches!(params[1].node, Pattern::Var(ref n) if n == "x"));
+        assert_eq!(chain_ops(&lambda_body.node), ["+"]);
+        assert!(matches!(body.node, Expr::App(_, _)));
+    }
+
+    #[test]
+    fn let_bound_recursive_local_function_with_parameters() {
+        // The exact motivating idiom: a local recursive helper accumulating
+        // into a parameter, called from within its own body.
+        let src = "let\n  go acc xs = case xs of\n    [] -> acc\n    h : t -> go (h : acc) t\nin go [] [1, 2, 3]";
+        let Expr::Let(bindings, _) = ex(src) else {
+            panic!("expected Let")
+        };
+        assert_eq!(bindings[0].0.node, Pattern::Var("go".to_string()));
+        let Expr::Lambda(params, lambda_body) = &bindings[0].1.node else {
+            panic!("expected Lambda")
+        };
+        assert_eq!(params.len(), 2);
+        assert!(matches!(lambda_body.node, Expr::Case(_, _)));
+    }
+
+    #[test]
+    fn let_bound_destructuring_pattern_still_rejects_params() {
+        // A non-`Var` pattern (tuple destructuring here) never enters the
+        // params loop at all -- "let (a, b) c = ..." has no sensible
+        // meaning, so this must still fail exactly as before this fix
+        // (a plain "expected `=`" from `expect_byte`, not a parse of `c`
+        // as a bogus parameter).
+        let mut s = ParseState::new("let\n  (a, b) c = a\nin a");
+        assert!(s.expr().is_err());
+    }
+
+    #[test]
+    fn let_nested() {
+        let src =
+            "let\n  outer =\n    let\n      inner = 10\n    in\n      inner + 1\nin outer * 2";
+        let Expr::Let(bindings, _) = ex(src) else {
+            panic!("expected outer Let")
+        };
+        assert_eq!(bindings.len(), 1);
+        assert!(matches!(bindings[0].1.node, Expr::Let(_, _)));
+    }
+
+    #[test]
+    fn let_does_not_swallow_next_binding_as_application_argument() {
+        // The critical layout-correctness case: without the `continues_layout`
+        // check, `expr_app` would happily try to treat "pi" as another argument
+        // applied to `5.0`, since nothing about `5.0`'s *type* rules that out
+        // syntactically -- only its column (not indented past the block's own
+        // reference column) does.
+        let src = "let\n  radius = 5.0\n  pi = 3.14159\nin radius";
+        let Expr::Let(bindings, _) = ex(src) else {
+            panic!("expected Let")
+        };
+        assert_eq!(bindings.len(), 2);
+        assert_eq!(bindings[0].1.node, Expr::FloatLit("5.0".parse().unwrap()));
+    }
+
+    #[test]
+    fn case_multi_arm() {
+        let src = "case shape of\n  Circle r -> r\n  Rectangle w h -> w";
+        let Expr::Case(scrutinee, arms) = ex(src) else {
+            panic!("expected Case")
+        };
+        assert_eq!(scrutinee.node, Expr::Var("shape".to_string()));
+        assert_eq!(arms.len(), 2);
+        assert!(matches!(arms[0].0.node, Pattern::Ctor(_, _)));
+    }
+
+    #[test]
+    fn lambda_single_arg() {
+        let Expr::Lambda(params, body) = ex(r"\x -> x + 1") else {
+            panic!("expected Lambda")
+        };
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0].node, Pattern::Var("x".to_string()));
+        assert_eq!(chain_ops(&body.node), ["+"]);
+    }
+
+    #[test]
+    fn lambda_multi_arg() {
+        let Expr::Lambda(params, _) = ex(r"\x y -> x + y") else {
+            panic!("expected Lambda")
+        };
+        assert_eq!(params.len(), 2);
+    }
+
+    #[test]
+    fn do_block_with_bind_and_final_expr() {
+        let src = "do\n  x <- someOption\n  y <- anotherOption\n  pure (x + y)";
+        let Expr::Do(stmts, final_expr) = ex(src) else {
+            panic!("expected Do")
+        };
+        assert_eq!(stmts.len(), 2);
+        assert!(matches!(stmts[0], DoStmt::Bind(_, _)));
+        assert!(matches!(final_expr.node, Expr::App(_, _)));
+    }
+
+    #[test]
+    fn do_block_must_end_with_plain_expression() {
+        let src = "do\n  x <- someOption\n  y <- anotherOption";
+        let mut s = ParseState::new(src);
+        assert!(s.expr().is_err());
+    }
+
+    #[test]
+    fn record_construct() {
+        let Expr::Record(fields) = ex("{ x = 0.0, y = 0.0 }") else {
+            panic!("expected Record")
+        };
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields[0].0, "x");
+    }
+
+    #[test]
+    fn empty_record() {
+        assert_eq!(ex("{}"), Expr::Record(Vec::new()));
+    }
+
+    #[test]
+    fn record_update() {
+        let Expr::RecordUpdate(base, fields) = ex("{ point | x = 1.0 }") else {
+            panic!("expected RecordUpdate")
+        };
+        assert_eq!(base.node, Expr::Var("point".to_string()));
+        assert_eq!(fields.len(), 1);
+    }
+
+    #[test]
+    fn list_literal() {
+        assert_eq!(
+            ex("[2, 3, 5]"),
+            Expr::List(vec![
+                Spanned::new(Span::new(1, 2), Expr::IntLit(2.into())),
+                Spanned::new(Span::new(4, 5), Expr::IntLit(3.into())),
+                Spanned::new(Span::new(7, 8), Expr::IntLit(5.into())),
+            ])
+        );
+    }
+
+    #[test]
+    fn empty_list() {
+        assert_eq!(ex("[]"), Expr::List(Vec::new()));
+    }
+
+    #[test]
+    fn tuple_and_unit_and_grouping() {
+        assert_eq!(ex("()"), Expr::Unit);
+        assert_eq!(ex("(1)"), Expr::IntLit(1.into()));
+        assert_eq!(
+            ex("(1, \"a\")"),
+            Expr::Tuple(vec![
+                Spanned::new(Span::new(1, 2), Expr::IntLit(1.into())),
+                Spanned::new(Span::new(4, 7), Expr::StringLit("a".to_string())),
+            ])
+        );
+    }
+
+    #[test]
+    fn named_hole_in_expression_position_is_fatal() {
+        let mut s = ParseState::new("zipWith _f _xs _ys");
+        let e = s.expr().unwrap_err();
+        assert!(e.fatal);
+    }
+
+    #[test]
+    fn anonymous_hole_in_expression_position_is_fine() {
+        // Left-associative: App(App(App(f, a), _), c)
+        let Expr::App(inner1, c) = ex("f a _ c") else {
+            panic!("expected App")
+        };
+        let Expr::App(inner2, hole) = inner1.node else {
+            panic!("expected nested App")
+        };
+        let Expr::App(f, a) = inner2.node else {
+            panic!("expected doubly-nested App")
+        };
+        assert_eq!(f.node, Expr::Var("f".to_string()));
+        assert_eq!(a.node, Expr::Var("a".to_string()));
+        assert_eq!(hole.node, Expr::Hole);
+        assert_eq!(c.node, Expr::Var("c".to_string()));
+    }
+
+    #[test]
+    fn map_fromlist_style_qualified_application() {
+        let Expr::App(f, arg) = ex("Map.fromList xs") else {
+            panic!("expected App")
+        };
+        assert_eq!(f.node, Expr::Var("Map.fromList".to_string()));
+        assert_eq!(arg.node, Expr::Var("xs".to_string()));
+    }
+
+    #[test]
+    fn negative_pattern_literal_still_parses_via_pattern_grammar() {
+        // sanity check that pattern parsing (used by case arms) is reachable and
+        // unaffected by expr-level minus classification
+        let mut s = ParseState::new("-1");
+        let p = s.pattern().unwrap();
+        assert_eq!(p.node, Pattern::Literal(PatternLiteral::Int((-1).into())));
+    }
+
+    #[test]
+    fn prefix_annotation_binds_to_the_immediately_following_atom() {
+        // "@nodeId("n1") f y" -- the annotation attaches to `f`, the closest
+        // *following* atom, not to the whole `f y` application.
+        let Expr::App(annotated_f, y) = ex(r#"@nodeId("n1") f y"#) else {
+            panic!("expected App")
+        };
+        assert_eq!(y.node, Expr::Var("y".to_string()));
+        let Expr::Annotated(anns, target) = &annotated_f.node else {
+            panic!("expected Annotated")
+        };
+        assert_eq!(anns.len(), 1);
+        assert_eq!(anns[0].key, "nodeId");
+        assert_eq!(target.node, Expr::Var("f".to_string()));
+    }
+
+    #[test]
+    fn prefix_annotation_on_an_argument() {
+        // "f @nodeId("n1") y" -- annotates `y`, not the whole `f y`.
+        let Expr::App(f, annotated_y) = ex(r#"f @nodeId("n1") y"#) else {
+            panic!("expected App")
+        };
+        assert_eq!(f.node, Expr::Var("f".to_string()));
+        let Expr::Annotated(_, target) = &annotated_y.node else {
+            panic!("expected Annotated")
+        };
+        assert_eq!(target.node, Expr::Var("y".to_string()));
+    }
+
+    #[test]
+    fn parens_widen_annotation_scope_to_a_whole_application() {
+        let Expr::Annotated(_, target) = ex(r#"@{ nodeId = "n1" } (f a b)"#) else {
+            panic!("expected Annotated")
+        };
+        assert!(matches!(target.node, Expr::App(_, _)));
+    }
+
+    #[test]
+    fn annotation_desugars_single_and_multi_arg_the_same_as_block_form() {
+        let single = ex(r#"@label("My Function") f"#);
+        let Expr::Annotated(anns, _) = &single else {
+            panic!("expected Annotated")
+        };
+        assert_eq!(
+            anns[0].value.node,
+            Expr::StringLit("My Function".to_string())
+        );
+
+        let multi = ex("@position(100, 200) f");
+        let Expr::Annotated(anns, _) = &multi else {
+            panic!("expected Annotated")
+        };
+        assert!(matches!(anns[0].value.node, Expr::Tuple(_)));
+    }
+
+    #[test]
+    fn hole_cannot_carry_an_annotation() {
+        let mut s = ParseState::new(r#"@nodeId("x") _"#);
+        let e = s.expr().unwrap_err();
+        assert!(e.fatal);
+    }
+
+    #[test]
+    fn let_binding_annotation_wraps_the_value_in_annotated() {
+        let src = "let\n  @nodeId(\"n1\")\n  @position(150, 300)\n  result = myFunc 42\nin result";
+        let Expr::Let(bindings, _) = ex(src) else {
+            panic!("expected Let")
+        };
+        assert_eq!(bindings.len(), 1);
+        let Expr::Annotated(anns, target) = &bindings[0].1.node else {
+            panic!("expected Annotated value")
+        };
+        assert_eq!(anns.len(), 2);
+        assert!(matches!(target.node, Expr::App(_, _)));
+    }
+
+    #[test]
+    fn let_binding_without_annotation_is_unaffected() {
+        let src = "let\n  radius = 5.0\nin radius";
+        let Expr::Let(bindings, _) = ex(src) else {
+            panic!("expected Let")
+        };
+        assert_eq!(bindings[0].1.node, Expr::FloatLit("5.0".parse().unwrap()));
+    }
+}

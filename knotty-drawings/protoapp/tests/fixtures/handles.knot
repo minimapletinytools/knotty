@@ -1,0 +1,16 @@
+module Drawing exposing (..)
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 500 420
+    [ rect 30 40 80 60 |> set_fill blue |> set_transform [Translate 10 5, Rotate 30 Nothing]
+    , circle 210 120 30 |> set_fill tomato
+    , ellipse 70 210 30 15 |> set_fill orange
+    , polyline [point 220 200, point 260 240, point 290 190] |> set_fill green
+    , text 20 310 "Hello" |> set_font_size 20
+    , group (map (\w -> rect 20 20 (2 * w) 40) [10,30]) |> set_transform [Translate 200 280]
+    , group (map (\unused -> rect 360 200 50 50) [1])
+    , nested_svg 100 100 [rect 10 20 40 30 |> set_fill purple] |> set_transform [Translate 330 20, Scale 1.5 1.5]
+    , path [MoveTo 330 330, CurveTo 360 300 400 370 430 330, ClosePath] |> set_fill orange
+    , let width = 50 in rect 20 350 (if width < 100 then width else 100) 40 |> set_fill green
+    ] |> set_view_box 0 0 500 420

@@ -1,0 +1,216 @@
+module Map exposing (Map, empty, singleton, isEmpty, size, keys, values, toList, fromList, get, member, insert, insertWith, adjust, remove, union, foldrWithKey)
+
+-- Finite maps with ordered keys, used qualified like Haskell's Data.Map:
+-- `Map.Map k v`, `Map.get`, or `import Map exposing (Map)`.
+--
+-- A size-balanced binary tree (Adams' trees, as in Haskell's containers):
+-- every lookup, insert, and remove is O(log n), and `toList` is in
+-- ascending key order. Knot keeps its own names for a few functions
+-- (`get` for lookup, `remove` for delete, `values` for elems).
+
+type Map k v = Tip | Bin Int k v (Map k v) (Map k v)
+
+empty :: Map k v
+empty = Tip
+
+singleton :: k -> v -> Map k v
+singleton k v = Bin 1 k v Tip Tip
+
+size :: Map k v -> Int
+size m =
+  case m of
+    Tip -> 0
+    Bin n _ _ _ _ -> n
+
+isEmpty :: Map k v -> Bool
+isEmpty m =
+  case m of
+    Tip -> True
+    _ -> False
+
+get :: Ord k => k -> Map k v -> Maybe v
+get k m =
+  case m of
+    Tip -> Nothing
+    Bin _ kx x l r ->
+      case compare k kx of
+        LT -> get k l
+        GT -> get k r
+        EQ -> Just x
+
+member :: Ord k => k -> Map k v -> Bool
+member k m = maybe False (const True) (get k m)
+
+insert :: Ord k => k -> v -> Map k v -> Map k v
+insert kx x m =
+  case m of
+    Tip -> singleton kx x
+    Bin n ky y l r ->
+      case compare kx ky of
+        LT -> balance ky y (insert kx x l) r
+        GT -> balance ky y l (insert kx x r)
+        EQ -> Bin n kx x l r
+
+-- `insertWith f k new m` combines with an existing value as `f new old`.
+insertWith :: Ord k => (v -> v -> v) -> k -> v -> Map k v -> Map k v
+insertWith f k new m =
+  case get k m of
+    Nothing -> insert k new m
+    Just old -> insert k (f new old) m
+
+adjust :: Ord k => (v -> v) -> k -> Map k v -> Map k v
+adjust f k m =
+  case get k m of
+    Nothing -> m
+    Just v -> insert k (f v) m
+
+remove :: Ord k => k -> Map k v -> Map k v
+remove k m =
+  case m of
+    Tip -> Tip
+    Bin _ kx x l r ->
+      case compare k kx of
+        LT -> balance kx x (remove k l) r
+        GT -> balance kx x l (remove k r)
+        EQ -> glue l r
+
+-- Left-biased: a key in both keeps the first map's value.
+union :: Ord k => Map k v -> Map k v -> Map k v
+union a b = foldrWithKey insert b a
+
+foldrWithKey :: (k -> v -> b -> b) -> b -> Map k v -> b
+foldrWithKey f z m =
+  case m of
+    Tip -> z
+    Bin _ k v l r -> foldrWithKey f (f k v (foldrWithKey f z r)) l
+
+toList :: Map k v -> List (k, v)
+toList m = foldrWithKey (\k v acc -> (k, v) : acc) [] m
+
+keys :: Map k v -> List k
+keys m = foldrWithKey (\k _ acc -> k : acc) [] m
+
+values :: Map k v -> List v
+values m = foldrWithKey (\_ v acc -> v : acc) [] m
+
+fromList :: Ord k => List (k, v) -> Map k v
+fromList pairs = foldl (\m (k, v) -> insert k v m) empty pairs
+
+
+-- Balancing (delta = 3, ratio = 2) ---------------------------------------------
+
+bin :: k -> v -> Map k v -> Map k v -> Map k v
+bin k v l r = Bin (size l + size r + 1) k v l r
+
+balance :: k -> v -> Map k v -> Map k v -> Map k v
+balance k v l r =
+  let
+    sl = size l
+    sr = size r
+  in
+    if sl + sr <= 1 then bin k v l r
+    else if sr > 3 * sl then rotateL k v l r
+    else if sl > 3 * sr then rotateR k v l r
+    else bin k v l r
+
+rotateL :: k -> v -> Map k v -> Map k v -> Map k v
+rotateL k v l r =
+  case r of
+    Bin _ _ _ ly ry -> if size ly < 2 * size ry then singleL k v l r else doubleL k v l r
+    Tip -> bin k v l r
+
+rotateR :: k -> v -> Map k v -> Map k v -> Map k v
+rotateR k v l r =
+  case l of
+    Bin _ _ _ ly ry -> if size ry < 2 * size ly then singleR k v l r else doubleR k v l r
+    Tip -> bin k v l r
+
+singleL :: k -> v -> Map k v -> Map k v -> Map k v
+singleL k1 v1 t1 r =
+  case r of
+    Bin _ k2 v2 t2 t3 -> bin k2 v2 (bin k1 v1 t1 t2) t3
+    Tip -> bin k1 v1 t1 r
+
+singleR :: k -> v -> Map k v -> Map k v -> Map k v
+singleR k1 v1 l t3 =
+  case l of
+    Bin _ k2 v2 t1 t2 -> bin k2 v2 t1 (bin k1 v1 t2 t3)
+    Tip -> bin k1 v1 l t3
+
+doubleL :: k -> v -> Map k v -> Map k v -> Map k v
+doubleL k1 v1 t1 r =
+  case r of
+    Bin _ k2 v2 (Bin _ k3 v3 t2 t3) t4 -> bin k3 v3 (bin k1 v1 t1 t2) (bin k2 v2 t3 t4)
+    _ -> singleL k1 v1 t1 r
+
+doubleR :: k -> v -> Map k v -> Map k v -> Map k v
+doubleR k1 v1 l t4 =
+  case l of
+    Bin _ k2 v2 t1 (Bin _ k3 v3 t2 t3) -> bin k3 v3 (bin k2 v2 t1 t2) (bin k1 v1 t3 t4)
+    _ -> singleR k1 v1 l t4
+
+-- Joins two trees whose keys are already in order (every key of `l` below
+-- every key of `r`).
+glue :: Map k v -> Map k v -> Map k v
+glue l r =
+  case (l, r) of
+    (Tip, _) -> r
+    (_, Tip) -> l
+    _ ->
+      if size l > size r then
+        case deleteFindMax l of
+          (km, vm, rest) -> balance km vm rest r
+      else
+        case deleteFindMin r of
+          (km, vm, rest) -> balance km vm l rest
+
+deleteFindMin :: Map k v -> (k, v, Map k v)
+deleteFindMin t =
+  case t of
+    Bin _ k v Tip r -> (k, v, r)
+    Bin _ k v l r ->
+      case deleteFindMin l of
+        (km, vm, rest) -> (km, vm, balance k v rest r)
+    Tip -> error "Map.deleteFindMin: empty map"
+
+deleteFindMax :: Map k v -> (k, v, Map k v)
+deleteFindMax t =
+  case t of
+    Bin _ k v l Tip -> (k, v, l)
+    Bin _ k v l r ->
+      case deleteFindMax r of
+        (km, vm, rest) -> (km, vm, balance k v l rest)
+    Tip -> error "Map.deleteFindMax: empty map"
+
+
+-- Instances ------------------------------------------------------------------
+
+instance (Eq k, Eq v) => Eq (Map k v) where
+  (==) a b = size a == size b && toList a == toList b
+
+instance (Ord k, Ord v) => Ord (Map k v) where
+  compare a b = compare (toList a) (toList b)
+
+instance (Show k, Show v) => Show (Map k v) where
+  show m = "fromList " <> show (toList m)
+
+instance Ord k => Semigroup (Map k v) where
+  (<>) = union
+
+instance Ord k => Monoid (Map k v) where
+  empty = Tip
+
+instance Functor (Map k) where
+  map f m =
+    case m of
+      Tip -> Tip
+      Bin n k v l r -> Bin n k (f v) (map f l) (map f r)
+
+instance Foldable (Map k) where
+  foldr f z m = foldrWithKey (\_ v acc -> f v acc) z m
+
+instance Traversable (Map k) where
+  traverse f m =
+    case m of
+      Tip -> pure Tip
+      Bin n k v l r -> pure (\l2 v2 r2 -> Bin n k v2 l2 r2) <*> traverse f l <*> f v <*> traverse f r

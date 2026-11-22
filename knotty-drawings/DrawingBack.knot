@@ -1,0 +1,494 @@
+module DrawingBack exposing (..)
+
+import Types exposing (..)
+import Requests exposing (..)
+
+type alias Feed a = { value : a, pinned : Maybe a }
+
+-- A distinct request type makes creation an explicit editableShapes policy.
+-- Registering its constructor recipe does not enable growth on every Node list.
+type ShapeAdditions = ShapeAdditions (ListConstraint NodeRequest)
+
+instance Constriction ShapeAdditions (List Node) where
+  fits (ShapeAdditions request) actual = fits request actual
+  materialize request = do
+    (cx, cy, r) <- circleAdditionArguments { value = [], pinned = Nothing } request
+    pure [ShapeNode defaultCommon (Circle { cx = cx, cy = cy, r = r, fill = defaultFill, stroke = defaultStroke })]
+
+🧶EditableShapes :: (Feed (List Node), Feed (List Node)) -> ListConstraint NodeRequest -> Maybe (ListConstraint NodeRequest, ShapeAdditions)
+🧶EditableShapes (generated, additions) request = do
+  (left, right) <- splitListRequest (effectiveFeed generated) request
+  let wanted = ShapeAdditions right
+  if pinAllows generated left && pinAllows additions wanted
+  then Just (left, wanted) else Nothing
+
+unravelShapeAdditions :: (Feed Node, Feed (List Node)) -> ShapeAdditions -> Maybe (FieldRequest NodeRequest, FieldRequest ShapeAdditions)
+unravelShapeAdditions _ (ShapeAdditions request) = case request of
+  AnyRemainder -> Just (NoRequest, NoRequest)
+  ExactEnd -> Nothing
+  Prepend head tail -> Just (RequestField head, RequestField (ShapeAdditions tail))
+
+-- One new circle per creation transaction. Existing slots are decomposed above;
+-- only an empty suffix is materialized. Reuse the circle's normal reverse rule
+-- with a fixed factory seed, then materialize the resulting constructor value.
+circleAdditionArguments :: Feed (List Node) -> ShapeAdditions -> Maybe (Float, Float, Float)
+circleAdditionArguments input (ShapeAdditions request) = case input.value of
+  _ : _ -> Nothing
+  [] -> case request of
+    Prepend wanted ExactEnd -> do
+      let x = { value = 0.0, pinned = Nothing }
+      let y = { value = 0.0, pinned = Nothing }
+      let radius = { value = 10.0, pinned = Nothing }
+      (rx, ry, rr) <- 🧶Circle (x, y, radius) wanted
+      cx <- chooseExact x rx
+      cy <- chooseExact y ry
+      r <- chooseExact radius rr
+      if r > 0 && not (isNaN cx || isInfinite cx || isNaN cy || isInfinite cy || isNaN r || isInfinite r)
+      then Just (cx, cy, r) else Nothing
+    _ -> Nothing
+
+-- Raw materialized constructors retain normal field routes on later edits.
+unravelShapeNode :: (Feed Common, Feed Shape) -> NodeRequest -> Maybe (CommonRequest, ShapeRequest)
+unravelShapeNode _ request = case request of
+  AnyNode -> Just (anyCommon, AnyShape)
+  ShapeNodeRequest common shape -> Just (common, shape)
+  _ -> Nothing
+
+unravelCircleShape :: Feed Circle -> ShapeRequest -> Maybe CircleRequest
+unravelCircleShape _ request = case request of
+  AnyShape -> Just anyCircle
+  RequestCircle circle -> Just circle
+  _ -> Nothing
+
+-- Rules route requests to existing source arguments. Fixed constructor defaults
+-- and pins are checked by the engine before any source is published.
+
+🧶Rect :: (Feed Float, Feed Float, Feed Float, Feed Float) -> NodeRequest -> Maybe (Maybe Float, Maybe Float, Maybe Float, Maybe Float)
+🧶Rect _ request = case request of
+  AnyNode -> Just (Nothing, Nothing, Nothing, Nothing)
+  ShapeNodeRequest _ geometry -> case geometry of
+    AnyShape -> Just (Nothing, Nothing, Nothing, Nothing)
+    RequestRect r -> Just (r.x, r.y, r.width, r.height)
+    _ -> Nothing
+  _ -> Nothing
+
+🧶RoundedRect :: (Feed Float, Feed Float, Feed Float, Feed Float, Feed Float) -> NodeRequest -> Maybe (Maybe Float, Maybe Float, Maybe Float, Maybe Float, Maybe Float)
+🧶RoundedRect _ request = case request of
+  AnyNode -> Just (Nothing, Nothing, Nothing, Nothing, Nothing)
+  ShapeNodeRequest _ geometry -> case geometry of
+    AnyShape -> Just (Nothing, Nothing, Nothing, Nothing, Nothing)
+    RequestRect r -> case merge r.rx r.ry of
+      Nothing -> Nothing
+      Just radius -> Just (r.x, r.y, r.width, r.height, radius)
+    _ -> Nothing
+  _ -> Nothing
+
+🧶Circle :: (Feed Float, Feed Float, Feed Float) -> NodeRequest -> Maybe (Maybe Float, Maybe Float, Maybe Float)
+🧶Circle _ request = case request of
+  AnyNode -> Just (Nothing, Nothing, Nothing)
+  ShapeNodeRequest _ geometry -> case geometry of
+    AnyShape -> Just (Nothing, Nothing, Nothing)
+    RequestCircle r -> Just (r.cx, r.cy, r.r)
+    _ -> Nothing
+  _ -> Nothing
+
+🧶Ellipse :: (Feed Float, Feed Float, Feed Float, Feed Float) -> NodeRequest -> Maybe (Maybe Float, Maybe Float, Maybe Float, Maybe Float)
+🧶Ellipse _ request = case request of
+  AnyNode -> Just (Nothing, Nothing, Nothing, Nothing)
+  ShapeNodeRequest _ geometry -> case geometry of
+    AnyShape -> Just (Nothing, Nothing, Nothing, Nothing)
+    RequestEllipse r -> Just (r.cx, r.cy, r.rx, r.ry)
+    _ -> Nothing
+  _ -> Nothing
+
+🧶Line :: (Feed Float, Feed Float, Feed Float, Feed Float) -> NodeRequest -> Maybe (Maybe Float, Maybe Float, Maybe Float, Maybe Float)
+🧶Line _ request = case request of
+  AnyNode -> Just (Nothing, Nothing, Nothing, Nothing)
+  ShapeNodeRequest _ geometry -> case geometry of
+    AnyShape -> Just (Nothing, Nothing, Nothing, Nothing)
+    RequestLine r -> Just (r.x1, r.y1, r.x2, r.y2)
+    _ -> Nothing
+  _ -> Nothing
+
+🧶Text :: (Feed Float, Feed Float, Feed String) -> NodeRequest -> Maybe (Maybe Float, Maybe Float, Maybe String)
+🧶Text _ request = case request of
+  AnyNode -> Just (Nothing, Nothing, Nothing)
+  ShapeNodeRequest _ geometry -> case geometry of
+    AnyShape -> Just (Nothing, Nothing, Nothing)
+    RequestText r -> Just (r.x, r.y, r.content)
+    _ -> Nothing
+  _ -> Nothing
+
+-- Exact list requests preserve the original number of source elements. Growth
+-- still needs the engine's prepared-draft protocol; it is not silently invented.
+exactList :: Maybe (List a) -> ListConstraint (Maybe a)
+exactList request = case request of
+  Nothing -> AnyRemainder
+  Just values -> exactItems values
+
+exactItems :: List a -> ListConstraint (Maybe a)
+exactItems values = case values of
+  [] -> ExactEnd
+  x : xs -> Prepend (Just x) (exactItems xs)
+
+type alias PointRequest = { x : Maybe Float, y : Maybe Float }
+pointList :: Maybe (List Point) -> ListConstraint PointRequest
+pointList request = case request of
+  Nothing -> AnyRemainder
+  Just values -> pointItems values
+
+pointItems :: List Point -> ListConstraint PointRequest
+pointItems values = case values of
+  [] -> ExactEnd
+  p : ps -> Prepend { x = Just p.x, y = Just p.y } (pointItems ps)
+
+🧶Polyline :: Feed (List Point) -> NodeRequest -> Maybe (ListConstraint PointRequest)
+🧶Polyline _ request = case request of
+  AnyNode -> Just AnyRemainder
+  ShapeNodeRequest _ geometry -> case geometry of
+    AnyShape -> Just AnyRemainder
+    RequestPolyline r -> Just (pointList r.points)
+    _ -> Nothing
+  _ -> Nothing
+
+🧶Polygon :: Feed (List Point) -> NodeRequest -> Maybe (ListConstraint PointRequest)
+🧶Polygon _ request = case request of
+  AnyNode -> Just AnyRemainder
+  ShapeNodeRequest _ geometry -> case geometry of
+    AnyShape -> Just AnyRemainder
+    RequestPolyline r -> Just (pointList r.points)
+    _ -> Nothing
+  _ -> Nothing
+
+🧶Path :: Feed (List PathCommand) -> NodeRequest -> Maybe (ListConstraint (Maybe PathCommand))
+🧶Path _ request = case request of
+  AnyNode -> Just AnyRemainder
+  ShapeNodeRequest _ geometry -> case geometry of
+    AnyShape -> Just AnyRemainder
+    RequestPath r -> Just (exactList r.commands)
+    _ -> Nothing
+  _ -> Nothing
+
+🧶Group :: Feed (List Node) -> NodeRequest -> Maybe (ListConstraint NodeRequest)
+🧶Group _ request = case request of
+  AnyNode -> Just AnyRemainder
+  ContainerNodeRequest r -> Just r.children
+  _ -> Nothing
+
+🧶Svg :: (Feed Float, Feed Float, Feed (List Node)) -> ContainerRequest -> Maybe (Maybe Float, Maybe Float, ListConstraint NodeRequest)
+🧶Svg _ request = case request.kind of
+  AnyKind -> Just (Nothing, Nothing, request.children)
+  ViewportKind r -> Just (r.width, r.height, request.children)
+  GroupKind -> Nothing
+
+🧶NestedSvg :: (Feed Float, Feed Float, Feed (List Node)) -> NodeRequest -> Maybe (Maybe Float, Maybe Float, ListConstraint NodeRequest)
+🧶NestedSvg inputs request = case request of
+  AnyNode -> Just (Nothing, Nothing, AnyRemainder)
+  ContainerNodeRequest r -> 🧶Svg inputs r
+  _ -> Nothing
+
+🧶ViewBox :: (Feed Float, Feed Float, Feed Float, Feed Float, Feed Container) -> ContainerRequest -> Maybe (Maybe Float, Maybe Float, Maybe Float, Maybe Float, ContainerRequest)
+🧶ViewBox _ request = case request.kind of
+  ViewportKind r -> case r.viewBox of
+    Just (Just b) -> Just (Just b.minX, Just b.minY, Just b.width, Just b.height, { request | kind = ViewportKind { r | viewBox = Nothing } })
+    Just Nothing -> Nothing
+    Nothing -> Just (Nothing, Nothing, Nothing, Nothing, request)
+  _ -> Just (Nothing, Nothing, Nothing, Nothing, request)
+
+-- A shared style setter can affect several descendants. Merge equal requests;
+-- reject incompatible ones instead of arbitrarily choosing one child.
+merge :: Eq a => Maybe a -> Maybe a -> Maybe (Maybe a)
+merge left right = case (left, right) of
+  (Nothing, _) -> Just right
+  (_, Nothing) -> Just left
+  (Just a, Just b) -> if a == b then Just left else Nothing
+
+extract :: Eq a => (ShapeRequest -> (Maybe a, ShapeRequest)) -> NodeRequest -> Maybe (Maybe a, NodeRequest)
+extract take request = case request of
+  AnyNode -> Just (Nothing, AnyNode)
+  ShapeNodeRequest common geometry ->
+    let (value, rest) = take geometry in Just (value, ShapeNodeRequest common rest)
+  ContainerNodeRequest container -> case extractChildren take container.children of
+    Nothing -> Nothing
+    Just (value, children) -> Just (value, ContainerNodeRequest { container | children = children })
+
+extractChildren :: Eq a => (ShapeRequest -> (Maybe a, ShapeRequest)) -> ListConstraint NodeRequest -> Maybe (Maybe a, ListConstraint NodeRequest)
+extractChildren take children = case children of
+  AnyRemainder -> Just (Nothing, AnyRemainder)
+  ExactEnd -> Just (Nothing, ExactEnd)
+  Prepend node rest -> case (extract take node, extractChildren take rest) of
+    (Just (a, nodeRest), Just (b, tailRest)) -> case merge a b of
+      Nothing -> Nothing
+      Just value -> Just (value, Prepend nodeRest tailRest)
+    _ -> Nothing
+
+fillPaint :: ShapeRequest -> (Maybe (Paint), ShapeRequest)
+fillPaint geometry = case geometry of
+  RequestRect r -> (r.fill.paint, RequestRect { r | fill = (let s = r.fill in { s | paint = Nothing }) })
+  RequestCircle r -> (r.fill.paint, RequestCircle { r | fill = (let s = r.fill in { s | paint = Nothing }) })
+  RequestEllipse r -> (r.fill.paint, RequestEllipse { r | fill = (let s = r.fill in { s | paint = Nothing }) })
+  RequestPolyline r -> (r.fill.paint, RequestPolyline { r | fill = (let s = r.fill in { s | paint = Nothing }) })
+  RequestPath r -> (r.fill.paint, RequestPath { r | fill = (let s = r.fill in { s | paint = Nothing }) })
+  RequestText r -> (r.fill.paint, RequestText { r | fill = (let s = r.fill in { s | paint = Nothing }) })
+  _ -> (Nothing, geometry)
+
+🧶Fill :: (Feed (Color), Feed Node) -> NodeRequest -> Maybe (Maybe (Color), NodeRequest)
+🧶Fill _ request = case extract fillPaint request of
+  Just (Nothing, rest) -> Just (Nothing, rest)
+  Just (Just (Solid color), rest) -> Just (Just color, rest)
+  _ -> Nothing
+
+strokePaint :: ShapeRequest -> (Maybe (Paint), ShapeRequest)
+strokePaint geometry = case geometry of
+  RequestRect r -> (r.stroke.paint, RequestRect { r | stroke = (let s = r.stroke in { s | paint = Nothing }) })
+  RequestCircle r -> (r.stroke.paint, RequestCircle { r | stroke = (let s = r.stroke in { s | paint = Nothing }) })
+  RequestEllipse r -> (r.stroke.paint, RequestEllipse { r | stroke = (let s = r.stroke in { s | paint = Nothing }) })
+  RequestLine r -> (r.stroke.paint, RequestLine { r | stroke = (let s = r.stroke in { s | paint = Nothing }) })
+  RequestPolyline r -> (r.stroke.paint, RequestPolyline { r | stroke = (let s = r.stroke in { s | paint = Nothing }) })
+  RequestPath r -> (r.stroke.paint, RequestPath { r | stroke = (let s = r.stroke in { s | paint = Nothing }) })
+  RequestText r -> (r.stroke.paint, RequestText { r | stroke = (let s = r.stroke in { s | paint = Nothing }) })
+  _ -> (Nothing, geometry)
+
+🧶Stroke :: (Feed (Color), Feed Node) -> NodeRequest -> Maybe (Maybe (Color), NodeRequest)
+🧶Stroke _ request = case extract strokePaint request of
+  Just (Nothing, rest) -> Just (Nothing, rest)
+  Just (Just (Solid color), rest) -> Just (Just color, rest)
+  _ -> Nothing
+
+🧶FillPaint :: (Feed (Paint), Feed Node) -> NodeRequest -> Maybe (Maybe (Paint), NodeRequest)
+🧶FillPaint _ request = extract fillPaint request
+
+🧶StrokePaint :: (Feed (Paint), Feed Node) -> NodeRequest -> Maybe (Maybe (Paint), NodeRequest)
+🧶StrokePaint _ request = extract strokePaint request
+
+fillOpacity :: ShapeRequest -> (Maybe (Float), ShapeRequest)
+fillOpacity geometry = case geometry of
+  RequestRect r -> (r.fill.opacity, RequestRect { r | fill = (let s = r.fill in { s | opacity = Nothing }) })
+  RequestCircle r -> (r.fill.opacity, RequestCircle { r | fill = (let s = r.fill in { s | opacity = Nothing }) })
+  RequestEllipse r -> (r.fill.opacity, RequestEllipse { r | fill = (let s = r.fill in { s | opacity = Nothing }) })
+  RequestPolyline r -> (r.fill.opacity, RequestPolyline { r | fill = (let s = r.fill in { s | opacity = Nothing }) })
+  RequestPath r -> (r.fill.opacity, RequestPath { r | fill = (let s = r.fill in { s | opacity = Nothing }) })
+  RequestText r -> (r.fill.opacity, RequestText { r | fill = (let s = r.fill in { s | opacity = Nothing }) })
+  _ -> (Nothing, geometry)
+
+🧶FillOpacity :: (Feed (Float), Feed Node) -> NodeRequest -> Maybe (Maybe (Float), NodeRequest)
+🧶FillOpacity _ request = extract fillOpacity request
+
+fillRule :: ShapeRequest -> (Maybe (FillRule), ShapeRequest)
+fillRule geometry = case geometry of
+  RequestRect r -> (r.fill.rule, RequestRect { r | fill = (let s = r.fill in { s | rule = Nothing }) })
+  RequestCircle r -> (r.fill.rule, RequestCircle { r | fill = (let s = r.fill in { s | rule = Nothing }) })
+  RequestEllipse r -> (r.fill.rule, RequestEllipse { r | fill = (let s = r.fill in { s | rule = Nothing }) })
+  RequestPolyline r -> (r.fill.rule, RequestPolyline { r | fill = (let s = r.fill in { s | rule = Nothing }) })
+  RequestPath r -> (r.fill.rule, RequestPath { r | fill = (let s = r.fill in { s | rule = Nothing }) })
+  RequestText r -> (r.fill.rule, RequestText { r | fill = (let s = r.fill in { s | rule = Nothing }) })
+  _ -> (Nothing, geometry)
+
+🧶FillRule :: (Feed (FillRule), Feed Node) -> NodeRequest -> Maybe (Maybe (FillRule), NodeRequest)
+🧶FillRule _ request = extract fillRule request
+
+strokeWidth :: ShapeRequest -> (Maybe (Float), ShapeRequest)
+strokeWidth geometry = case geometry of
+  RequestRect r -> (r.stroke.width, RequestRect { r | stroke = (let s = r.stroke in { s | width = Nothing }) })
+  RequestCircle r -> (r.stroke.width, RequestCircle { r | stroke = (let s = r.stroke in { s | width = Nothing }) })
+  RequestEllipse r -> (r.stroke.width, RequestEllipse { r | stroke = (let s = r.stroke in { s | width = Nothing }) })
+  RequestLine r -> (r.stroke.width, RequestLine { r | stroke = (let s = r.stroke in { s | width = Nothing }) })
+  RequestPolyline r -> (r.stroke.width, RequestPolyline { r | stroke = (let s = r.stroke in { s | width = Nothing }) })
+  RequestPath r -> (r.stroke.width, RequestPath { r | stroke = (let s = r.stroke in { s | width = Nothing }) })
+  RequestText r -> (r.stroke.width, RequestText { r | stroke = (let s = r.stroke in { s | width = Nothing }) })
+  _ -> (Nothing, geometry)
+
+🧶StrokeWidth :: (Feed (Float), Feed Node) -> NodeRequest -> Maybe (Maybe (Float), NodeRequest)
+🧶StrokeWidth _ request = extract strokeWidth request
+
+strokeOpacity :: ShapeRequest -> (Maybe (Float), ShapeRequest)
+strokeOpacity geometry = case geometry of
+  RequestRect r -> (r.stroke.opacity, RequestRect { r | stroke = (let s = r.stroke in { s | opacity = Nothing }) })
+  RequestCircle r -> (r.stroke.opacity, RequestCircle { r | stroke = (let s = r.stroke in { s | opacity = Nothing }) })
+  RequestEllipse r -> (r.stroke.opacity, RequestEllipse { r | stroke = (let s = r.stroke in { s | opacity = Nothing }) })
+  RequestLine r -> (r.stroke.opacity, RequestLine { r | stroke = (let s = r.stroke in { s | opacity = Nothing }) })
+  RequestPolyline r -> (r.stroke.opacity, RequestPolyline { r | stroke = (let s = r.stroke in { s | opacity = Nothing }) })
+  RequestPath r -> (r.stroke.opacity, RequestPath { r | stroke = (let s = r.stroke in { s | opacity = Nothing }) })
+  RequestText r -> (r.stroke.opacity, RequestText { r | stroke = (let s = r.stroke in { s | opacity = Nothing }) })
+  _ -> (Nothing, geometry)
+
+🧶StrokeOpacity :: (Feed (Float), Feed Node) -> NodeRequest -> Maybe (Maybe (Float), NodeRequest)
+🧶StrokeOpacity _ request = extract strokeOpacity request
+
+strokeCap :: ShapeRequest -> (Maybe (LineCap), ShapeRequest)
+strokeCap geometry = case geometry of
+  RequestRect r -> (r.stroke.cap, RequestRect { r | stroke = (let s = r.stroke in { s | cap = Nothing }) })
+  RequestCircle r -> (r.stroke.cap, RequestCircle { r | stroke = (let s = r.stroke in { s | cap = Nothing }) })
+  RequestEllipse r -> (r.stroke.cap, RequestEllipse { r | stroke = (let s = r.stroke in { s | cap = Nothing }) })
+  RequestLine r -> (r.stroke.cap, RequestLine { r | stroke = (let s = r.stroke in { s | cap = Nothing }) })
+  RequestPolyline r -> (r.stroke.cap, RequestPolyline { r | stroke = (let s = r.stroke in { s | cap = Nothing }) })
+  RequestPath r -> (r.stroke.cap, RequestPath { r | stroke = (let s = r.stroke in { s | cap = Nothing }) })
+  RequestText r -> (r.stroke.cap, RequestText { r | stroke = (let s = r.stroke in { s | cap = Nothing }) })
+  _ -> (Nothing, geometry)
+
+🧶StrokeCap :: (Feed (LineCap), Feed Node) -> NodeRequest -> Maybe (Maybe (LineCap), NodeRequest)
+🧶StrokeCap _ request = extract strokeCap request
+
+strokeJoin :: ShapeRequest -> (Maybe (LineJoin), ShapeRequest)
+strokeJoin geometry = case geometry of
+  RequestRect r -> (r.stroke.join, RequestRect { r | stroke = (let s = r.stroke in { s | join = Nothing }) })
+  RequestCircle r -> (r.stroke.join, RequestCircle { r | stroke = (let s = r.stroke in { s | join = Nothing }) })
+  RequestEllipse r -> (r.stroke.join, RequestEllipse { r | stroke = (let s = r.stroke in { s | join = Nothing }) })
+  RequestLine r -> (r.stroke.join, RequestLine { r | stroke = (let s = r.stroke in { s | join = Nothing }) })
+  RequestPolyline r -> (r.stroke.join, RequestPolyline { r | stroke = (let s = r.stroke in { s | join = Nothing }) })
+  RequestPath r -> (r.stroke.join, RequestPath { r | stroke = (let s = r.stroke in { s | join = Nothing }) })
+  RequestText r -> (r.stroke.join, RequestText { r | stroke = (let s = r.stroke in { s | join = Nothing }) })
+  _ -> (Nothing, geometry)
+
+🧶StrokeJoin :: (Feed (LineJoin), Feed Node) -> NodeRequest -> Maybe (Maybe (LineJoin), NodeRequest)
+🧶StrokeJoin _ request = extract strokeJoin request
+
+strokeDashes :: ShapeRequest -> (Maybe (List Float), ShapeRequest)
+strokeDashes geometry = case geometry of
+  RequestRect r -> (r.stroke.dashes, RequestRect { r | stroke = (let s = r.stroke in { s | dashes = Nothing }) })
+  RequestCircle r -> (r.stroke.dashes, RequestCircle { r | stroke = (let s = r.stroke in { s | dashes = Nothing }) })
+  RequestEllipse r -> (r.stroke.dashes, RequestEllipse { r | stroke = (let s = r.stroke in { s | dashes = Nothing }) })
+  RequestLine r -> (r.stroke.dashes, RequestLine { r | stroke = (let s = r.stroke in { s | dashes = Nothing }) })
+  RequestPolyline r -> (r.stroke.dashes, RequestPolyline { r | stroke = (let s = r.stroke in { s | dashes = Nothing }) })
+  RequestPath r -> (r.stroke.dashes, RequestPath { r | stroke = (let s = r.stroke in { s | dashes = Nothing }) })
+  RequestText r -> (r.stroke.dashes, RequestText { r | stroke = (let s = r.stroke in { s | dashes = Nothing }) })
+  _ -> (Nothing, geometry)
+
+🧶StrokeDashes :: (Feed (List Float), Feed Node) -> NodeRequest -> Maybe (ListConstraint (Maybe Float), NodeRequest)
+🧶StrokeDashes _ request = case extract strokeDashes request of
+  Just (value, rest) -> Just (exactList value, rest)
+  Nothing -> Nothing
+
+strokeDashOffset :: ShapeRequest -> (Maybe (Float), ShapeRequest)
+strokeDashOffset geometry = case geometry of
+  RequestRect r -> (r.stroke.dashOffset, RequestRect { r | stroke = (let s = r.stroke in { s | dashOffset = Nothing }) })
+  RequestCircle r -> (r.stroke.dashOffset, RequestCircle { r | stroke = (let s = r.stroke in { s | dashOffset = Nothing }) })
+  RequestEllipse r -> (r.stroke.dashOffset, RequestEllipse { r | stroke = (let s = r.stroke in { s | dashOffset = Nothing }) })
+  RequestLine r -> (r.stroke.dashOffset, RequestLine { r | stroke = (let s = r.stroke in { s | dashOffset = Nothing }) })
+  RequestPolyline r -> (r.stroke.dashOffset, RequestPolyline { r | stroke = (let s = r.stroke in { s | dashOffset = Nothing }) })
+  RequestPath r -> (r.stroke.dashOffset, RequestPath { r | stroke = (let s = r.stroke in { s | dashOffset = Nothing }) })
+  RequestText r -> (r.stroke.dashOffset, RequestText { r | stroke = (let s = r.stroke in { s | dashOffset = Nothing }) })
+  _ -> (Nothing, geometry)
+
+🧶StrokeDashOffset :: (Feed (Float), Feed Node) -> NodeRequest -> Maybe (Maybe (Float), NodeRequest)
+🧶StrokeDashOffset _ request = extract strokeDashOffset request
+
+strokeMiterLimit :: ShapeRequest -> (Maybe (Float), ShapeRequest)
+strokeMiterLimit geometry = case geometry of
+  RequestRect r -> (r.stroke.miterLimit, RequestRect { r | stroke = (let s = r.stroke in { s | miterLimit = Nothing }) })
+  RequestCircle r -> (r.stroke.miterLimit, RequestCircle { r | stroke = (let s = r.stroke in { s | miterLimit = Nothing }) })
+  RequestEllipse r -> (r.stroke.miterLimit, RequestEllipse { r | stroke = (let s = r.stroke in { s | miterLimit = Nothing }) })
+  RequestLine r -> (r.stroke.miterLimit, RequestLine { r | stroke = (let s = r.stroke in { s | miterLimit = Nothing }) })
+  RequestPolyline r -> (r.stroke.miterLimit, RequestPolyline { r | stroke = (let s = r.stroke in { s | miterLimit = Nothing }) })
+  RequestPath r -> (r.stroke.miterLimit, RequestPath { r | stroke = (let s = r.stroke in { s | miterLimit = Nothing }) })
+  RequestText r -> (r.stroke.miterLimit, RequestText { r | stroke = (let s = r.stroke in { s | miterLimit = Nothing }) })
+  _ -> (Nothing, geometry)
+
+🧶StrokeMiterLimit :: (Feed (Float), Feed Node) -> NodeRequest -> Maybe (Maybe (Float), NodeRequest)
+🧶StrokeMiterLimit _ request = extract strokeMiterLimit request
+
+fontFamily :: ShapeRequest -> (Maybe (String), ShapeRequest)
+fontFamily geometry = case geometry of
+  RequestText r -> (r.font.family, RequestText { r | font = (let s = r.font in { s | family = Nothing }) })
+  _ -> (Nothing, geometry)
+
+🧶FontFamily :: (Feed (String), Feed Node) -> NodeRequest -> Maybe (Maybe (String), NodeRequest)
+🧶FontFamily _ request = extract fontFamily request
+
+fontSize :: ShapeRequest -> (Maybe (Float), ShapeRequest)
+fontSize geometry = case geometry of
+  RequestText r -> (r.font.size, RequestText { r | font = (let s = r.font in { s | size = Nothing }) })
+  _ -> (Nothing, geometry)
+
+🧶FontSize :: (Feed (Float), Feed Node) -> NodeRequest -> Maybe (Maybe (Float), NodeRequest)
+🧶FontSize _ request = extract fontSize request
+
+fontAnchor :: ShapeRequest -> (Maybe (TextAnchor), ShapeRequest)
+fontAnchor geometry = case geometry of
+  RequestText r -> (r.font.anchor, RequestText { r | font = (let s = r.font in { s | anchor = Nothing }) })
+  _ -> (Nothing, geometry)
+
+🧶FontAnchor :: (Feed (TextAnchor), Feed Node) -> NodeRequest -> Maybe (Maybe (TextAnchor), NodeRequest)
+🧶FontAnchor _ request = extract fontAnchor request
+
+fontBaseline :: ShapeRequest -> (Maybe (DominantBaseline), ShapeRequest)
+fontBaseline geometry = case geometry of
+  RequestText r -> (r.font.baseline, RequestText { r | font = (let s = r.font in { s | baseline = Nothing }) })
+  _ -> (Nothing, geometry)
+
+🧶FontBaseline :: (Feed (DominantBaseline), Feed Node) -> NodeRequest -> Maybe (Maybe (DominantBaseline), NodeRequest)
+🧶FontBaseline _ request = extract fontBaseline request
+
+🧶NoFill :: Feed Node -> NodeRequest -> Maybe NodeRequest
+🧶NoFill _ request = case extract fillPaint request of
+  Just (Nothing, rest) -> Just rest
+  Just (Just NoPaint, rest) -> Just rest
+  _ -> Nothing
+
+🧶NoStroke :: Feed Node -> NodeRequest -> Maybe NodeRequest
+🧶NoStroke _ request = case extract strokePaint request of
+  Just (Nothing, rest) -> Just rest
+  Just (Just NoPaint, rest) -> Just rest
+  _ -> Nothing
+
+-- Common setters affect this node only, unlike recursive style setters.
+commonRequest :: NodeRequest -> CommonRequest
+commonRequest request = case request of
+  ShapeNodeRequest common _ -> common
+  ContainerNodeRequest c -> c.common
+  AnyNode -> anyCommon
+
+withCommon :: CommonRequest -> NodeRequest -> NodeRequest
+withCommon common request = case request of
+  ShapeNodeRequest _ shape -> ShapeNodeRequest common shape
+  ContainerNodeRequest c -> ContainerNodeRequest { c | common = common }
+  AnyNode -> AnyNode
+
+🧶Id :: (Feed Id, Feed Node) -> NodeRequest -> Maybe (Maybe Id, NodeRequest)
+🧶Id _ request =
+  let r = commonRequest request in
+  case r.id of
+    Just Nothing -> Nothing
+    Just (Just value) -> Just (Just value, withCommon { r | id = Nothing } request)
+    Nothing -> Just (Nothing, request)
+
+🧶Opacity :: (Feed Float, Feed Node) -> NodeRequest -> Maybe (Maybe Float, NodeRequest)
+🧶Opacity _ request =
+  let r = commonRequest request in
+  Just (r.opacity, withCommon { r | opacity = Nothing } request)
+
+🧶Visible :: (Feed Bool, Feed Node) -> NodeRequest -> Maybe (Maybe Bool, NodeRequest)
+🧶Visible _ request =
+  let r = commonRequest request in
+  Just (r.visible, withCommon { r | visible = Nothing } request)
+
+🧶Transform :: (Feed Transform, Feed Node) -> NodeRequest -> Maybe (ListConstraint (Maybe TransformOp), NodeRequest)
+🧶Transform _ request =
+  let r = commonRequest request in
+  Just (exactList r.transform, withCommon { r | transform = Nothing } request)
+
+🧶Closed :: (Feed Bool, Feed Node) -> NodeRequest -> Maybe (Maybe Bool, NodeRequest)
+🧶Closed _ request = extract takeClosed request
+
+takeClosed :: ShapeRequest -> (Maybe Bool, ShapeRequest)
+takeClosed geometry = case geometry of
+  RequestPolyline r -> (r.closed, RequestPolyline { r | closed = Nothing })
+  _ -> (Nothing, geometry)
+
+🧶OptionalId :: (Feed (Maybe Id), Feed Node) -> NodeRequest -> Maybe (Maybe (Maybe Id), NodeRequest)
+🧶OptionalId _ request =
+  let r = commonRequest request in
+  Just (r.id, withCommon { r | id = Nothing } request)
+
+🧶AddTransform :: (Feed TransformOp, Feed Node) -> NodeRequest -> Maybe (Maybe TransformOp, NodeRequest)
+🧶AddTransform _ request =
+  let r = commonRequest request in
+  case r.transform of
+    Nothing -> Just (Nothing, request)
+    Just [] -> Nothing
+    Just (operation : rest) -> Just (Just operation, withCommon { r | transform = Just rest } request)
+
+🧶OptionalViewBox :: (Feed (Maybe ViewBox), Feed Container) -> ContainerRequest -> Maybe (Maybe (Maybe ViewBox), ContainerRequest)
+🧶OptionalViewBox _ request = case request.kind of
+  ViewportKind r -> Just (r.viewBox, { request | kind = ViewportKind { r | viewBox = Nothing } })
+  _ -> Just (Nothing, request)

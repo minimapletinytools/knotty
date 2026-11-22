@@ -1,0 +1,12 @@
+module Drawing exposing (..)
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+program = svg 500 420
+    (editableShapes
+        (map (\x -> circle x 50 15 |> set_fill tomato) [50]
+        <> [ group (editableShapes [] []) |> set_transform [Translate 150 100, Rotate 30 Nothing, Scale 1.4 0.8]
+           , nested_svg 100 100 (editableShapes [] []) |> set_transform [Translate 330 30]
+           , group []
+           ])
+        [])
+    |> set_view_box 0 0 500 420

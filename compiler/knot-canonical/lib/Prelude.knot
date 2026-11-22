@@ -1,0 +1,1514 @@
+module Prelude exposing (..)
+
+-- Knot's prelude: in scope in every module. Ported from Haskell's Prelude,
+-- keeping Knot's own names where the language already chose differently
+-- (`map` for fmap, `empty` for mempty, `Result`/`Ok`/`Err` for Either, `|>`
+-- and `>>` for pipes). This file is the prelude's specification (spec §12).
+--
+-- Only a library module like this one may declare interfaces, primitives
+-- (a signature with no definition: the runtime provides the value), and
+-- opaque types (`type Int`, no constructors).
+--
+-- `Int` and `Float` play the roles of Haskell's `Int` and `Double`, and
+-- defaulting picks `Int`, then `Float` (spec §6.2) where Haskell picks
+-- `Integer`, then `Double`. There is no `Rational` alias: it's spelled
+-- `Ratio Integer`.
+--
+-- TODO:
+--   * An explicit export list, so the `prim*` operations and helpers like
+--     `intRange` and `wordsOf` stay private, as Haskell's GHC.* internals
+--     are. The other library modules (String.knot) still need the `prim*`s.
+
+
+-- Primitive types ------------------------------------------------------------
+
+type Int
+type Integer
+type Float
+type String
+-- `Unit` is another name for `()`.
+type Unit
+type IO a
+-- `[]` and `x : xs` are built into the syntax.
+type List a
+type Sensitivity a
+type UnravelInput a
+
+
+-- Fixities -------------------------------------------------------------------
+
+infixr 8 (^), (^^), (**)
+infixl 7 (*), (/), (%), `quot`, `rem`, `div`, `mod`
+infixl 6 (+), (-), (<>)
+infixr 5 (:)
+infix 4 (==), (/=), (<), (<=), (>), (>=)
+infixl 4 (<*>), (*>), (<*)
+infixr 3 (&&)
+infixr 2 (||)
+infixl 1 (|>), (>>), (>>=)
+infixl 9 (!!)
+
+
+-- Basic data types -----------------------------------------------------------
+
+type Bool = False | True deriving (Eq, Ord, Show)
+
+type Ordering = LT | EQ | GT deriving (Eq, Ord, Show)
+
+type Maybe a = Nothing | Just a deriving (Eq, Ord, Show)
+
+type Result e a = Err e | Ok a deriving (Eq, Ord, Show)
+
+(:) :: a -> List a -> List a
+
+error :: String -> a
+
+undefined :: a
+undefined = error "Prelude.undefined"
+
+@unravel(🧶Not)
+not :: Bool -> Bool
+not b =
+  case b of
+    True -> False
+    False -> True
+
+(&&) :: Bool -> Bool -> Bool
+(&&) a b =
+  case a of
+    True -> b
+    False -> False
+
+(||) :: Bool -> Bool -> Bool
+(||) a b =
+  case a of
+    True -> True
+    False -> b
+
+maybe :: b -> (a -> b) -> Maybe a -> b
+maybe d f m =
+  case m of
+    Nothing -> d
+    Just x -> f x
+
+either :: (e -> c) -> (a -> c) -> Result e a -> c
+either f g r =
+  case r of
+    Err e -> f e
+    Ok a -> g a
+
+@unravel(🧶First)
+fst :: (a, b) -> a
+fst p =
+  case p of
+    (a, _) -> a
+
+@unravel(🧶Second)
+snd :: (a, b) -> b
+snd p =
+  case p of
+    (_, b) -> b
+
+curry :: ((a, b) -> c) -> a -> b -> c
+curry f a b = f (a, b)
+
+uncurry :: (a -> b -> c) -> (a, b) -> c
+uncurry f p =
+  case p of
+    (a, b) -> f a b
+
+
+-- Functions ------------------------------------------------------------------
+
+@unravel(🧶Identity)
+id :: a -> a
+id x = x
+
+@unravel(🧶Const)
+const :: a -> b -> a
+const x _ = x
+
+flip :: (a -> b -> c) -> b -> a -> c
+flip f x y = f y x
+
+(|>) :: a -> (a -> b) -> b
+(|>) x f = f x
+
+(>>) :: (a -> b) -> (b -> c) -> a -> c
+(>>) f g x = g (f x)
+
+until :: (a -> Bool) -> (a -> a) -> a -> a
+until p f x = if p x then x else until p f (f x)
+
+
+-- Interfaces -----------------------------------------------------------------
+
+-- A relation between an author-chosen constraint and a value type.
+interface Constriction s t where
+  fits :: s -> t -> Bool
+  materialize :: s -> Maybe t
+  materialize _ = Nothing
+
+instance Eq t => Constriction t t where
+  fits expected actual = expected == actual
+  materialize expected = Just expected
+
+instance Eq t => Constriction (Maybe t) t where
+  fits constraint actual = case constraint of
+    Nothing -> True
+    Just expected -> expected == actual
+  materialize request = request
+
+instance Eq t => Constriction (List t) t where
+  fits alternatives actual = any (\expected -> expected == actual) alternatives
+  materialize alternatives = case alternatives of
+    [] -> Nothing
+    first : _ -> Just first
+
+-- Optional demand for any input, even when its constraint has no wildcard.
+-- This is an explicit wrapper, not an implicit conversion.
+type FieldRequest s = NoRequest | RequestField s
+
+instance Constriction s a => Constriction (FieldRequest s) a where
+  fits request actual = case request of
+    NoRequest -> True
+    RequestField constraint -> fits constraint actual
+  materialize request = case request of
+    NoRequest -> Nothing
+    RequestField constraint -> materialize constraint
+
+fitsFieldRequest :: Constriction s a => FieldRequest s -> a -> Bool
+fitsFieldRequest request actual = case request of
+  NoRequest -> True
+  RequestField constraint -> fits constraint actual
+
+-- Shared reverse-edit protocol. A wildcard tail never forces the remaining list.
+type ListConstraint s
+    = AnyRemainder
+    | ExactEnd
+    | Prepend s (ListConstraint s)
+    deriving (Eq, Show)
+
+instance Constriction s t => Constriction (ListConstraint s) (List t) where
+  fits constraint actual = case constraint of
+    AnyRemainder -> True
+    ExactEnd -> case actual of
+      [] -> True
+      _ : _ -> False
+    Prepend head tail -> case actual of
+      [] -> False
+      x : xs -> fits head x && fits tail xs
+  materialize constraint = case constraint of
+    AnyRemainder -> Just []
+    ExactEnd -> Just []
+    Prepend head tail -> do
+      x <- materialize head
+      xs <- materialize tail
+      pure (x : xs)
+
+interface Eq a where
+  (==) :: a -> a -> Bool
+  (/=) :: a -> a -> Bool
+  (/=) x y = not (x == y)
+
+interface Eq a => Ord a where
+  compare :: a -> a -> Ordering
+  (<) :: a -> a -> Bool
+  (<) x y =
+    case compare x y of
+      LT -> True
+      _ -> False
+  (<=) :: a -> a -> Bool
+  (<=) x y =
+    case compare x y of
+      GT -> False
+      _ -> True
+  (>) :: a -> a -> Bool
+  (>) x y =
+    case compare x y of
+      GT -> True
+      _ -> False
+  (>=) :: a -> a -> Bool
+  (>=) x y =
+    case compare x y of
+      LT -> False
+      _ -> True
+  max :: a -> a -> a
+  max x y = if x <= y then y else x
+  min :: a -> a -> a
+  min x y = if x <= y then x else y
+
+interface Show a where
+  show :: a -> String
+  show x = showsPrec 0 x
+  showsPrec :: Int -> a -> String
+  showsPrec _ x = show x
+
+interface Semigroup a where
+  (<>) :: a -> a -> a
+
+interface Semigroup a => Monoid a where
+  empty :: a
+
+interface Num a where
+  (+) :: a -> a -> a
+  (-) :: a -> a -> a
+  (*) :: a -> a -> a
+  negate :: a -> a
+  negate x = 0 - x
+  abs :: a -> a
+  signum :: a -> a
+  fromInteger :: Integer -> a
+
+interface (Num a, Ord a) => Real a where
+  toRational :: a -> Ratio Integer
+
+interface Enum a where
+  succ :: a -> a
+  succ x = toEnum (fromEnum x + 1)
+  pred :: a -> a
+  pred x = toEnum (fromEnum x - 1)
+  toEnum :: Int -> a
+  fromEnum :: a -> Int
+  enumFrom :: a -> List a
+  enumFrom x = map toEnum (iterate (\n -> n + 1) (fromEnum x))
+  enumFromThen :: a -> a -> List a
+  enumFromThen x y =
+    let
+      step = fromEnum y - fromEnum x
+    in
+      map toEnum (iterate (\n -> n + step) (fromEnum x))
+  enumFromTo :: a -> a -> List a
+  enumFromTo x y = map toEnum (intRange (fromEnum x) 1 (fromEnum y))
+  enumFromThenTo :: a -> a -> a -> List a
+  enumFromThenTo x y z =
+    map toEnum (intRange (fromEnum x) (fromEnum y - fromEnum x) (fromEnum z))
+
+interface (Real a, Enum a) => Integral a where
+  quot :: a -> a -> a
+  quot n d = fst (quotRem n d)
+  rem :: a -> a -> a
+  rem n d = snd (quotRem n d)
+  div :: a -> a -> a
+  div n d = fst (divMod n d)
+  mod :: a -> a -> a
+  mod n d = snd (divMod n d)
+  quotRem :: a -> a -> (a, a)
+  divMod :: a -> a -> (a, a)
+  divMod n d =
+    case quotRem n d of
+      (q, r) -> if signum r == negate (signum d) then (q - 1, r + d) else (q, r)
+  toInteger :: a -> Integer
+
+interface Num a => Fractional a where
+  (/) :: a -> a -> a
+  recip :: a -> a
+  recip x = 1 / x
+  fromRational :: Ratio Integer -> a
+
+interface Fractional a => Floating a where
+  pi :: a
+  exp :: a -> a
+  log :: a -> a
+  sqrt :: a -> a
+  sqrt x = x ** 0.5
+  (**) :: a -> a -> a
+  (**) x y = exp (log x * y)
+  logBase :: a -> a -> a
+  logBase x y = log y / log x
+  sin :: a -> a
+  cos :: a -> a
+  tan :: a -> a
+  tan x = sin x / cos x
+  asin :: a -> a
+  acos :: a -> a
+  atan :: a -> a
+  sinh :: a -> a
+  cosh :: a -> a
+  tanh :: a -> a
+  tanh x = sinh x / cosh x
+  asinh :: a -> a
+  acosh :: a -> a
+  atanh :: a -> a
+
+interface (Real a, Fractional a) => RealFrac a where
+  properFraction :: Integral b => a -> (b, a)
+  truncate :: Integral b => a -> b
+  truncate x = fst (properFraction x)
+  round :: Integral b => a -> b
+  round x =
+    case properFraction x of
+      (n, r) ->
+        let
+          m = if r < 0 then n - 1 else n + 1
+        in
+          case compare (abs r) 0.5 of
+            LT -> n
+            EQ -> if even n then n else m
+            GT -> m
+  ceiling :: Integral b => a -> b
+  ceiling x =
+    case properFraction x of
+      (n, r) -> if r > 0 then n + 1 else n
+  floor :: Integral b => a -> b
+  floor x =
+    case properFraction x of
+      (n, r) -> if r < 0 then n - 1 else n
+
+interface (RealFrac a, Floating a) => RealFloat a where
+  isNaN :: a -> Bool
+  isInfinite :: a -> Bool
+  atan2 :: a -> a -> a
+
+interface Functor f where
+  map :: (a -> b) -> f a -> f b
+
+interface Functor f => Applicative f where
+  pure :: a -> f a
+  (<*>) :: f (a -> b) -> f a -> f b
+  (*>) :: f a -> f b -> f b
+  (*>) a b = map (const id) a <*> b
+  (<*) :: f a -> f b -> f a
+  (<*) a b = map const a <*> b
+
+interface Applicative m => Monad m where
+  (>>=) :: m a -> (a -> m b) -> m b
+
+interface Foldable t where
+  foldr :: (a -> b -> b) -> b -> t a -> b
+  foldl :: (b -> a -> b) -> b -> t a -> b
+  foldl f z t = foldr (\x k acc -> k (f acc x)) id t z
+  foldMap :: Monoid m => (a -> m) -> t a -> m
+  foldMap f t = foldr (\x acc -> f x <> acc) empty t
+  toList :: t a -> List a
+  toList t = foldr (:) [] t
+  null :: t a -> Bool
+  null t = foldr (\_ _ -> False) True t
+  length :: t a -> Int
+  length t = foldl (\n _ -> n + 1) 0 t
+  elem :: Eq a => a -> t a -> Bool
+  elem x t = foldr (\y found -> x == y || found) False t
+  sum :: Num a => t a -> a
+  sum t = foldl (+) 0 t
+  product :: Num a => t a -> a
+  product t = foldl (*) 1 t
+  maximum :: Ord a => t a -> a
+  maximum t =
+    case toList t of
+      [] -> error "maximum: empty structure"
+      x : xs -> foldl max x xs
+  minimum :: Ord a => t a -> a
+  minimum t =
+    case toList t of
+      [] -> error "minimum: empty structure"
+      x : xs -> foldl min x xs
+
+interface (Functor t, Foldable t) => Traversable t where
+  traverse :: Applicative f => (a -> f b) -> t a -> f (t b)
+  sequenceA :: Applicative f => t (f a) -> f (t a)
+  sequenceA t = traverse id t
+
+
+-- Primitive operations -------------------------------------------------------
+
+primIntEq :: Int -> Int -> Bool
+primIntCompare :: Int -> Int -> Ordering
+primIntShow :: Int -> String
+primIntAdd :: Int -> Int -> Int
+primIntSub :: Int -> Int -> Int
+primIntMul :: Int -> Int -> Int
+primIntQuot :: Int -> Int -> Int
+primIntRem :: Int -> Int -> Int
+primIntToInteger :: Int -> Integer
+
+primIntegerEq :: Integer -> Integer -> Bool
+primIntegerCompare :: Integer -> Integer -> Ordering
+primIntegerShow :: Integer -> String
+primIntegerAdd :: Integer -> Integer -> Integer
+primIntegerSub :: Integer -> Integer -> Integer
+primIntegerMul :: Integer -> Integer -> Integer
+primIntegerQuot :: Integer -> Integer -> Integer
+primIntegerRem :: Integer -> Integer -> Integer
+-- Wraps, like Haskell's `fromInteger :: Integer -> Int`.
+primIntegerToInt :: Integer -> Int
+primIntegerToFloat :: Integer -> Float
+
+primFloatEq :: Float -> Float -> Bool
+primFloatCompare :: Float -> Float -> Ordering
+primFloatLt :: Float -> Float -> Bool
+primFloatLe :: Float -> Float -> Bool
+primFloatGt :: Float -> Float -> Bool
+primFloatGe :: Float -> Float -> Bool
+primFloatNegate :: Float -> Float
+primFloatAbs :: Float -> Float
+primFloatSignum :: Float -> Float
+primFloatShow :: Float -> String
+primFloatAdd :: Float -> Float -> Float
+primFloatSub :: Float -> Float -> Float
+primFloatMul :: Float -> Float -> Float
+primFloatDiv :: Float -> Float -> Float
+-- The exact value of a finite Float, like Haskell's `toRational :: Double -> Rational`.
+primFloatToRational :: Float -> Ratio Integer
+-- Round the exact ratio once; converting its numerator and denominator to
+-- Float separately could overflow both and produce NaN for a finite ratio.
+primRationalToFloat :: Ratio Integer -> Float
+-- Rounds toward zero.
+primFloatTruncate :: Float -> Integer
+primFloatExp :: Float -> Float
+primFloatLog :: Float -> Float
+primFloatSqrt :: Float -> Float
+primFloatPow :: Float -> Float -> Float
+primFloatSin :: Float -> Float
+primFloatCos :: Float -> Float
+primFloatTan :: Float -> Float
+primFloatAsin :: Float -> Float
+primFloatAcos :: Float -> Float
+primFloatAtan :: Float -> Float
+primFloatSinh :: Float -> Float
+primFloatCosh :: Float -> Float
+primFloatTanh :: Float -> Float
+primFloatAsinh :: Float -> Float
+primFloatAcosh :: Float -> Float
+primFloatAtanh :: Float -> Float
+primFloatAtan2 :: Float -> Float -> Float
+primFloatIsNaN :: Float -> Bool
+primFloatIsInfinite :: Float -> Bool
+
+primStringEq :: String -> String -> Bool
+primStringCompare :: String -> String -> Ordering
+primStringShow :: String -> String
+primStringAppend :: String -> String -> String
+
+-- Strings count in Unicode code points, and a "character" is a String of
+-- exactly one code point (spec §5.7). The String module gives these their
+-- public names.
+primStringLength :: String -> Int
+primStringToList :: String -> List String
+primStringConcat :: List String -> String
+primStringTake :: Int -> String -> String
+primStringDrop :: Int -> String -> String
+primStringIsPrefixOf :: String -> String -> Bool
+primStringIsSuffixOf :: String -> String -> Bool
+primStringIsInfixOf :: String -> String -> Bool
+-- An empty separator is a runtime error, as in Data.Text.splitOn.
+primStringSplitOn :: String -> String -> List String
+primStringReplace :: String -> String -> String -> String
+primStringStrip :: String -> String
+primStringToUpper :: String -> String
+primStringToLower :: String -> String
+-- The character predicates are False for anything but one code point.
+primStringIsSpace :: String -> Bool
+primStringIsAlpha :: String -> Bool
+primStringIsAlphaNum :: String -> Bool
+primStringIsUpper :: String -> Bool
+primStringIsLower :: String -> Bool
+-- `ord` requires exactly one Unicode scalar; `chr` rejects negatives, surrogates
+-- and integers above U+10FFFF. Invalid inputs are runtime errors.
+primStringOrd :: String -> Int
+primStringChr :: Int -> String
+primStringToInt :: String -> Maybe Int
+primStringToFloat :: String -> Maybe Float
+
+primPutStrLn :: String -> IO Unit
+primGetLine :: IO String
+
+putStrLn :: String -> IO Unit
+putStrLn = primPutStrLn
+
+print :: Show a => a -> IO Unit
+print x = putStrLn (show x)
+
+getLine :: IO String
+getLine = primGetLine
+
+primIOPure :: a -> IO a
+primIOBind :: IO a -> (a -> IO b) -> IO b
+
+
+-- Instances for primitive types ----------------------------------------------
+
+instance Eq Int where
+  (==) = primIntEq
+
+instance Ord Int where
+  compare = primIntCompare
+
+instance Show Int where
+  showsPrec precedence n =
+    let text = primIntShow n
+    in if precedence > 6 && n < 0 then "(" <> text <> ")" else text
+
+instance Num Int where
+  @unravel(🧶IntegralAdd)
+  (+) = primIntAdd
+  @unravel(🧶IntegralSubtract)
+  (-) = primIntSub
+  @unravel(🧶IntegralMultiply)
+  (*) = primIntMul
+  abs n = if n < 0 then negate n else n
+  signum n = if n < 0 then negate 1 else if n == 0 then 0 else 1
+  @unravel(🧶IntegerToInt)
+  fromInteger = primIntegerToInt
+  @unravel(🧶Negate)
+  negate x = 0 - x
+
+instance Real Int where
+  toRational n = toInteger n % 1
+
+instance Enum Int where
+  toEnum n = n
+  fromEnum n = n
+
+instance Integral Int where
+  quotRem n d = (primIntQuot n d, primIntRem n d)
+  @unravel(🧶IntToInteger)
+  toInteger = primIntToInteger
+
+instance Eq Integer where
+  (==) = primIntegerEq
+
+instance Ord Integer where
+  compare = primIntegerCompare
+
+instance Show Integer where
+  showsPrec precedence n =
+    let text = primIntegerShow n
+    in if precedence > 6 && n < 0 then "(" <> text <> ")" else text
+
+instance Num Integer where
+  @unravel(🧶IntegralAdd)
+  (+) = primIntegerAdd
+  @unravel(🧶IntegralSubtract)
+  (-) = primIntegerSub
+  @unravel(🧶IntegralMultiply)
+  (*) = primIntegerMul
+  abs n = if n < 0 then negate n else n
+  signum n = if n < 0 then negate 1 else if n == 0 then 0 else 1
+  @unravel(🧶Identity)
+  fromInteger n = n
+  @unravel(🧶Negate)
+  negate x = 0 - x
+
+instance Real Integer where
+  toRational n = n % 1
+
+instance Enum Integer where
+  succ n = n + 1
+  pred n = n - 1
+  toEnum = primIntToInteger
+  fromEnum = primIntegerToInt
+  enumFrom x = iterate (\n -> n + 1) x
+  enumFromThen x y = iterate (\n -> n + (y - x)) x
+  enumFromTo x y = takeWhile (\n -> n <= y) (iterate (\n -> n + 1) x)
+  enumFromThenTo x y z =
+    if y >= x then takeWhile (\n -> n <= z) (iterate (\n -> n + (y - x)) x)
+    else takeWhile (\n -> n >= z) (iterate (\n -> n + (y - x)) x)
+
+instance Integral Integer where
+  quotRem n d = (primIntegerQuot n d, primIntegerRem n d)
+  toInteger n = n
+
+instance Eq Float where
+  (==) = primFloatEq
+
+instance Ord Float where
+  compare = primFloatCompare
+  (<) = primFloatLt
+  (<=) = primFloatLe
+  (>) = primFloatGt
+  (>=) = primFloatGe
+
+instance Show Float where
+  showsPrec precedence n =
+    let text = primFloatShow n
+    -- The rendered sign also handles negative zero and negative infinity.
+    in if precedence > 6 && primStringTake 1 text == "-" then "(" <> text <> ")" else text
+
+instance Num Float where
+  @unravel(🧶FloatAdd)
+  (+) = primFloatAdd
+  @unravel(🧶FloatSubtract)
+  (-) = primFloatSub
+  @unravel(🧶FloatMultiply)
+  (*) = primFloatMul
+  @unravel(🧶FloatNegate)
+  negate = primFloatNegate
+  abs = primFloatAbs
+  signum = primFloatSignum
+  @unravel(🧶IntegralToFloat)
+  fromInteger = primIntegerToFloat
+
+instance Real Float where
+  toRational = primFloatToRational
+
+instance Fractional Float where
+  @unravel(🧶FloatDivide)
+  (/) = primFloatDiv
+  fromRational = primRationalToFloat
+
+instance Floating Float where
+  pi = 3.141592653589793
+  exp = primFloatExp
+  log = primFloatLog
+  sqrt = primFloatSqrt
+  (**) = primFloatPow
+  sin = primFloatSin
+  cos = primFloatCos
+  tan = primFloatTan
+  asin = primFloatAsin
+  acos = primFloatAcos
+  atan = primFloatAtan
+  sinh = primFloatSinh
+  cosh = primFloatCosh
+  tanh = primFloatTanh
+  asinh = primFloatAsinh
+  acosh = primFloatAcosh
+  atanh = primFloatAtanh
+
+instance RealFrac Float where
+  properFraction x =
+    let
+      n = primFloatTruncate x
+    in
+      (fromInteger n, x - primIntegerToFloat n)
+
+instance RealFloat Float where
+  isNaN = primFloatIsNaN
+  isInfinite = primFloatIsInfinite
+  atan2 = primFloatAtan2
+
+instance Eq String where
+  (==) = primStringEq
+
+instance Ord String where
+  compare = primStringCompare
+
+instance Show String where
+  show = primStringShow
+
+instance Semigroup String where
+  @unravel(🧶StringAppend)
+  (<>) = primStringAppend
+
+instance Monoid String where
+  empty = ""
+
+instance Functor IO where
+  map f m = primIOBind m (\x -> primIOPure (f x))
+
+instance Applicative IO where
+  pure = primIOPure
+  (<*>) mf mx = primIOBind mf (\f -> primIOBind mx (\x -> primIOPure (f x)))
+
+instance Monad IO where
+  (>>=) = primIOBind
+
+
+-- Ordering -------------------------------------------------------------------
+
+instance Semigroup Ordering where
+  (<>) x y =
+    case x of
+      LT -> LT
+      EQ -> y
+      GT -> GT
+
+instance Monoid Ordering where
+  empty = EQ
+
+instance Enum Ordering where
+  toEnum n = if n == 0 then LT else if n == 1 then EQ else if n == 2 then GT else error "Prelude.Enum.Ordering.toEnum: bad argument"
+  fromEnum o =
+    case o of
+      LT -> 0
+      EQ -> 1
+      GT -> 2
+
+instance Enum Bool where
+  toEnum n = if n == 0 then False else if n == 1 then True else error "Prelude.Enum.Bool.toEnum: bad argument"
+  fromEnum b =
+    case b of
+      False -> 0
+      True -> 1
+
+
+-- Maybe ----------------------------------------------------------------------
+
+instance Semigroup a => Semigroup (Maybe a) where
+  (<>) x y =
+    case (x, y) of
+      (Nothing, _) -> y
+      (_, Nothing) -> x
+      (Just a, Just b) -> Just (a <> b)
+
+instance Semigroup a => Monoid (Maybe a) where
+  empty = Nothing
+
+instance Functor Maybe where
+  map f m =
+    case m of
+      Nothing -> Nothing
+      Just x -> Just (f x)
+
+instance Applicative Maybe where
+  pure = Just
+  (<*>) mf mx =
+    case mf of
+      Nothing -> Nothing
+      Just f -> map f mx
+
+instance Monad Maybe where
+  (>>=) m k =
+    case m of
+      Nothing -> Nothing
+      Just x -> k x
+
+instance Foldable Maybe where
+  foldr f z m =
+    case m of
+      Nothing -> z
+      Just x -> f x z
+
+instance Traversable Maybe where
+  traverse f m =
+    case m of
+      Nothing -> pure Nothing
+      Just x -> map Just (f x)
+
+
+-- Result ---------------------------------------------------------------------
+
+instance Functor (Result e) where
+  map f r =
+    case r of
+      Err e -> Err e
+      Ok a -> Ok (f a)
+
+instance Applicative (Result e) where
+  pure = Ok
+  (<*>) rf rx =
+    case rf of
+      Err e -> Err e
+      Ok f -> map f rx
+
+instance Monad (Result e) where
+  (>>=) r k =
+    case r of
+      Err e -> Err e
+      Ok a -> k a
+
+instance Foldable (Result e) where
+  foldr f z r =
+    case r of
+      Err _ -> z
+      Ok a -> f a z
+
+instance Traversable (Result e) where
+  traverse f r =
+    case r of
+      Err e -> pure (Err e)
+      Ok a -> map Ok (f a)
+
+
+-- Lists ----------------------------------------------------------------------
+
+instance Eq a => Eq (List a) where
+  (==) xs ys =
+    case (xs, ys) of
+      ([], []) -> True
+      (x : xs', y : ys') -> x == y && xs' == ys'
+      _ -> False
+
+instance Ord a => Ord (List a) where
+  compare xs ys =
+    case (xs, ys) of
+      ([], []) -> EQ
+      ([], _) -> LT
+      (_, []) -> GT
+      (x : xs', y : ys') -> compare x y <> compare xs' ys'
+
+instance Show a => Show (List a) where
+  show xs =
+    let
+      join items =
+        case items of
+          [] -> ""
+          [s] -> s
+          s : rest -> s <> "," <> join rest
+    in
+      "[" <> join (map show xs) <> "]"
+
+instance Semigroup (List a) where
+  @unravel(🧶ListAppend)
+  (<>) xs ys = foldr (:) ys xs
+
+instance Monoid (List a) where
+  empty = []
+
+instance Functor List where
+  @unravel(listMapCompanionBack)
+  map f xs = foldr (\x acc -> f x : acc) [] xs
+
+instance Applicative List where
+  pure x = [x]
+  (<*>) fs xs = concatMap (\f -> map f xs) fs
+
+instance Monad List where
+  (>>=) xs k = concatMap k xs
+
+instance Foldable List where
+  foldr f z xs =
+    case xs of
+      [] -> z
+      y : ys -> f y (foldr f z ys)
+
+instance Traversable List where
+  traverse f xs = foldr (\x acc -> map (:) (f x) <*> acc) (pure []) xs
+
+filter :: (a -> Bool) -> List a -> List a
+filter p xs = foldr (\x acc -> if p x then x : acc else acc) [] xs
+
+head :: List a -> a
+head xs =
+  case xs of
+    [] -> error "Prelude.head: empty list"
+    x : _ -> x
+
+last :: List a -> a
+last xs =
+  case xs of
+    [] -> error "Prelude.last: empty list"
+    [x] -> x
+    _ : rest -> last rest
+
+tail :: List a -> List a
+tail xs =
+  case xs of
+    [] -> error "Prelude.tail: empty list"
+    _ : rest -> rest
+
+init :: List a -> List a
+init xs =
+  case xs of
+    [] -> error "Prelude.init: empty list"
+    [_] -> []
+    x : rest -> x : init rest
+
+(!!) :: List a -> Int -> a
+(!!) xs n =
+  case xs of
+    [] -> error "Prelude.!!: index too large"
+    x : rest -> if n == 0 then x else rest !! (n - 1)
+
+reverse :: List a -> List a
+reverse xs = foldl (flip (:)) [] xs
+
+concat :: Foldable t => t (List a) -> List a
+concat xss = foldr (<>) [] xss
+
+@unravel(listConcatMapCompanionBack)
+concatMap :: Foldable t => (a -> List b) -> t a -> List b
+concatMap f xs = foldr (\x acc -> f x <> acc) [] xs
+
+intercalate :: List a -> List (List a) -> List a
+intercalate sep xss =
+  case xss of
+    [] -> []
+    [xs] -> xs
+    xs : rest -> xs <> sep <> intercalate sep rest
+
+and :: Foldable t => t Bool -> Bool
+and t = foldr (&&) True t
+
+or :: Foldable t => t Bool -> Bool
+or t = foldr (||) False t
+
+any :: Foldable t => (a -> Bool) -> t a -> Bool
+any p t = foldr (\x acc -> p x || acc) False t
+
+all :: Foldable t => (a -> Bool) -> t a -> Bool
+all p t = foldr (\x acc -> p x && acc) True t
+
+iterate :: (a -> a) -> a -> List a
+iterate f x = x : iterate f (f x)
+
+repeat :: a -> List a
+repeat x = x : repeat x
+
+replicate :: Int -> a -> List a
+replicate n x = take n (repeat x)
+
+cycle :: List a -> List a
+cycle xs =
+  case xs of
+    [] -> error "Prelude.cycle: empty list"
+    _ -> xs <> cycle xs
+
+take :: Int -> List a -> List a
+take n xs =
+  if n <= 0 then []
+  else
+    case xs of
+      [] -> []
+      x : rest -> x : take (n - 1) rest
+
+drop :: Int -> List a -> List a
+drop n xs =
+  if n <= 0 then xs
+  else
+    case xs of
+      [] -> []
+      _ : rest -> drop (n - 1) rest
+
+splitAt :: Int -> List a -> (List a, List a)
+splitAt n xs = (take n xs, drop n xs)
+
+takeWhile :: (a -> Bool) -> List a -> List a
+takeWhile p xs =
+  case xs of
+    [] -> []
+    x : rest -> if p x then x : takeWhile p rest else []
+
+dropWhile :: (a -> Bool) -> List a -> List a
+dropWhile p xs =
+  case xs of
+    [] -> []
+    x : rest -> if p x then dropWhile p rest else xs
+
+span :: (a -> Bool) -> List a -> (List a, List a)
+span p xs = (takeWhile p xs, dropWhile p xs)
+
+break :: (a -> Bool) -> List a -> (List a, List a)
+break p xs = span (\x -> not (p x)) xs
+
+lookup :: Eq a => a -> List (a, b) -> Maybe b
+lookup key pairs =
+  case pairs of
+    [] -> Nothing
+    (k, v) : rest -> if k == key then Just v else lookup key rest
+
+zip :: List a -> List b -> List (a, b)
+zip xs ys = zipWith (\x y -> (x, y)) xs ys
+
+zip3 :: List a -> List b -> List c -> List (a, b, c)
+zip3 xs ys zs = zipWith3 (\x y z -> (x, y, z)) xs ys zs
+
+zipWith :: (a -> b -> c) -> List a -> List b -> List c
+zipWith f xs ys =
+  case (xs, ys) of
+    (x : xs', y : ys') -> f x y : zipWith f xs' ys'
+    _ -> []
+
+zipWith3 :: (a -> b -> c -> d) -> List a -> List b -> List c -> List d
+zipWith3 f xs ys zs =
+  case (xs, ys, zs) of
+    (x : xs', y : ys', z : zs') -> f x y z : zipWith3 f xs' ys' zs'
+    _ -> []
+
+unzip :: List (a, b) -> (List a, List b)
+unzip pairs = (map fst pairs, map snd pairs)
+
+mapM :: (Traversable t, Applicative f) => (a -> f b) -> t a -> f (t b)
+mapM f t = traverse f t
+
+sequence :: (Traversable t, Applicative f) => t (f a) -> f (t a)
+sequence t = sequenceA t
+
+
+-- Strings --------------------------------------------------------------------
+
+-- Haskell's Prelude string functions. Everything else lives in the String
+-- module, used qualified (`String.length`), as Haskell uses Data.Text.
+
+lines :: String -> List String
+lines s =
+  if s == "" then []
+  else
+    let
+      parts = primStringSplitOn "\n" s
+    in
+      if last parts == "" then init parts else parts
+
+words :: String -> List String
+words s = wordsOf (primStringToList s)
+
+wordsOf :: List String -> List String
+wordsOf cs =
+  case dropWhile primStringIsSpace cs of
+    [] -> []
+    rest ->
+      case break primStringIsSpace rest of
+        (w, more) -> primStringConcat w : wordsOf more
+
+unlines :: List String -> String
+unlines ls = foldr (\l acc -> l <> "\n" <> acc) "" ls
+
+unwords :: List String -> String
+unwords ws =
+  case ws of
+    [] -> ""
+    [w] -> w
+    w : rest -> w <> " " <> unwords rest
+
+
+-- Numbers --------------------------------------------------------------------
+
+-- `[from, from + step ..]` up to `to` (down to it for a negative step): the
+-- Int list Enum's defaults are built from.
+intRange :: Int -> Int -> Int -> List Int
+intRange from step to =
+  if step >= 0 then takeWhile (\n -> n <= to) (iterate (\n -> n + step) from)
+  else takeWhile (\n -> n >= to) (iterate (\n -> n + step) from)
+
+(^) :: (Num a, Integral b) => a -> b -> a
+(^) x n =
+  if n < 0 then error "Negative exponent"
+  else if n == 0 then 1
+  else x * (x ^ (n - 1))
+
+(^^) :: (Fractional a, Integral b) => a -> b -> a
+(^^) x n = if n >= 0 then x ^ n else recip (x ^ negate n)
+
+@unravel(🧶FromIntegral)
+fromIntegral :: (Integral a, Num b) => a -> b
+fromIntegral x = fromInteger (toInteger x)
+
+realToFrac :: (Real a, Fractional b) => a -> b
+realToFrac x = fromRational (toRational x)
+
+subtract :: Num a => a -> a -> a
+subtract x y = y - x
+
+even :: Integral a => a -> Bool
+even n = n `rem` 2 == 0
+
+odd :: Integral a => a -> Bool
+odd n = not (even n)
+
+gcd :: Integral a => a -> a -> a
+gcd a b =
+  let
+    go x y = if y == 0 then x else go y (x `rem` y)
+  in
+    go (abs a) (abs b)
+
+lcm :: Integral a => a -> a -> a
+lcm a b = if a == 0 || b == 0 then 0 else abs ((a `quot` gcd a b) * b)
+
+
+-- Ratio ----------------------------------------------------------------------
+
+-- A fraction in lowest terms with a positive denominator. Haskell keeps the
+-- constructor private (`:%`); here it's `Ratio`, and `%` is the way to build
+-- one.
+type Ratio a = Ratio a a deriving Eq
+
+(%) :: Integral a => a -> a -> Ratio a
+(%) x y =
+  if y == 0 then error "Ratio has zero denominator"
+  else
+    let
+      d = gcd x y
+      s = signum y
+    in
+      Ratio ((x `quot` d) * s) (abs (y `quot` d))
+
+numerator :: Ratio a -> a
+numerator r =
+  case r of
+    Ratio n _ -> n
+
+denominator :: Ratio a -> a
+denominator r =
+  case r of
+    Ratio _ d -> d
+
+instance Integral a => Ord (Ratio a) where
+  compare x y =
+    case (x, y) of
+      (Ratio a b, Ratio c d) -> compare (a * d) (c * b)
+
+instance Show a => Show (Ratio a) where
+  showsPrec precedence r =
+    case r of
+      Ratio n d ->
+        let text = showsPrec 8 n <> " % " <> showsPrec 8 d
+        in if precedence > 7 then "(" <> text <> ")" else text
+
+instance Integral a => Num (Ratio a) where
+  (+) x y =
+    case (x, y) of
+      (Ratio a b, Ratio c d) -> (a * d + c * b) % (b * d)
+  (-) x y =
+    case (x, y) of
+      (Ratio a b, Ratio c d) -> (a * d - c * b) % (b * d)
+  (*) x y =
+    case (x, y) of
+      (Ratio a b, Ratio c d) -> (a * c) % (b * d)
+  abs r =
+    case r of
+      Ratio n d -> Ratio (abs n) d
+  signum r =
+    case r of
+      Ratio n _ -> Ratio (signum n) 1
+  fromInteger n = fromInteger n % 1
+
+instance Integral a => Fractional (Ratio a) where
+  (/) x y =
+    case (x, y) of
+      (Ratio a b, Ratio c d) -> (a * d) % (b * c)
+  fromRational r =
+    case r of
+      Ratio n d -> fromInteger n % fromInteger d
+
+instance Integral a => Real (Ratio a) where
+  toRational r =
+    case r of
+      Ratio n d -> toInteger n % toInteger d
+
+instance Integral a => RealFrac (Ratio a) where
+  properFraction r =
+    case r of
+      Ratio n d ->
+        case quotRem n d of
+          (q, rest) -> (fromIntegral q, Ratio rest d)
+
+-- Default unravelers ---------------------------------------------------------
+
+effectiveFeed :: { value : a, pinned : Maybe a } -> a
+effectiveFeed input = case input.pinned of
+  Nothing -> input.value
+  Just fixed -> fixed
+
+pinAllows :: Constriction s a => { value : a, pinned : Maybe a } -> s -> Bool
+pinAllows input request = case input.pinned of
+  Nothing -> True
+  Just fixed -> fits request fixed
+
+-- Used by identity and by supported literal/constructor materializers. This
+-- translates a constraint; it does not print source or synthesize a candidate.
+🧶Identity :: Constriction s a => { value : a, pinned : Maybe a } -> s -> Maybe s
+🧶Identity input request =
+  if pinAllows input request then Just request else Nothing
+
+🧶First :: (Constriction s a, Eq b) => { value : (a, b), pinned : Maybe (a, b) } -> s -> Maybe (s, Maybe b)
+🧶First input request = case input.pinned of
+  Just (a, _) -> if fits request a then Just (request, Nothing) else Nothing
+  Nothing -> Just (request, Nothing)
+
+🧶Second :: (Eq a, Constriction s b) => { value : (a, b), pinned : Maybe (a, b) } -> s -> Maybe (Maybe a, s)
+🧶Second input request = case input.pinned of
+  Just (_, b) -> if fits request b then Just (Nothing, request) else Nothing
+  Nothing -> Just (Nothing, request)
+
+🧶Const :: (Constriction s a, Eq b) => ({ value : a, pinned : Maybe a }, { value : b, pinned : Maybe b }) -> s -> Maybe (s, Maybe b)
+🧶Const (input, _) request =
+  if pinAllows input request then Just (request, Nothing) else Nothing
+
+unravelUnary :: (Eq a, Eq b) => (a -> b) -> (b -> Maybe a) -> { value : a, pinned : Maybe a } -> Maybe b -> Maybe (Maybe a)
+unravelUnary forward inverse input request = case request of
+  Nothing -> Just Nothing
+  Just target ->
+    let old = effectiveFeed input
+    in if forward old == target then Just (Just old)
+       else case input.pinned of
+         Just _ -> Nothing
+         Nothing -> do
+           candidate <- inverse target
+           if forward candidate == target then Just (Just candidate) else Nothing
+
+unravelBinary :: Eq a => (a -> a -> a) -> (a -> a -> a -> Maybe a) -> (a -> a -> a -> Maybe a) -> (a -> Bool) -> ({ value : a, pinned : Maybe a }, { value : a, pinned : Maybe a }) -> Maybe a -> Maybe (Maybe a, Maybe a)
+unravelBinary forward solveLeft solveRight valid (left, right) request = case request of
+  Nothing -> Just (Nothing, Nothing)
+  Just target ->
+    let a = effectiveFeed left
+        b = effectiveFeed right
+        finish x y =
+          if valid x && valid y && forward x y == target
+             && pinAllows left (Just x) && pinAllows right (Just y)
+          then Just (Just x, Just y) else Nothing
+    in if not (valid target) then Nothing
+       else if valid a && valid b && forward a b == target then finish a b
+       else case (left.pinned, right.pinned) of
+         (Nothing, _) -> do
+           candidate <- solveLeft a target b
+           finish candidate b
+         (Just _, Nothing) -> do
+           candidate <- solveRight b target a
+           finish a candidate
+         (Just _, Just _) -> Nothing
+
+isFinite :: Float -> Bool
+isFinite x = not (isNaN x || isInfinite x)
+
+🧶FloatAdd :: ({ value : Float, pinned : Maybe Float }, { value : Float, pinned : Maybe Float }) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
+🧶FloatAdd = unravelBinary (+) (\_ target other -> Just (target - other)) (\_ target other -> Just (target - other)) isFinite
+
+🧶FloatSubtract :: ({ value : Float, pinned : Maybe Float }, { value : Float, pinned : Maybe Float }) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
+🧶FloatSubtract = unravelBinary (-) (\_ target other -> Just (target + other)) (\_ target other -> Just (other - target)) isFinite
+
+solveFloatProductInput :: Float -> Float -> Float -> Maybe Float
+solveFloatProductInput old target other =
+  if other == 0.0 then if target == 0.0 then Just old else Nothing
+  else Just (target / other)
+
+🧶FloatMultiply :: ({ value : Float, pinned : Maybe Float }, { value : Float, pinned : Maybe Float }) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
+🧶FloatMultiply = unravelBinary (*) solveFloatProductInput solveFloatProductInput isFinite
+
+solveFloatNumerator :: Float -> Float -> Float -> Maybe Float
+solveFloatNumerator _ target denominator =
+  if denominator == 0.0 then Nothing else Just (target * denominator)
+
+solveFloatDenominator :: Float -> Float -> Float -> Maybe Float
+solveFloatDenominator old target numerator =
+  if target == 0.0 then
+    if numerator == 0.0 && old /= 0.0 then Just old else Nothing
+  else let candidate = numerator / target
+       in if candidate == 0.0 then Nothing else Just candidate
+
+🧶FloatDivide :: ({ value : Float, pinned : Maybe Float }, { value : Float, pinned : Maybe Float }) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
+🧶FloatDivide = unravelBinary (/) solveFloatNumerator solveFloatDenominator isFinite
+
+🧶IntegralAdd :: Integral a => ({ value : a, pinned : Maybe a }, { value : a, pinned : Maybe a }) -> Maybe a -> Maybe (Maybe a, Maybe a)
+🧶IntegralAdd = unravelBinary (+) (\_ target other -> Just (target - other)) (\_ target other -> Just (target - other)) (\_ -> True)
+
+🧶IntegralSubtract :: Integral a => ({ value : a, pinned : Maybe a }, { value : a, pinned : Maybe a }) -> Maybe a -> Maybe (Maybe a, Maybe a)
+🧶IntegralSubtract = unravelBinary (-) (\_ target other -> Just (target + other)) (\_ target other -> Just (other - target)) (\_ -> True)
+
+-- Multiplication chooses an ordinary exact integer quotient, not modular search.
+-- Calculate it as Integer to avoid Int minBound / -1 overflow.
+solveIntegralProductInput :: Integral a => a -> a -> a -> Maybe a
+solveIntegralProductInput old target other =
+  if other == 0 then if target == 0 then Just old else Nothing
+  else let n = toInteger target
+           d = toInteger other
+           q = quot n d
+           candidate = fromInteger q
+       in if rem n d == 0 && toInteger candidate == q then Just candidate else Nothing
+
+🧶IntegralMultiply :: Integral a => ({ value : a, pinned : Maybe a }, { value : a, pinned : Maybe a }) -> Maybe a -> Maybe (Maybe a, Maybe a)
+🧶IntegralMultiply = unravelBinary (*) solveIntegralProductInput solveIntegralProductInput (\_ -> True)
+
+🧶Negate :: (Num a, Eq a) => { value : a, pinned : Maybe a } -> Maybe a -> Maybe (Maybe a)
+🧶Negate = unravelUnary negate (\target -> Just (negate target))
+
+🧶FloatNegate :: { value : Float, pinned : Maybe Float } -> Maybe Float -> Maybe (Maybe Float)
+🧶FloatNegate input request = case request of
+  Nothing -> Just Nothing
+  Just target -> if isFinite target then 🧶Negate input request else Nothing
+
+-- Restrict conversion inverses to integral targets. Roundtrip guards reject
+-- overflow/wrapping and floating rounding rather than silently approximating.
+integralCandidate :: (Integral a, Real b) => b -> Maybe a
+integralCandidate target =
+  let ratio = toRational target
+      n = numerator ratio
+      candidate = fromInteger n
+  in if denominator ratio == 1 && toInteger candidate == n then Just candidate else Nothing
+
+🧶FromIntegral :: (Integral a, Real b) => { value : a, pinned : Maybe a } -> Maybe b -> Maybe (Maybe a)
+🧶FromIntegral input request = case request of
+  Nothing -> Just Nothing
+  Just target ->
+    if target - target == 0 then unravelUnary fromIntegral integralCandidate input request
+    else Nothing
+
+🧶IntegralToFloat :: Integral a => { value : a, pinned : Maybe a } -> Maybe Float -> Maybe (Maybe a)
+🧶IntegralToFloat input request = case request of
+  Nothing -> Just Nothing
+  Just target -> if isFinite target then 🧶FromIntegral input request else Nothing
+
+🧶IntegerToInt :: { value : Integer, pinned : Maybe Integer } -> Maybe Int -> Maybe (Maybe Integer)
+🧶IntegerToInt = unravelUnary fromInteger (\target -> Just (toInteger target))
+
+🧶IntToInteger :: { value : Int, pinned : Maybe Int } -> Maybe Integer -> Maybe (Maybe Int)
+🧶IntToInteger = 🧶FromIntegral
+
+-- Split only the demanded prefix. ExactEnd cannot delete an existing cell;
+-- shape-changing materialization is a separate operation. A wildcard never
+-- examines the remaining left list.
+splitListRequest :: List a -> ListConstraint s -> Maybe (ListConstraint s, ListConstraint s)
+splitListRequest left request = case request of
+  AnyRemainder -> Just (AnyRemainder, AnyRemainder)
+  _ -> case left of
+    [] -> Just (ExactEnd, request)
+    _ : rest -> case request of
+      ExactEnd -> Nothing
+      Prepend r more -> do
+        (l, remaining) <- splitListRequest rest more
+        pure (Prepend r l, remaining)
+      AnyRemainder -> Just (AnyRemainder, AnyRemainder)
+
+matchesListShape :: List a -> ListConstraint s -> Bool
+matchesListShape values request = case request of
+  AnyRemainder -> True
+  ExactEnd -> case values of
+    [] -> True
+    _ : _ -> False
+  Prepend _ more -> case values of
+    [] -> False
+    _ : rest -> matchesListShape rest more
+
+🧶ListAppend :: Constriction s a => ({ value : List a, pinned : Maybe (List a) }, { value : List a, pinned : Maybe (List a) }) -> ListConstraint s -> Maybe (ListConstraint s, ListConstraint s)
+🧶ListAppend (left, right) request = do
+  (l, r) <- splitListRequest (effectiveFeed left) request
+  if matchesListShape (effectiveFeed right) r
+     && pinAllows left l && pinAllows right r
+  then Just (l, r) else Nothing
+
+🧶Cons :: Eq a => ({ value : a, pinned : Maybe a }, { value : List a, pinned : Maybe (List a) }) -> ListConstraint (Maybe a) -> Maybe (Maybe a, ListConstraint (Maybe a))
+🧶Cons (head, tail) request = case request of
+  AnyRemainder -> Just (Nothing, AnyRemainder)
+  ExactEnd -> Nothing
+  Prepend h t ->
+    if pinAllows head h && pinAllows tail t && matchesListShape (effectiveFeed tail) t
+    then Just (h, t) else Nothing
+
+solveStringLeft :: String -> String -> String -> Maybe String
+solveStringLeft _ target suffix =
+  if primStringIsSuffixOf suffix target
+  then Just (primStringTake (primStringLength target - primStringLength suffix) target)
+  else Nothing
+
+solveStringRight :: String -> String -> String -> Maybe String
+solveStringRight _ target prefix =
+  if primStringIsPrefixOf prefix target
+  then Just (primStringDrop (primStringLength prefix) target)
+  else Nothing
+
+🧶StringAppend :: ({ value : String, pinned : Maybe String }, { value : String, pinned : Maybe String }) -> Maybe String -> Maybe (Maybe String, Maybe String)
+🧶StringAppend = unravelBinary (<>) solveStringLeft solveStringRight (\_ -> True)
+
+-- Higher-order defaults receive an explicitly selected companion. Automatic
+-- companion attachment is separate from these executable translation functions.
+-- 🧶Map also works on prepared growth drafts; it never creates fresh values.
+🧶Map :: (a -> sOut -> Maybe sIn) -> List a -> ListConstraint sOut -> Maybe (ListConstraint sIn)
+🧶Map backF values request = case request of
+  AnyRemainder -> Just AnyRemainder
+  ExactEnd -> case values of
+    [] -> Just ExactEnd
+    _ : _ -> Nothing
+  Prepend r more -> case values of
+    [] -> Nothing
+    x : xs -> do
+      inputRequest <- backF x r
+      tailRequest <- 🧶Map backF xs more
+      pure (Prepend inputRequest tailRequest)
+
+🧶ListMap :: Constriction sIn a => ({ value : a, pinned : Maybe a } -> sOut -> Maybe sIn) -> { value : List a, pinned : Maybe (List a) } -> ListConstraint sOut -> Maybe (ListConstraint sIn)
+🧶ListMap backF input request =
+  let back x r =
+        let state = { value = x, pinned = case input.pinned of
+                      Nothing -> Nothing
+                      Just _ -> Just x }
+        in do
+          proposed <- backF state r
+          if pinAllows state proposed then Just proposed else Nothing
+  in 🧶Map back (effectiveFeed input) request
+
+🧶ConcatMap :: (a -> List b) -> (a -> ListConstraint sOut -> Maybe sIn) -> List a -> ListConstraint sOut -> Maybe (ListConstraint sIn)
+🧶ConcatMap forward backF values request = case request of
+  AnyRemainder -> Just AnyRemainder
+  _ -> case values of
+    [] -> case request of
+      ExactEnd -> Just ExactEnd
+      _ -> Nothing
+    x : xs -> do
+      (chunk, rest) <- splitListRequest (forward x) request
+      inputRequest <- backF x chunk
+      tailRequest <- 🧶ConcatMap forward backF xs rest
+      pure (Prepend inputRequest tailRequest)
+
+🧶ListConcatMap :: Constriction sIn a => (a -> List b) -> ({ value : a, pinned : Maybe a } -> ListConstraint sOut -> Maybe sIn) -> { value : List a, pinned : Maybe (List a) } -> ListConstraint sOut -> Maybe (ListConstraint sIn)
+🧶ListConcatMap forward backF input request =
+  let back x r =
+        let state = { value = x, pinned = case input.pinned of
+                      Nothing -> Nothing
+                      Just _ -> Just x }
+        in do
+          proposed <- backF state r
+          if pinAllows state proposed then Just proposed else Nothing
+  in 🧶ConcatMap forward back (effectiveFeed input) request
+
+-- Candidate selection for exact requests at editable leaves/reference sites.
+-- Printing constructors, escaping strings and choosing a writable span remain
+-- engine responsibilities. No arbitrary Constriction predicate is inverted here.
+chooseExact :: Eq a => { value : a, pinned : Maybe a } -> Maybe a -> Maybe a
+chooseExact input request =
+  let candidate = case request of
+        Nothing -> effectiveFeed input
+        Just value -> value
+  in if pinAllows input (Just candidate) then Just candidate else Nothing
+
+-- Update existing slots; only a missing suffix uses instance materialization.
+applyListRequest :: Constriction s a => (a -> s -> Maybe a) -> List a -> ListConstraint s -> Maybe (List a)
+applyListRequest update values request = case request of
+  AnyRemainder -> Just values
+  ExactEnd -> Just []
+  Prepend head tail -> case values of
+    [] -> materialize request
+    x : xs -> do
+      y <- update x head
+      ys <- applyListRequest update xs tail
+      pure (y : ys)
+
+🧶Not :: { value : Bool, pinned : Maybe Bool } -> Maybe Bool -> Maybe (Maybe Bool)
+🧶Not = unravelUnary not (\target -> Just (not target))
+
+-- Ordinary cons rule; the engine supplies separate head and tail feeds.
+unravelListCons :: Constriction s a => ({ value : a, pinned : Maybe a }, { value : List a, pinned : Maybe (List a) }) -> ListConstraint s -> Maybe (FieldRequest s, FieldRequest (ListConstraint s))
+unravelListCons _ request = case request of
+  AnyRemainder -> Just (NoRequest, NoRequest)
+  ExactEnd -> Nothing
+  Prepend head tail -> Just (RequestField head, RequestField tail)
+
+-- Companion contracts are inferred from these generic rule signatures.
+listMapCompanionBack :: Constriction sIn a => { forward : a -> b, unravel : { value : a, pinned : Maybe a } -> sOut -> Maybe sIn } -> { value : List a, pinned : Maybe (List a) } -> ListConstraint sOut -> Maybe (ListConstraint sIn)
+listMapCompanionBack unraveler = 🧶ListMap unraveler.unravel
+
+-- Check each proposed input's chunk before returning its ordinary constraint.
+-- Changed custom input constraints need an instance-owned candidate.
+listConcatMapCompanionBack :: Constriction sIn a => { forward : a -> List b, unravel : { value : a, pinned : Maybe a } -> ListConstraint sOut -> Maybe sIn } -> { value : List a, pinned : Maybe (List a) } -> ListConstraint sOut -> Maybe (ListConstraint sIn)
+listConcatMapCompanionBack unraveler =
+  let back input request = do
+        proposed <- unraveler.unravel input request
+        candidate <- if fits proposed input.value then Just input.value else materialize proposed
+        if fits proposed candidate && length (unraveler.forward candidate) == length (unraveler.forward input.value)
+        then Just proposed else Nothing
+  in 🧶ListConcatMap unraveler.forward back
+
+-- A fresh seed and its materializer share one original throughout an attempt.
+-- Authors choose both the factory and unravel policy; no implicit factory search.
+materializationDraft :: Constriction s a => (Unit -> a) -> ({ value : a, pinned : Maybe a } -> s -> Maybe a) -> { value : a, finish : s -> Maybe a }
+materializationDraft factory unravel =
+  let original = factory ()
+      finish request = do
+        candidate <- unravel { value = original, pinned = Nothing } request
+        if fits request candidate then Just candidate else Nothing
+  in { value = original, finish = finish }
+
+-- Opt-in positional growth. The seed may be a lazy factory call; ordinary map
+-- stays shape preserving. Only missing slots demand the seed.
+@unravel(growMapBack)
+growMap :: a -> (a -> b) -> List a -> List b
+growMap _ f values = map f values
+
+growMapBack :: Eq a => { forward : a -> b, unravel : { value : a, pinned : Maybe a } -> s -> Maybe (Maybe a) } -> ({ value : a, pinned : Maybe a }, { value : List a, pinned : Maybe (List a) }) -> ListConstraint s -> Maybe (Maybe a, ListConstraint (Maybe a))
+growMapBack unraveler (seed, input) request =
+  let walk values wanted = case wanted of
+        AnyRemainder -> Just AnyRemainder
+        ExactEnd -> Just ExactEnd
+        Prepend head tail -> case values of
+          old : rest -> do
+            chosen <- unraveler.unravel { value = old, pinned = Nothing } head
+            more <- walk rest tail
+            pure (Prepend chosen more)
+          [] -> do
+            let draft = materializationDraft (\_ -> effectiveFeed seed) chooseExact
+            wanted <- unraveler.unravel { value = draft.value, pinned = Nothing } head
+            candidate <- draft.finish wanted
+            more <- walk [] tail
+            pure (Prepend (Just candidate) more)
+  in do
+    result <- walk input.value request
+    if pinAllows input result then Just (Nothing, result) else Nothing

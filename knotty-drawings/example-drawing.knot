@@ -1,0 +1,314 @@
+module ExampleDrawing exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+import DrawingBack
+import Requests
+
+pageWidth :: Float
+pageWidth = 210
+
+pageHeight :: Float
+pageHeight = 297
+
+@whip(OnNode snakeCurve (IntSlider "Shape density" 1 128))
+shapeCount :: Int
+shapeCount = 64
+
+sparkleCount :: Int
+sparkleCount = 160
+
+to_float :: Int -> Float
+to_float n = fromIntegral n
+
+floor_int :: Float -> Int
+floor_int x = floor x
+
+random :: Int -> Float
+random seed =
+    let
+        noise = sin (to_float seed * 12.9898) * 43758.5453
+    in
+    noise - to_float (floor_int noise)
+
+random_between :: Int -> Float -> Float -> Float
+random_between seed low high = low + (high - low) * random seed
+
+-- Select "snake-curve" in the layer tree to edit these cubic segments.
+-- Both strokes, the endpoint dots and all decorations use this same path.
+-- Drag a round Bézier knob to bend it, or a square anchor to move a join.
+snake_commands :: List PathCommand
+snake_commands =
+    [ MoveTo 25 26
+    , CurveTo 115 0 154 66 100 78
+    , CurveTo 4 94 25 150 105 143
+    , CurveTo 193 134 207 209 116 219
+    , CurveTo 52 230 119 280 185 271
+    ]
+
+cubic_point :: Point -> Point -> Point -> Point -> Float -> Point
+cubic_point a b c d t =
+    let
+        u = 1 - t
+        weightA = u * u * u
+        weightB = 3 * u * u * t
+        weightC = 3 * u * t * t
+        weightD = t * t * t
+        coordinate = \w x y z -> weightA * w + weightB * x + weightC * y + weightD * z
+    in
+    point (coordinate a.x b.x c.x d.x) (coordinate a.y b.y c.y d.y)
+
+-- The four segments each occupy a quarter of the parameter range. This is
+-- parameter spacing, not arc-length spacing; decorations remain deterministic.
+path_point :: Point -> Float -> List PathCommand -> Point
+path_point previous progress commands =
+    case commands of
+        [] -> previous
+        command : rest ->
+            case command of
+                MoveTo x y -> path_point (point x y) progress rest
+                CurveTo x1 y1 x2 y2 x y ->
+                    if progress <= 1 then
+                        cubic_point previous (point x1 y1) (point x2 y2) (point x y) progress
+                    else
+                        path_point (point x y) (progress - 1) rest
+                LineTo x y -> path_point (point x y) progress rest
+                ClosePath -> previous
+
+snake_center :: Float -> Point
+snake_center progress = path_point (point 25 26) (4 * max 0 (min 1 progress)) snake_commands
+
+snake_point :: Float -> Float -> Point
+snake_point progress sideOffset =
+    let
+        center = snake_center progress
+        before = snake_center (progress - 0.001)
+        after = snake_center (progress + 0.001)
+        dx = after.x - before.x
+        dy = after.y - before.y
+        distance = max 0.000001 (sqrt (dx * dx + dy * dy))
+    in
+    point (center.x - dy / distance * sideOffset) (center.y + dx / distance * sideOffset)
+
+growth :: Float -> Float
+growth progress =
+    let
+        bump = sin (pi * progress)
+    in
+    bump * sqrt bump
+
+progress_of :: Int -> Int -> Float
+progress_of index count = (to_float index + 0.5) / to_float count
+
+palette :: Float -> Int -> Color
+palette progress seed =
+    hsl (190 + 150 * progress) (random_between seed 0.55 0.8) (random_between (seed + 1) 0.45 0.62)
+
+-- Shared hue, saturation and lightness offsets for the colored layers.
+type alias Tint = (Float, Float, Float)
+
+gradientTint :: Tint
+gradientTint = (0.0, 0.0, 0.0)
+
+colorHsl :: Color -> Tint
+colorHsl (Rgb r g b) =
+    let
+        hi = max r (max g b)
+        lo = min r (min g b)
+        span = to_float (hi - lo)
+        light = to_float (hi + lo) / 510
+        sector = if hi == r then to_float (g - b) / span
+                 else if hi == g then 2 + to_float (b - r) / span
+                 else 4 + to_float (r - g) / span
+    in
+    if hi == lo then (0, 0, light)
+    else (60 * sector, span / (255 - abs (to_float (hi + lo - 255))), light)
+
+-- Filled decorations use their fill. Hollow rings use their stroke.
+gradientPaint :: Node -> Maybe (Bool, Color)
+gradientPaint node =
+    let
+        paint fill stroke = case (fill, stroke) of
+            (Solid c, _) -> Just (True, c)
+            (NoPaint, Solid c) -> Just (False, c)
+            _ -> Nothing
+    in case node of
+        ShapeNode _ (Circle s) -> paint s.fill.paint s.stroke.paint
+        ShapeNode _ (Rect s) -> paint s.fill.paint s.stroke.paint
+        ShapeNode _ (Polyline s) -> paint s.fill.paint s.stroke.paint
+        _ -> Nothing
+
+@unravel(🧶Gradient)
+gradient :: Tint -> List Node -> List Node
+gradient tint nodes =
+    let
+        (dh, ds, dl) = tint
+        unit x = max 0 (min 1 x)
+        recolor node = case gradientPaint node of
+            Nothing -> node
+            Just (fill, original) ->
+                let (h, s, l) = colorHsl original
+                    color = hsl (h + dh) (unit (s + ds)) (unit (l + dl))
+                in if fill then set_fill color node else set_stroke color node
+    in if tint == (0, 0, 0) then nodes else map recolor nodes
+
+🧶Gradient :: (DrawingBack.Feed Tint, DrawingBack.Feed (List Node)) -> ListConstraint Requests.NodeRequest -> Maybe (Maybe Tint, ListConstraint Requests.NodeRequest)
+🧶Gradient (tint, nodes) request =
+    let
+        walk values wanted = case (wanted, values) of
+            (AnyRemainder, _) -> Just (Nothing, AnyRemainder)
+            (ExactEnd, []) -> Just (Nothing, ExactEnd)
+            (Prepend head tail, node : rest) -> do
+                (next, residual) <- gradientRequest tint.value node head
+                (others, more) <- walk rest tail
+                shared <- DrawingBack.merge next others
+                pure (shared, Prepend residual more)
+            _ -> Nothing
+    in walk nodes.value request
+
+gradientRequest :: Tint -> Node -> Requests.NodeRequest -> Maybe (Maybe Tint, Requests.NodeRequest)
+gradientRequest (dh, ds, _) node request = case (request, gradientPaint node) of
+    (Requests.ShapeNodeRequest common shape, Just (fill, original)) ->
+        let (paint, rest) = if fill then DrawingBack.fillPaint shape else DrawingBack.strokePaint shape
+        in case paint of
+            Just (Solid target) ->
+                let (h, s, l) = colorHsl original
+                    (th, ts, tl) = colorHsl target
+                    hue = if ts == 0 then dh else th - h
+                    sat = if tl == 0 || tl == 1 then ds else ts - s
+                in Just (Just (hue, sat, tl - l), Requests.ShapeNodeRequest common rest)
+            _ -> Just (Nothing, request)
+    _ -> Just (Nothing, request)
+
+regular_polygon :: Int -> Float -> Float -> Float -> Node
+regular_polygon corners centerX centerY radius =
+    polygon
+        (map
+            (\corner ->
+                let
+                    angle = 2 * pi * to_float corner / to_float corners - pi / 2
+                in
+                point (centerX + radius * cos angle) (centerY + radius * sin angle))
+            (intRange 0 1 (corners - 1)))
+
+star :: Int -> Float -> Float -> Float -> Float -> Node
+star spikes centerX centerY outerRadius innerRadius =
+    polygon
+        (map
+            (\corner ->
+                let
+                    angle = pi * to_float corner / to_float spikes - pi / 2
+                    radius = if mod corner 2 == 0 then outerRadius else innerRadius
+                in
+                point (centerX + radius * cos angle) (centerY + radius * sin angle))
+            (intRange 0 1 (2 * spikes - 1)))
+
+decorated_shape :: Int -> Node
+decorated_shape index =
+    let
+        seed = index * 17
+        progress = progress_of index shapeCount
+        center = snake_point progress (random_between seed (negate 18) 18)
+        size = 1.5 + 13 * growth progress * random_between (seed + 1) 0.6 1.25
+        color = palette progress (seed + 2)
+        turn = add_transform (Rotate (random_between (seed + 4) 0 360) (Just (center.x, center.y)))
+        filled = \shape ->
+            shape
+                |> set_fill color
+                |> set_fill_opacity 0.88
+                |> set_stroke white
+                |> set_stroke_width (0.08 * size)
+                |> set_stroke_linejoin RoundJoin
+                |> turn
+    in
+    case floor_int (random (seed + 5) * 6) of
+        0 -> filled (star 5 center.x center.y size (size * 0.45))
+        1 -> filled (circle center.x center.y (size * 0.8))
+        2 ->
+            circle center.x center.y (size * 0.7)
+                |> set_no_fill
+                |> set_stroke color
+                |> set_stroke_width (size * 0.28)
+        3 -> filled (regular_polygon 3 center.x center.y size)
+        4 -> filled (regular_polygon 6 center.x center.y (size * 0.85))
+        _ -> filled (rounded_rect (center.x - size * 0.6) (center.y - size * 0.6) (size * 1.2) (size * 1.2) (size * 0.2))
+
+sparkle :: Int -> List Node
+sparkle index =
+    let
+        seed = 9000 + index * 13
+        progress = random seed
+        center = snake_point progress (random_between (seed + 1) (negate 34) 34)
+        inside = center.x > 11 && center.x < pageWidth - 11 && center.y > 11 && center.y < pageHeight - 11
+    in
+    if inside then
+        [ circle center.x center.y (0.25 + 0.9 * growth progress * random (seed + 2))
+            |> set_fill (palette progress (seed + 3))
+            |> set_fill_opacity 0.5
+        ]
+    else
+        []
+
+dot_grid :: List Node
+dot_grid =
+    concatMap
+        (\column ->
+            map
+                (\row -> circle (to_float column * 10) (to_float row * 10) 0.3)
+                (intRange 1 1 28))
+        (intRange 1 1 20)
+
+snakeCurve :: Node
+snakeCurve =
+    path snake_commands
+        |> set_id "snake-curve"
+        |> set_no_fill
+        |> set_stroke (hsl 250 0.3 0.3)
+        |> set_stroke_width 0.9
+        |> set_stroke_linecap RoundCap
+        |> set_stroke_dasharray [ 3, 2 ]
+
+snake :: List Node
+snake =
+    [ path snake_commands
+        |> set_id "snake-ribbon"
+        |> set_no_fill
+        |> set_stroke (hsl 265 0.45 0.92)
+        |> set_stroke_width 9
+        |> set_stroke_linecap RoundCap
+        |> set_stroke_linejoin RoundJoin
+    , snakeCurve
+    , circle (snake_center 0).x (snake_center 0).y 3.2 |> set_fill (hsl 250 0.3 0.3)
+    , circle (snake_center 1).x (snake_center 1).y 1.8 |> set_fill (hsl 250 0.3 0.3)
+    ]
+
+program :: Container
+program =
+    svg 794 1123
+        (editableShapes
+        ([ rect 0 0 pageWidth pageHeight |> set_fill (rgb 250 247 240)
+         , group dot_grid |> set_fill gainsboro
+         , rect 8 8 (pageWidth - 16) (pageHeight - 16)
+            |> set_no_fill
+            |> set_stroke dark_gray
+            |> set_stroke_width 0.35
+         , group (gradient gradientTint (concatMap sparkle (intRange 0 1 (sparkleCount - 1))))
+         ]
+            <> snake
+            <> gradient gradientTint (map decorated_shape (intRange 0 1 (shapeCount - 1)))
+            <> [ text (pageWidth - 12) (pageHeight - 12) "knotty drawings"
+                    |> set_font_family "Georgia, serif"
+                    |> set_font_size 7
+                    |> set_text_anchor AnchorEnd
+                    |> set_fill dark_slate_gray
+               , text 12 (pageHeight - 12) "no. 1 / a Bézier snake of shapes"
+                    |> set_font_family "Georgia, serif"
+                    |> set_font_size 3.5
+                    |> set_fill slate_gray
+               ]
+        )
+        [])
+        |> set_view_box 0 0 pageWidth pageHeight
+
+tip :: IO Unit
+tip = putStrLn (render program)

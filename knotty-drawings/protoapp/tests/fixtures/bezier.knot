@@ -1,0 +1,16 @@
+module Drawing exposing (..)
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+commands :: List PathCommand
+commands = [MoveTo 20 60, CurveTo 40 10 80 10 100 60, CurveTo 120 110 160 110 180 60]
+
+program = svg 600 420
+    [ group
+        [ nested_svg 400 240
+            [ path commands |> set_no_fill |> set_stroke blue |> set_stroke_width 3 ]
+            |> set_transform [Scale 1.5 1.5]
+        ] |> set_transform [Translate 50 20, Rotate 10 Nothing]
+    , group (map (\unused -> path [MoveTo 30 330, CurveTo 80 270 140 380 190 330]
+        |> set_no_fill |> set_stroke tomato |> set_stroke_width 3) [1])
+    ] |> set_view_box 0 0 600 420

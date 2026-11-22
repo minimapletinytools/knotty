@@ -1,0 +1,236 @@
+module String exposing (length, null, toList, fromList, concat, reverse, take, drop, takeEnd, dropEnd, splitAt, takeWhile, dropWhile, dropWhileEnd, strip, stripStart, stripEnd, isPrefixOf, isSuffixOf, isInfixOf, stripPrefix, stripSuffix, splitOn, split, breakOn, chunksOf, intercalate, intersperse, replicate, replace, count, index, map, concatMap, filter, foldr, foldl, any, all, toUpper, toLower, justifyLeft, justifyRight, center, isSpace, isDigit, isAlpha, isAlphaNum, isUpper, isLower, ord, chr, toInt, toFloat)
+
+-- Text functions, used qualified (`String.length`), as Haskell uses
+-- Data.Text: the same names and behaviour, with a String of one code point
+-- standing in for Data.Text's `Char` (spec §5.7). The character predicates
+-- and `ord`/`chr` are Data.Char's.
+--
+-- The `prim*` operations are the runtime's (Prelude.knot); the rest is
+-- written in Knot over them. Any of these can become a primitive later
+-- without changing its signature.
+
+length :: String -> Int
+length = primStringLength
+
+null :: String -> Bool
+null s = s == ""
+
+-- One string per code point, and back (Data.Text's unpack and pack).
+toList :: String -> List String
+toList = primStringToList
+
+fromList :: List String -> String
+fromList = primStringConcat
+
+concat :: List String -> String
+concat = primStringConcat
+
+reverse :: String -> String
+reverse s = fromList (Prelude.reverse (toList s))
+
+
+-- Substrings ------------------------------------------------------------------
+
+take :: Int -> String -> String
+take = primStringTake
+
+drop :: Int -> String -> String
+drop = primStringDrop
+
+takeEnd :: Int -> String -> String
+takeEnd n s = drop (length s - n) s
+
+dropEnd :: Int -> String -> String
+dropEnd n s = take (length s - n) s
+
+splitAt :: Int -> String -> (String, String)
+splitAt n s = (take n s, drop n s)
+
+takeWhile :: (String -> Bool) -> String -> String
+takeWhile p s = fromList (Prelude.takeWhile p (toList s))
+
+dropWhile :: (String -> Bool) -> String -> String
+dropWhile p s = fromList (Prelude.dropWhile p (toList s))
+
+dropWhileEnd :: (String -> Bool) -> String -> String
+dropWhileEnd p s = reverse (dropWhile p (reverse s))
+
+-- Removes leading and trailing white space.
+strip :: String -> String
+strip = primStringStrip
+
+stripStart :: String -> String
+stripStart s = dropWhile isSpace s
+
+stripEnd :: String -> String
+stripEnd s = dropWhileEnd isSpace s
+
+
+-- Searching -------------------------------------------------------------------
+
+isPrefixOf :: String -> String -> Bool
+isPrefixOf = primStringIsPrefixOf
+
+isSuffixOf :: String -> String -> Bool
+isSuffixOf = primStringIsSuffixOf
+
+isInfixOf :: String -> String -> Bool
+isInfixOf = primStringIsInfixOf
+
+stripPrefix :: String -> String -> Maybe String
+stripPrefix p s = if isPrefixOf p s then Just (drop (length p) s) else Nothing
+
+stripSuffix :: String -> String -> Maybe String
+stripSuffix p s = if isSuffixOf p s then Just (dropEnd (length p) s) else Nothing
+
+-- `splitOn "," "a,b,,c"` is `["a", "b", "", "c"]`. An empty separator is a
+-- runtime error.
+splitOn :: String -> String -> List String
+splitOn = primStringSplitOn
+
+-- Splits at every character satisfying the predicate, dropping it:
+-- `split (\c -> c == ",") "a,b,,c"` is `["a", "b", "", "c"]`.
+split :: (String -> Bool) -> String -> List String
+split p s =
+  Prelude.map fromList (Prelude.foldr (splitStep p) [[]] (toList s))
+
+splitStep :: (String -> Bool) -> String -> List (List String) -> List (List String)
+splitStep p c acc =
+  if p c then [] : acc
+  else
+    case acc of
+      cur : rest -> (c : cur) : rest
+      [] -> [[c]]
+
+-- `breakOn "::" "a::b::c"` is `("a", "::b::c")`: the text before the first
+-- match, and the rest from the match on (`""` if there is none).
+breakOn :: String -> String -> (String, String)
+breakOn needle s =
+  case splitOn needle s of
+    first : rest -> (first, if Prelude.null rest then "" else needle <> intercalate needle rest)
+    [] -> (s, "")
+
+-- Pieces of `n` characters; the last may be shorter.
+chunksOf :: Int -> String -> List String
+chunksOf n s =
+  if n <= 0 || null s then []
+  else take n s : chunksOf n (drop n s)
+
+-- The number of non-overlapping occurrences. An empty pattern is a runtime
+-- error.
+count :: String -> String -> Int
+count needle s = Prelude.length (splitOn needle s) - 1
+
+-- The character at a position, counting from 0. Out of range is a runtime
+-- error, as in Data.Text.
+index :: String -> Int -> String
+index s n =
+  if n < 0 || n >= length s then error "String.index: index out of bounds"
+  else take 1 (drop n s)
+
+
+-- Building --------------------------------------------------------------------
+
+intercalate :: String -> List String -> String
+intercalate sep ss = concat (Prelude.intercalate [sep] (Prelude.map (\s -> [s]) ss))
+
+-- Puts a character between every pair of characters.
+intersperse :: String -> String -> String
+intersperse sep s = intercalate sep (toList s)
+
+replicate :: Int -> String -> String
+replicate n s = concat (Prelude.replicate n s)
+
+-- `replace needle replacement haystack`. An empty needle is a runtime error.
+replace :: String -> String -> String -> String
+replace = primStringReplace
+
+-- Pads on the right (justifyLeft), the left (justifyRight), or both (center)
+-- to `n` characters with the fill character. Longer strings are unchanged.
+justifyLeft :: Int -> String -> String -> String
+justifyLeft n fill s = s <> replicate (n - length s) fill
+
+justifyRight :: Int -> String -> String -> String
+justifyRight n fill s = replicate (n - length s) fill <> s
+
+center :: Int -> String -> String -> String
+center n fill s =
+  let
+    total = n - length s
+    left = total - total `div` 2
+  in
+    if total <= 0 then s
+    else replicate left fill <> s <> replicate (total - left) fill
+
+
+-- Characters ------------------------------------------------------------------
+
+map :: (String -> String) -> String -> String
+map f s = fromList (Prelude.map f (toList s))
+
+concatMap :: (String -> String) -> String -> String
+concatMap f s = map f s
+
+filter :: (String -> Bool) -> String -> String
+filter p s = fromList (Prelude.filter p (toList s))
+
+foldr :: (String -> b -> b) -> b -> String -> b
+foldr f z s = Prelude.foldr f z (toList s)
+
+foldl :: (b -> String -> b) -> b -> String -> b
+foldl f z s = Prelude.foldl f z (toList s)
+
+any :: (String -> Bool) -> String -> Bool
+any p s = Prelude.any p (toList s)
+
+all :: (String -> Bool) -> String -> Bool
+all p s = Prelude.all p (toList s)
+
+toUpper :: String -> String
+toUpper = primStringToUpper
+
+toLower :: String -> String
+toLower = primStringToLower
+
+-- Unicode white space, letters, letters or digits, upper and lower case
+-- letters, as Data.Char's. False for anything but one character.
+isSpace :: String -> Bool
+isSpace = primStringIsSpace
+
+isAlpha :: String -> Bool
+isAlpha = primStringIsAlpha
+
+isAlphaNum :: String -> Bool
+isAlphaNum = primStringIsAlphaNum
+
+isUpper :: String -> Bool
+isUpper = primStringIsUpper
+
+isLower :: String -> Bool
+isLower = primStringIsLower
+
+-- An ASCII digit, `"0"` to `"9"`, as Data.Char's.
+isDigit :: String -> Bool
+isDigit c = length c == 1 && ord c >= 48 && ord c <= 57
+
+-- The code point of a one-character string, and back. Anything else is a
+-- runtime error. Strings contain Unicode scalar values; chr rejects surrogates.
+ord :: String -> Int
+ord = primStringOrd
+
+chr :: Int -> String
+chr = primStringChr
+
+
+-- Numbers ---------------------------------------------------------------------
+
+-- Parses an optionally signed decimal integer or float with nothing around
+-- it: `toInt "42"` is `Just 42`, `toInt " 42"` is `Nothing`.
+-- Int overflow returns Nothing. Float syntax requires digits before and after
+-- any decimal point and digits after an exponent; NaN/Infinity names are rejected.
+-- Valid Float overflow/underflow follows IEEE binary64 (infinity/signed zero).
+toInt :: String -> Maybe Int
+toInt = primStringToInt
+
+toFloat :: String -> Maybe Float
+toFloat = primStringToFloat

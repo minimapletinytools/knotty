@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Knotty Drawings</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='5' fill='none' stroke='%23d9365e' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="toolbar">
+    <button class="icon-button" id="toggle-tree" title="Show or hide the layers panel" aria-pressed="true">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg>
+    </button>
+    <div class="file">
+      <span id="file-name">Loading…</span>
+      <span id="file-status" class="file-status"></span>
+    </div>
+    <button class="text-button" id="toggle-source" aria-controls="source-panel" aria-pressed="false">Source</button>
+    <a href="/tangle" class="text-button">Tangle</a>
+    <button class="text-button" id="select-curve" hidden>Select curve</button>
+    <button class="text-button" id="add-circle" title="Add a circle (C)" aria-pressed="false">○ Circle</button>
+    <button class="text-button" id="undo-edit" title="Undo the last source edit">Undo</button>
+    <div class="zoom">
+      <button class="text-button" id="fit" title="Fit the drawing to the window (F)">Fit</button>
+      <button class="text-button" id="actual-size" title="Show at 100% (0)"><span id="zoom-level">100%</span></button>
+    </div>
+    <button class="icon-button" id="toggle-properties" title="Show or hide the properties panel" aria-pressed="true">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><line x1="10" y1="2.5" x2="10" y2="13.5"/></svg>
+    </button>
+  </header>
+
+  <div class="split-view">
+  <main class="workspace">
+    <nav class="panel tree-panel" id="tree-panel" aria-label="Layers">
+      <h2 class="panel-title">Layers</h2>
+      <ul class="tree" id="tree" role="tree"></ul>
+    </nav>
+
+    <section class="canvas" id="canvas" aria-label="Drawing">
+      <div class="stage" id="stage"></div>
+      <div class="selection-box" id="selection-box" hidden></div>
+      <svg class="geometry-overlay" id="geometry-overlay" aria-label="Move and resize selection"></svg>
+      <svg class="creation-overlay" id="creation-overlay" aria-hidden="true"></svg>
+      <div class="hover-box" id="hover-box" hidden></div>
+      <div class="banner" id="banner" hidden>
+        <p>The drawing has an error. Showing the last version that worked.</p>
+        <pre id="banner-detail"></pre>
+      </div>
+      <p class="hint"><span id="creation-status" role="status"></span><span id="geometry-status"></span>Scroll to zoom. Drag with the middle button, or hold space and drag, to pan.</p>
+    </section>
+
+    <aside class="panel properties-panel" id="properties-panel" aria-label="Properties">
+      <div class="properties-head">
+        <h2 class="panel-title" id="properties-title">Properties</h2>
+        <label class="style-picker" title="How properties that can't be changed are shown">
+          <span>Locked fields</span>
+          <select id="locked-style">
+            <option value="dim">Dimmed</option>
+            <option value="plain">Plain text</option>
+            <option value="lock">Lock icon</option>
+          </select>
+        </label>
+      </div>
+      <div id="properties" class="properties locked-dim">
+        <p class="empty">Select something in the drawing or the layers list to see its properties.</p>
+      </div>
+      <p class="edit-status" id="edit-status" role="status"></p>
+    </aside>
+  </main>
+  <section id="source-panel" class="source-panel" aria-label="Knot source" hidden>
+    <h2 class="panel-title">Knot source</h2>
+    <div id="source-editor"><pre id="source-text"></pre></div>
+  </section>
+  </div>
+
+  <script src="paint.js"></script>
+  <script src="geometry.js"></script>
+  <script src="reconcile.js"></script>
+  <script src="source.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

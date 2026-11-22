@@ -1,0 +1,133 @@
+module Main exposing (..)
+
+-- Executable rule/propagation model. The dependency graph and transaction
+-- scheduling below are wired explicitly; this is not an automatic source editor.
+type alias Feed a =
+  { value : a, pinned : Maybe a }
+
+-- Internal baseline tracking is separate from the public rule input.
+ruleInput :: EngineInput a -> Feed a
+ruleInput state = { value = state.current, pinned = state.pinned }
+
+type alias EngineInput a =
+  { original : a, current : a, pinned : Maybe a }
+
+freeState :: a -> a -> EngineInput a
+freeState original current = { original = original, current = current, pinned = Nothing }
+
+fixedState :: a -> a -> EngineInput a
+fixedState original current = { original = original, current = current, pinned = Just current }
+
+effective :: Feed a -> a
+effective input = case input.pinned of
+  Nothing -> input.value
+  Just fixed -> fixed
+
+-- Whole-value Eq pins only. Opaque values require an explicit validator or
+-- read-only provenance capability in the engine, not invented equality.
+pinAllows :: Eq a => { r | pinned : Maybe a } -> a -> Bool
+pinAllows input candidate = case input.pinned of
+  Nothing -> True
+  Just fixed -> candidate == fixed
+
+-- f's implementation and captures must be fixed. These helpers derive pins
+-- from inputs only; the engine separately retains explicit output locks.
+pushforward1 :: (a -> b) -> EngineInput a -> EngineInput b
+pushforward1 f input =
+  { original = f input.original
+  , current = f input.current
+  , pinned = map f input.pinned
+  }
+
+pushforward2 :: (a -> b -> c) -> EngineInput a -> EngineInput b -> EngineInput c
+pushforward2 f left right =
+  { original = f left.original right.original
+  , current = f left.current right.current
+  , pinned = case (left.pinned, right.pinned) of
+      (Just a, Just b) -> Just (f a b)
+      _ -> Nothing
+  }
+
+plusBack :: (Feed Float, Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
+plusBack (left, right) target = case target of
+  Nothing -> Just (Nothing, Nothing)
+  Just wanted -> case (left.pinned, right.pinned) of
+    (Nothing, _) ->
+      let b = effective right
+      in Just (Just (wanted - b), Just b)
+    (Just a, Nothing) -> Just (Just a, Just (wanted - a))
+    (Just a, Just b) ->
+      if a + b == wanted then Just (Just a, Just b) else Nothing
+
+timesBack :: (Feed Float, Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
+timesBack (left, right) target = case target of
+  Nothing -> Just (Nothing, Nothing)
+  Just wanted -> case (left.pinned, right.pinned) of
+    (Nothing, _) ->
+      let b = effective right
+      in if b == 0.0 then
+        if wanted == 0.0 then Just (Just left.value, Just b) else Nothing
+      else Just (Just (wanted / b), Just b)
+    (Just a, Nothing) ->
+      if a == 0.0 then
+        if wanted == 0.0 then Just (Just a, Just right.value) else Nothing
+      else Just (Just a, Just (wanted / a))
+    (Just a, Just b) ->
+      if a * b == wanted then Just (Just a, Just b) else Nothing
+
+chooseInput :: Feed Float -> Maybe Float -> Maybe Float
+chooseInput input request =
+  let candidate = case request of
+        Nothing -> effective input
+        Just value -> value
+  in if pinAllows input candidate then Just candidate else Nothing
+
+-- Validate each argument's constraint separately: no tuple Constriction instance
+-- or implicit conversion is assumed. Then validate the forward result too.
+solvePair :: (Float -> Float -> Float) -> ((Feed Float, Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)) -> EngineInput Float -> EngineInput Float -> Maybe Float -> Maybe (Float, Float)
+solvePair f back left right target = do
+  (requestA, requestB) <- back (ruleInput left, ruleInput right) target
+  a <- chooseInput (ruleInput left) requestA
+  b <- chooseInput (ruleInput right) requestB
+  if fits requestA a && fits requestB b && fits target (f a b)
+  then Just (a, b)
+  else Nothing
+
+-- Original source:
+-- base = 10; scaled = base * 2; offset = base + 5
+-- result = scaled + offset; doubled = scaled * 2
+-- Requests: doubled = 44 first, then result = 40.
+meetingPoint = do
+  (wantedScaled, doubledFactor) <- solvePair (*) timesBack
+    (freeState 20.0 20.0) (freeState 2.0 2.0) (Just 44.0)
+  (newBase, scaledFactor) <- solvePair (*) timesBack
+    (freeState 10.0 10.0) (freeState 2.0 2.0) (Just wantedScaled)
+  let baseState = fixedState 10.0 newBase
+      multiplierState = fixedState 2.0 scaledFactor
+      scaledState = pushforward2 (*) baseState multiplierState
+      offsetState = pushforward2 (+) baseState (freeState 5.0 5.0)
+  (keptScaled, wantedOffset) <- solvePair (+) plusBack scaledState offsetState (Just 40.0)
+  (keptBase, newConstant) <- solvePair (+) plusBack
+    baseState (freeState 5.0 5.0) (Just wantedOffset)
+  let scaled = keptBase * scaledFactor
+      offset = keptBase + newConstant
+      result = scaled + offset
+      doubled = scaled * doubledFactor
+  if pinAllows baseState keptBase && pinAllows scaledState keptScaled
+    && scaled == wantedScaled && result == 40.0 && doubled == 44.0
+  then Just
+    { base = keptBase, offsetConstant = newConstant, scaled = scaled
+    , offset = offset, result = result, doubled = doubled
+    }
+  else Nothing
+
+-- A changed dependency changes current, but not necessarily pinned.
+pushedOffset :: EngineInput Float
+pushedOffset = pushforward2 (+) (fixedState 10.0 11.0) (freeState 5.0 5.0)
+
+pushedAbs :: EngineInput Float
+pushedAbs = pushforward1 abs (fixedState (-10.0) (-11.0))
+
+-- output: Just { base = 11.0, doubled = 44.0, offset = 18.0, offsetConstant = 7.0, result = 40.0, scaled = 22.0 }
+tip :: IO Unit
+tip = print meetingPoint
