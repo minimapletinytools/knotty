@@ -2,7 +2,7 @@
 //! output (by key) that the unravel engine turns into a validated source edit.
 //! This is the app's single integration point for pullbacks and undo.
 mod creation;
-pub use creation::CreateCircleRequest;
+pub use creation::{CreateCircleRequest, CreateShapeRequest};
 mod graph;
 pub use graph::GraphEdit;
 mod geometry;
@@ -90,6 +90,20 @@ pub fn new_engine() -> Result<SourceEditor, EditError> {
                 name: "Circle".into(),
             },
             expression: "DrawingBack.unravelCircleShape".into(),
+        },
+        ConstructorRule {
+            constructor: knot_core::GlobalName {
+                module: vec!["Types".into()],
+                name: "Rect".into(),
+            },
+            expression: "DrawingBack.unravelRectShape".into(),
+        },
+        ConstructorRule {
+            constructor: knot_core::GlobalName {
+                module: vec!["Types".into()],
+                name: "Ellipse".into(),
+            },
+            expression: "DrawingBack.unravelEllipseShape".into(),
         },
     ]))
 }

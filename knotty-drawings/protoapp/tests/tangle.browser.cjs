@@ -344,7 +344,13 @@ local_fn = do
       assert.equal(await page.locator('#source').textContent(), a.source);
     }
     await page.goto(url);
-    await page.getByRole('link', { name: 'Tangle' }).click();
+    await page.getByRole('button', { name: 'Tangle', exact: true }).click();
+    const embedded = page.frameLocator('#drawing-graph');
+    const picker = embedded.getByRole('combobox', { name: 'Drawing definition' });
+    await embedded.getByRole('region', { name: 'program scope', exact: true }).waitFor();
+    await picker.selectOption('cafe_table');
+    await embedded.getByRole('region', { name: 'cafe_table scope', exact: true }).waitFor();
+    await page.getByRole('link', { name: 'Full editor' }).click();
     await loaded();
     await checkTable(80, 22);
     const first = await graph(url);
@@ -481,7 +487,7 @@ local_fn = do
     const rejected = await post({
       snapshot: choice.snapshot,
       definition: 'choose',
-      changes: [{ kind: 'connect', target: choice.scope.body.inputs[0].id, parameter: 0 }],
+      changes: [{ kind: 'connect', target: choice.scope.body.inputs[0].id, parameter: choice.scope.inputs[0].parameters[0].port }],
     });
     assert.equal(rejected.ok, false);
     assert.equal(fs.readFileSync(file, 'utf8'), shadow + incompatible);
@@ -493,18 +499,19 @@ local_fn = do
     const nodes = flat(g.scope.body);
     const localLet = nodes.find(e => e.kind === 'let');
     assert.equal(localLet.steps[0].pattern.pattern, 'y');
-    assert(!localLet.inputs[0].visible.includes(1));
+    const outerYPort = g.scope.inputs.flatMap(input => input.parameters).find(p => p.name === 'y').port;
+    assert(!localLet.inputs[0].visible.includes(outerYPort));
     const input = nodes.find((e) => e.kind === 'reference' && e.label === 'x');
     const literal = nodes.find((e) => e.kind === 'number' && e.label === '22');
     const edit = (changes) => post({ snapshot: g.snapshot, definition: g.definition, changes });
     for (const change of [
-      { kind: 'connect', target: localLet.inputs[0].id, parameter: 1 },
+      { kind: 'connect', target: localLet.inputs[0].id, parameter: outerYPort },
       { kind: 'connect', target: input.id, parameter: 99 },
       { kind: 'number', target: literal.id, value: '28 + 1' },
     ])
       assert.equal((await edit([change])).ok, false);
     assert.equal(fs.readFileSync(file, 'utf8'), shadow);
-    assert.equal((await edit([{ kind: 'connect', target: input.id, parameter: 1 }])).ok, true);
+    assert.equal((await edit([{ kind: 'connect', target: input.id, parameter: outerYPort }])).ok, true);
     await page.reload();
     await loaded();
     await compare(shadow.replace('circle x y 22', 'circle y y 22'), 'shadow');
@@ -525,7 +532,7 @@ nested_box x y z = map (\x -> x + y) [x]
     const [left, right] = lambda.scope.body.inputs;
     assert.equal(left.parameter, innerX);
     assert.equal(right.parameter, outerY);
-    assert.deepEqual(new Set(left.visible), new Set([innerX, outerY, outerZ]));
+    assert.deepEqual(new Set(left.visible), new Set([innerX, outerY, outerZ, model.definition_port]));
     for (const [target, parameter] of [[left.id, outerX], [list.inputs[0].id, innerX]]) {
       const refused = await post({ snapshot: model.snapshot, definition: model.definition,
         changes: [{ kind: 'connect', target, parameter }] });
@@ -629,6 +636,13 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
     const consumer = await bounds(page.locator('article.call').filter({ hasText: 'compose_two' }));
     assert(firstBox.x + firstBox.width < secondBox.x);
     for (const box of [firstBox, secondBox]) assert(box.y + box.height < consumer.y);
+    const callbacksSource = fs.readFileSync(file, 'utf8');
+    await page.goto(url + '/tangle?definition=compose_two');
+    await page.getByRole('button', { name: 'Connect parameter g', exact: true }).click();
+    await page.getByRole('button', { name: 'Callsite function, connected to f', exact: true }).click();
+    await save();
+    assert.equal(fs.readFileSync(file, 'utf8'), callbacksSource.replace('g (f x)', 'g (g x)'));
+    await undoTo(callbacksSource);
     await controlFlow(page);
     await page.goto(url + '/tangle/stories');
     const navigation = page.getByRole('navigation', { name: 'Syntax stories' });
@@ -749,7 +763,7 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
         const box = page.getByRole('region', { name: '>> scope', exact: true });
         const named = definition === 'composed_functions';
         assert.deepEqual(await box.locator('.slub').allTextContents(),
-          named ? ['String.length', 'max'] : ['f', 'g', '<apply>']);
+          named ? ['String.length', 'max'] : ['f', 'g', 'Call']);
         assert.equal(await box.locator(':scope > .definition-port').count(), 1);
         assert.equal(await box.locator('.capture:visible').count(), named ? 0 : 2);
         for (const [mark, ty] of [['.chain-head', named ? 'String' : 'Int'], ['.chain-tail', 'Int']]) {
@@ -772,13 +786,35 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
         }
       }
       if (definition === 'self_recursion') {
-        assert.equal(await page.locator('.call .knot-label').innerText(), 'self_recursion');
+        assert.equal(await page.locator('#board > .recursive-knot').count(), 1);
+        const call = page.locator('.callsite.recursive-knot');
+        assert(await page.locator('path.rope-recursive').evaluateAll(paths =>
+          paths.length > 1 && paths.every(p => p.classList.contains('rope-capture') && getComputedStyle(p).strokeDasharray !== 'none')));
+        assert.equal(await call.locator('.knot-label').innerText(), 'self_recursion');
+        const end = call.locator('.callee-inlet');
+        assert.equal(await end.evaluate(e => getComputedStyle(e, '::before').content), '"$"');
+        await call.locator('.callee-socket').focus();
+        assert.equal(await page.locator('path.inspected-wire[marker-end="url(#call-tip)"]').count(), 1);
+        await page.locator('#board > .scope-box > .definition-port').focus();
+        assert.equal(await page.locator('.definition-rope.inspected-wire').count(), 1);
+      }
+      if (definition === 'named_callsites') {
+        assert.equal(await page.locator('.recursive-knot, .rope-recursive').count(), 0);
+        const fn = page.getByRole('region', { name: 'twice scope', exact: true });
+        await fn.locator(':scope > .definition-port').focus();
+        assert.equal(await page.locator('.definition-rope.inspected-wire[marker-end="url(#call-tip)"]').count(), 2);
       }
       if (definition === 'local_self_recursion') {
-        assert.equal(await page.locator('.binding-knot').count(), 1);
+        assert.equal(await page.locator('.callsite.recursive-knot').count(), 1);
+        assert.equal(await page.locator('.callsite:not(.recursive-knot)').count(), 1);
+        assert.equal(await page.locator('.scope-box.recursive-knot').count(), 1);
+        assert.equal(await page.locator('.binding-knot').count(), 0);
+        assert.equal(await page.getByRole('region', { name: 'count scope', exact: true }).count(), 1);
         assert(await page.getByRole('img', { name: 'Captured count', exact: true }).count() > 0);
       }
       if (definition === 'recursive_values') {
+        assert.equal(await page.locator('.binding-knot.recursive-knot').count(), 2);
+        assert.equal(await page.locator('.rope-recursive:not(.rope-capture)').count(), 2);
         assert.equal(await page.locator('.binding-knot').count(), 2);
         for (const [name, uses] of [['x', 2], ['y', 1]]) {
           await page.getByRole('button', { name: 'Connect parameter ' + name, exact: true }).focus();
@@ -786,7 +822,10 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
         }
       }
       if (definition === 'mutual_recursion') {
-        assert.equal(await page.locator('.binding-knot').count(), 2);
+        assert.equal(await page.locator('.scope-box.recursive-knot').count(), 2);
+        assert.equal(await page.locator('.callsite.recursive-knot').count(), 2);
+        assert.equal(await page.locator('.callsite:not(.recursive-knot)').count(), 1);
+        assert.equal(await page.locator('.binding-knot').count(), 0);
         for (const name of ['even', 'odd']) {
           assert(await page.getByRole('button', { name: 'Connect parameter ' + name, exact: true }).isVisible());
           assert(await page.getByRole('img', { name: 'Captured ' + name, exact: true }).count() > 0);
@@ -857,7 +896,8 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
         const tip = page.getByRole('tooltip');
         if (definition === 'qualified_call') assert.match(await tip.innerText(), /String\.knot/);
         else {
-          assert.equal(await label.innerText(), '<apply>');
+          assert.equal(await label.innerText(), 'f');
+          assert.equal(await page.locator('.callsite .input-rail .socket').count(), 1);
           assert.match(await tip.innerText(), /f :: Int -> Int/);
           assert.match(await tip.innerText(), /Local binding/);
         }
@@ -878,7 +918,7 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
       if (definition === 'cubic_point') {
         assert.equal(await page.locator('.binding-knot').count(), 6);
         assert.equal(await page.locator('.field-access').count(), 8);
-        assert.equal(await page.locator('.knot.apply').count(), 2);
+        assert.equal(await page.locator('.knot.callsite').count(), 2);
         assert.equal(await page.locator('.capture:visible').count(), 4);
       }
     }

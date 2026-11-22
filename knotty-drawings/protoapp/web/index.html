@@ -9,25 +9,29 @@
 </head>
 <body>
   <header class="toolbar">
-    <button class="icon-button" id="toggle-tree" title="Show or hide the layers panel" aria-pressed="true">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg>
-    </button>
-    <div class="file">
-      <span id="file-name">Loading…</span>
-      <span id="file-status" class="file-status"></span>
+    <div class="main-tools">
+      <a href="/tangle" class="back-link">Full editor</a>
+      <button class="icon-button" id="toggle-tree" title="Show or hide the layers panel" aria-pressed="true">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg>
+      </button>
+      <div class="file">
+        <span id="file-name">Loading…</span>
+        <span id="file-status" class="file-status"></span>
+      </div>
+      <button class="text-button" id="select-curve" hidden>Select curve</button>
+      <button class="text-button" id="undo-edit" title="Undo the last source edit">Undo</button>
+      <div class="zoom">
+        <button class="text-button" id="fit" title="Fit the drawing to the window (F)">Fit</button>
+        <button class="text-button" id="actual-size" title="Show at 100% (0)"><span id="zoom-level">100%</span></button>
+      </div>
+      <button class="icon-button" id="toggle-properties" title="Show or hide the properties panel" aria-pressed="true">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><line x1="10" y1="2.5" x2="10" y2="13.5"/></svg>
+      </button>
     </div>
-    <button class="text-button" id="toggle-source" aria-controls="source-panel" aria-pressed="false">Source</button>
-    <a href="/tangle" class="text-button">Tangle</a>
-    <button class="text-button" id="select-curve" hidden>Select curve</button>
-    <button class="text-button" id="add-circle" title="Add a circle (C)" aria-pressed="false">○ Circle</button>
-    <button class="text-button" id="undo-edit" title="Undo the last source edit">Undo</button>
-    <div class="zoom">
-      <button class="text-button" id="fit" title="Fit the drawing to the window (F)">Fit</button>
-      <button class="text-button" id="actual-size" title="Show at 100% (0)"><span id="zoom-level">100%</span></button>
+    <div class="view-tools">
+      <button class="text-button" id="toggle-source" aria-controls="source-panel" aria-pressed="false">Source</button>
+      <button class="text-button" id="toggle-tangle" aria-controls="source-panel" aria-pressed="false">Tangle</button>
     </div>
-    <button class="icon-button" id="toggle-properties" title="Show or hide the properties panel" aria-pressed="true">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><line x1="10" y1="2.5" x2="10" y2="13.5"/></svg>
-    </button>
   </header>
 
   <div class="split-view">
@@ -38,6 +42,19 @@
     </nav>
 
     <section class="canvas" id="canvas" aria-label="Drawing">
+      <details id="shape-tools" open>
+        <summary aria-label="Shape tools" title="Shape tools">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m4 20 1.4-5.2L16.8 3.4a2 2 0 0 1 2.8 0l1 1a2 2 0 0 1 0 2.8L9.2 18.6 4 20Z"/>
+            <path d="m14.8 5.4 3.8 3.8M5.4 14.8l3.8 3.8"/>
+          </svg>
+        </summary>
+        <div class="shape-buttons" role="group" aria-label="Shape tools">
+          <button id="add-circle" data-shape="circle" title="Circle (C)" aria-label="Circle" aria-pressed="false"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="6.5"/></svg></button>
+          <button id="add-rect" data-shape="rect" title="Rectangle" aria-label="Rectangle" aria-pressed="false"><svg viewBox="0 0 20 20"><rect x="3" y="5" width="14" height="10"/></svg></button>
+          <button id="add-ellipse" data-shape="ellipse" title="Ellipse" aria-label="Ellipse" aria-pressed="false"><svg viewBox="0 0 20 20"><ellipse cx="10" cy="10" rx="7.5" ry="4.5"/></svg></button>
+        </div>
+      </details>
       <div class="stage" id="stage"></div>
       <div class="selection-box" id="selection-box" hidden></div>
       <svg class="geometry-overlay" id="geometry-overlay" aria-label="Move and resize selection"></svg>
@@ -50,27 +67,32 @@
       <p class="hint"><span id="creation-status" role="status"></span><span id="geometry-status"></span>Scroll to zoom. Drag with the middle button, or hold space and drag, to pan.</p>
     </section>
 
-    <aside class="panel properties-panel" id="properties-panel" aria-label="Properties">
-      <div class="properties-head">
+    <aside class="panel properties-panel" id="properties-panel" aria-label="Drawing inspector">
+      <div class="inspector-tabs" role="tablist" aria-label="Inspector">
+        <button role="tab" id="tab-properties" aria-selected="true" aria-controls="pane-properties">Properties</button>
+        <button role="tab" id="tab-options" aria-selected="false" aria-controls="pane-options" tabindex="-1">Options</button>
+        <button role="tab" id="tab-log" aria-selected="false" aria-controls="pane-log" tabindex="-1">Log</button>
+      </div>
+      <section id="pane-properties" role="tabpanel" aria-labelledby="tab-properties">
         <h2 class="panel-title" id="properties-title">Properties</h2>
-        <label class="style-picker" title="How properties that can't be changed are shown">
-          <span>Locked fields</span>
-          <select id="locked-style">
-            <option value="dim">Dimmed</option>
-            <option value="plain">Plain text</option>
-            <option value="lock">Lock icon</option>
-          </select>
-        </label>
-      </div>
-      <div id="properties" class="properties locked-dim">
-        <p class="empty">Select something in the drawing or the layers list to see its properties.</p>
-      </div>
-      <p class="edit-status" id="edit-status" role="status"></p>
+        <div id="properties" class="properties locked-dim">
+          <p class="empty">Select something in the drawing or the layers list to see its properties.</p>
+        </div>
+        <p class="edit-status" id="edit-status" role="status"></p>
+      </section>
+      <section id="pane-options" role="tabpanel" aria-labelledby="tab-options" hidden>
+        <label for="locked-style">Locked fields</label>
+        <select id="locked-style"><option value="dim">Dimmed</option><option value="lock">Lock icon</option><option value="plain">Plain</option></select>
+      </section>
+      <section id="pane-log" role="tabpanel" aria-labelledby="tab-log" hidden>
+        <ol id="drawing-log" role="log" aria-label="Drawing log"></ol>
+      </section>
     </aside>
   </main>
-  <section id="source-panel" class="source-panel" aria-label="Knot source" hidden>
-    <h2 class="panel-title">Knot source</h2>
+  <section id="source-panel" class="source-panel" aria-label="Source and Tangle" hidden>
+    <h2 class="panel-title" id="source-heading">Knot source</h2>
     <div id="source-editor"><pre id="source-text"></pre></div>
+    <iframe id="drawing-graph" title="Drawing definition graph" data-src="/tangle?embed=1" hidden></iframe>
   </section>
   </div>
 

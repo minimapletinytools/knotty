@@ -24,7 +24,7 @@ impl Projection<'_> {
     }
 }
 
-fn visit(expr: &TypedExpr, f: &mut impl FnMut(&TypedExpr)) {
+pub(super) fn visit(expr: &TypedExpr, f: &mut impl FnMut(&TypedExpr)) {
     f(expr);
     match &expr.node {
         TExpr::Negate(e, _)

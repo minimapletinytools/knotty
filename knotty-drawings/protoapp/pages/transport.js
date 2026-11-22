@@ -3,7 +3,8 @@ const browserDrawing = (() => {
   const worker = new Worker(new URL("runtime.worker.js", document.currentScript.src), { type: "module" });
   const pending = new Map();
   let serial = 0, failure;
-  worker.onmessage = ({ data: { id, value, error } }) => {
+  worker.onmessage = ({ data: { id, value, error, log } }) => {
+    if (log) { window.dispatchEvent(new CustomEvent("drawing-log", { detail: log })); return; }
     const call = pending.get(id);
     if (!call) return;
     pending.delete(id);

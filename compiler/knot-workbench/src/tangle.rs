@@ -2,6 +2,7 @@
 //! ports belong to their lexical box and are meaningful only in this snapshot.
 mod fallback;
 mod position;
+mod recursion;
 use position::{Patch, Placement};
 
 use crate::project::ProjectSnapshot;
@@ -55,6 +56,8 @@ impl AnnotationLayer {
 
 #[derive(Serialize)]
 pub struct Graph {
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    recursive: bool,
     pub snapshot: String,
     module: String,
     definition: String,
@@ -62,6 +65,8 @@ pub struct Graph {
     source: String,
     source_start: u32,
     callable: Option<Callable>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    definition_port: Option<usize>,
     scope: ScopeBox,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     annotations: Vec<AnnotationLayer>,
@@ -137,6 +142,8 @@ fn pattern_shape(p: &TypedPattern, source: &str) -> PatternShape {
 
 #[derive(Serialize)]
 struct Parameter {
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    recursive: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     callable: Option<Callable>,
     port: usize,
@@ -146,6 +153,8 @@ struct Parameter {
 
 #[derive(Serialize)]
 struct ScopeStep {
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    named_function: bool,
     kind: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     statement: Option<usize>,
@@ -163,6 +172,8 @@ struct Callable {
 
 #[derive(Serialize)]
 pub struct Expr {
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    recursive: bool,
     id: NodeId,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     annotations: Vec<AnnotationLayer>,
@@ -235,6 +246,7 @@ fn backticked_name(gap: &str) -> Option<&str> {
 }
 
 struct Projection<'a> {
+    recursion: recursion::Recursion,
     program: &'a TypedProgram,
     types: Substitution,
     printer: Printer,
@@ -253,6 +265,7 @@ impl Projection<'_> {
             self.port_names.push(binding.name.clone());
             self.active.push((*id, port));
             parameters.push(Parameter {
+                recursive: self.recursion.bindings.contains(id),
                 callable: self.local_callable(binding, binding.scheme.ty),
                 port,
                 name: binding.name.clone(),
@@ -285,6 +298,11 @@ impl Projection<'_> {
         statement: Option<usize>,
     ) -> Vec<ScopeStep> {
         // Every binder is in scope for every right-hand side in the group.
+        let members: Vec<_> = bindings
+            .iter()
+            .map(|(p, body)| (self.program.pattern_bindings[&p.id].as_slice(), body))
+            .collect();
+        self.recursion.group(self.program, &members);
         let patterns: Vec<_> = bindings.iter().map(|(p, _)| self.bind_pattern(p)).collect();
         patterns
             .into_iter()
@@ -294,6 +312,9 @@ impl Projection<'_> {
                 // A sugared lambda or declaration annotation spans the binder too.
                 value.placement.before_binding = rhs.span.start <= p.span.start;
                 ScopeStep {
+                    named_function: value.scope.is_some()
+                        && value.span.start == p.span.start
+                        && matches!(&p.node, TPattern::Var(_)),
                     kind: "let",
                     statement,
                     pattern: Some(pattern),
@@ -301,6 +322,18 @@ impl Projection<'_> {
                 }
             })
             .collect()
+    }
+
+    fn binding_port(&self, site: NodeId) -> Option<usize> {
+        let ResolvedReference::Binding(binding) =
+            self.program.references.get(&EvidenceSite::Expr(site))?
+        else {
+            return None;
+        };
+        self.active
+            .iter()
+            .find(|(id, _)| id == binding)
+            .map(|(_, port)| *port)
     }
 
     fn application_types(&mut self, mut ty: TypeVarId) -> (Vec<String>, TypeVarId) {
@@ -424,6 +457,7 @@ impl Projection<'_> {
         let mut inputs = Vec::new();
         let mut callable = None;
         let mut token_span = None;
+        let mut recursive = self.recursion.uses.contains(&e.id);
         let mut constructor = matches!(&e.node, TExpr::Ctor(_));
         let mut parameter = None;
         let mut callee_port = None;
@@ -468,6 +502,7 @@ impl Projection<'_> {
                         TDoStmt::Bind(p, rhs, _) => {
                             let value = self.expr(rhs);
                             steps.push(ScopeStep {
+                                named_function: false,
                                 kind: "bind",
                                 statement: Some(index),
                                 pattern: Some(self.bind_pattern(p)),
@@ -475,6 +510,7 @@ impl Projection<'_> {
                             });
                         }
                         TDoStmt::Expr(rhs, _) => steps.push(ScopeStep {
+                            named_function: false,
                             kind: "discard",
                             statement: Some(index),
                             pattern: None,
@@ -496,28 +532,30 @@ impl Projection<'_> {
                     args.push(arg.as_ref());
                     head = callee;
                 }
+                recursive = self.recursion.uses.contains(&head.id);
                 constructor = matches!(head.node, TExpr::Ctor(_));
                 if let TExpr::Var(r) | TExpr::Ctor(r) = &head.node {
                     callable = self.callable(r, head.id, head.ty);
                 }
-                if matches!(
-                    head.node,
-                    TExpr::Var(Ref::Imported { .. } | Ref::Builtin(_) | Ref::TopLevel(_))
-                        | TExpr::Ctor(_)
-                ) {
-                    if let TExpr::Var(r) = &head.node {
-                        labels = self.call_labels(r);
-                    }
-                    inputs.extend(args.into_iter().rev().map(|arg| self.expr(arg)));
+                if let TExpr::Var(r) = &head.node {
+                    labels = self.call_labels(r);
+                }
+                let call = if self.binding_port(head.id).is_none()
+                    && matches!(
+                        head.node,
+                        TExpr::Var(Ref::Imported { .. } | Ref::Builtin(_) | Ref::TopLevel(_))
+                            | TExpr::Ctor(_)
+                    ) {
                     (
                         "call",
                         &self.source[head.span.start as usize..head.span.end as usize],
                     )
                 } else {
                     inputs.push(self.expr(head));
-                    inputs.extend(args.into_iter().rev().map(|arg| self.expr(arg)));
-                    ("apply", "apply")
-                }
+                    ("callsite", "Call")
+                };
+                inputs.extend(args.into_iter().rev().map(|arg| self.expr(arg)));
+                call
             }
             TExpr::Negate(value, op_ty) => {
                 inputs.push(self.expr(value));
@@ -538,16 +576,8 @@ impl Projection<'_> {
                 let kind = match op {
                     Ref::Builtin(n) if n == "|>" => "pipe",
                     Ref::Builtin(n) if n == ">>" => "composition",
-                    Ref::Local(_) => {
-                        if let Some(ResolvedReference::Binding(binding)) =
-                            self.program.references.get(&EvidenceSite::Expr(e.id))
-                        {
-                            callee_port = self
-                                .active
-                                .iter()
-                                .find(|(id, _)| id == binding)
-                                .map(|(_, p)| *p);
-                        }
+                    Ref::Local(_) | Ref::TopLevel(_) => {
+                        callee_port = self.binding_port(e.id);
                         "operator"
                     }
                     _ => "operator",
@@ -586,24 +616,18 @@ impl Projection<'_> {
                     ("tuple", "Tuple")
                 }
             }
-            TExpr::Var(Ref::Local(name)) => {
-                if let Some(ResolvedReference::Binding(binding)) =
-                    self.program.references.get(&EvidenceSite::Expr(e.id))
-                {
-                    token_span = crate::lint::grouped_name_span(source, name, e.span.start);
-                    if source == name || token_span.is_some() {
-                        parameter = self
-                            .active
-                            .iter()
-                            .find(|(id, _)| id == binding)
-                            .map(|(_, port)| *port);
-                        let mut names = std::collections::BTreeSet::new();
-                        visible.extend(self.active.iter().rev().filter_map(|(id, port)| {
-                            names
-                                .insert(&self.program.bindings[id].name)
-                                .then_some(*port)
-                        }));
-                    }
+            TExpr::Var(Ref::Local(name) | Ref::TopLevel(name))
+                if self.binding_port(e.id).is_some() =>
+            {
+                token_span = crate::lint::grouped_name_span(source, name, e.span.start);
+                if source == name || token_span.is_some() {
+                    parameter = self.binding_port(e.id);
+                    let mut names = std::collections::BTreeSet::new();
+                    visible.extend(self.active.iter().rev().filter_map(|(id, port)| {
+                        names
+                            .insert(&self.program.bindings[id].name)
+                            .then_some(*port)
+                    }));
                 }
                 (
                     if parameter.is_some() {
@@ -618,6 +642,7 @@ impl Projection<'_> {
                     },
                 )
             }
+            TExpr::Var(Ref::Local(_)) => ("source", source),
             TExpr::Var(_) | TExpr::Ctor(_) | TExpr::StringLit(_) => ("value", source),
             TExpr::IntLit(_) | TExpr::FloatLit(_) => {
                 token_span = crate::lint::grouped_token_span(source, e.span.start, |p| {
@@ -655,6 +680,7 @@ impl Projection<'_> {
         };
         let (open_inputs, result) = self.application_types(e.ty);
         Expr {
+            recursive,
             callable,
             applied_result: (!open_inputs.is_empty())
                 .then(|| self.printer.ty(&mut self.types, result)),
@@ -711,7 +737,15 @@ pub fn project(snapshot: &ProjectSnapshot, name: &str) -> Result<Graph, String> 
     } else {
         return Err("Missing checked parameters.".into());
     };
+    let mut recursion = recursion::Recursion::default();
+    let members: Vec<_> = program
+        .definitions
+        .iter()
+        .map(|d| (std::slice::from_ref(&d.binding), &d.body))
+        .collect();
+    recursion.group(program, &members);
     let mut view = Projection {
+        recursion,
         program,
         types: program.substitution.clone(),
         printer: Printer::new(),
@@ -720,9 +754,20 @@ pub fn project(snapshot: &ProjectSnapshot, name: &str) -> Result<Graph, String> 
         active: vec![],
         port_names: vec![],
     };
+    let definition_port = matches!(
+        view.types.head_normal(definition.body.ty),
+        Some(Structure::Fn(..))
+    )
+    .then(|| {
+        let port = view.port_names.len();
+        view.port_names.push(name.into());
+        view.active.push((definition.binding, port));
+        port
+    });
     let mut placement = Placement::new(decl.span);
     placement.read(&function.annotations);
     Ok(Graph {
+        recursive: view.recursion.bindings.contains(&definition.binding),
         annotations: AnnotationLayer::from_checked(decl.span, &function.annotations, view.source)
             .into_iter()
             .collect(),
@@ -738,6 +783,7 @@ pub fn project(snapshot: &ProjectSnapshot, name: &str) -> Result<Graph, String> 
             definition.body.id,
             definition.body.ty,
         ),
+        definition_port,
         scope: view.scope(patterns, body),
         port_names: view.port_names,
     })

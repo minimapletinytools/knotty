@@ -25,7 +25,7 @@ pub(super) fn payload(
 ) -> Value {
     let render = drawing.last_good();
     let mut payload = json!({"revision":drawing.revision(),"file":drawing.path().display().to_string(),
-        "source":drawing.display_source(),
+        "source":drawing.display_source(), "canUndo":editor.can_undo(drawing),
         "error":drawing.error(),"snapshot":render.map(|r|r.snapshot.id()),
         "sourceRootKey":render.map(|r|&r.source_root_key)});
     let Some(render) = render else {

@@ -12,6 +12,7 @@ pageHeight :: Float
 pageHeight = 297
 
 @whip(OnNode snakeCurve (IntSlider "Shape density" 1 128))
+@whip(OnNode snakeRibbon (IntSlider "Shape density" 1 128))
 shapeCount :: Int
 shapeCount = 64
 
@@ -34,7 +35,7 @@ random seed =
 random_between :: Int -> Float -> Float -> Float
 random_between seed low high = low + (high - low) * random seed
 
--- Select "snake-curve" in the layer tree to edit these cubic segments.
+-- Select either stroke to edit Shape density or bend the curve.
 -- Both strokes, the endpoint dots and all decorations use this same path.
 -- Drag a round Bézier knob to bend it, or a square anchor to move a join.
 snake_commands :: List PathCommand
@@ -268,15 +269,19 @@ snakeCurve =
         |> set_stroke_linecap RoundCap
         |> set_stroke_dasharray [ 3, 2 ]
 
-snake :: List Node
-snake =
-    [ path snake_commands
+snakeRibbon :: Node
+snakeRibbon =
+    path snake_commands
         |> set_id "snake-ribbon"
         |> set_no_fill
         |> set_stroke (hsl 265 0.45 0.92)
         |> set_stroke_width 9
         |> set_stroke_linecap RoundCap
         |> set_stroke_linejoin RoundJoin
+
+snake :: List Node
+snake =
+    [ snakeRibbon
     , snakeCurve
     , circle (snake_center 0).x (snake_center 0).y 3.2 |> set_fill (hsl 250 0.3 0.3)
     , circle (snake_center 1).x (snake_center 1).y 1.8 |> set_fill (hsl 250 0.3 0.3)

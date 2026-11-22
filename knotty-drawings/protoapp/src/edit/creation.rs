@@ -10,13 +10,96 @@ pub struct CreateCircleRequest {
     pub cy: f64,
     pub r: f64,
 }
+#[derive(serde::Deserialize, Debug)]
+pub struct CreateShapeRequest {
+    pub snapshot: String,
+    pub parent: String,
+    #[serde(flatten)]
+    pub geometry: ShapeGeometry,
+}
+
+#[derive(serde::Deserialize, Debug)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum ShapeGeometry {
+    Circle {
+        cx: f64,
+        cy: f64,
+        r: f64,
+    },
+    Rect {
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    },
+    Ellipse {
+        cx: f64,
+        cy: f64,
+        rx: f64,
+        ry: f64,
+    },
+}
+
+impl ShapeGeometry {
+    fn request(&self) -> Result<String, String> {
+        let (constructor, fields, positive): (&str, &[(&str, f64)], bool) = match *self {
+            Self::Circle { cx, cy, r } => ("Circle", &[("cx", cx), ("cy", cy), ("r", r)], r > 0.0),
+            Self::Rect {
+                x,
+                y,
+                width,
+                height,
+            } => (
+                "Rect",
+                &[("x", x), ("y", y), ("width", width), ("height", height)],
+                width > 0.0 && height > 0.0,
+            ),
+            Self::Ellipse { cx, cy, rx, ry } => (
+                "Ellipse",
+                &[("cx", cx), ("cy", cy), ("rx", rx), ("ry", ry)],
+                rx > 0.0 && ry > 0.0,
+            ),
+        };
+        if !positive || fields.iter().any(|(_, v)| !v.is_finite()) {
+            return Err("Shape coordinates must be finite and dimensions positive.".into());
+        }
+        let fields = fields
+            .iter()
+            .map(|(name, value)| format!("{name} = Just ({})", FieldValue::Float(*value).source()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        Ok(format!("Requests.ShapeNodeRequest Requests.anyCommon (Requests.Request{constructor} (let c = Requests.any{constructor} in {{ c | {fields} }}))"))
+    }
+}
+
 impl Editor {
-    /// A capability probe uses the same preparation/validation as the commit,
-    /// without publishing source or adding an undo entry.
     pub fn create_circle(
         &mut self,
         drawing: &mut Drawing,
         edit: &CreateCircleRequest,
+        check_only: bool,
+    ) -> Value {
+        self.create_shape(
+            drawing,
+            &CreateShapeRequest {
+                snapshot: edit.snapshot.clone(),
+                parent: edit.parent.clone(),
+                geometry: ShapeGeometry::Circle {
+                    cx: edit.cx,
+                    cy: edit.cy,
+                    r: edit.r,
+                },
+            },
+            check_only,
+        )
+    }
+
+    /// A capability probe uses the same preparation/validation as the commit,
+    /// without publishing source or adding an undo entry.
+    pub fn create_shape(
+        &mut self,
+        drawing: &mut Drawing,
+        edit: &CreateShapeRequest,
         check_only: bool,
     ) -> Value {
         let result = (|| -> Result<String, String> {
@@ -26,9 +109,7 @@ impl Editor {
             if self.preview {
                 return Err("Preview mode does not apply source edits.".into());
             }
-            if ![edit.cx, edit.cy, edit.r].iter().all(|v| v.is_finite()) || edit.r <= 0.0 {
-                return Err("Circle coordinates must be finite and its radius positive.".into());
-            }
+            let shape = edit.geometry.request()?;
             drawing.refresh();
             let render = drawing.check_snapshot(&edit.snapshot)?;
             let key = render.source_key(&edit.parent)?;
@@ -49,10 +130,8 @@ impl Editor {
             } else {
                 format!("{}.{count}", edit.parent)
             };
-            let float = |n| FieldValue::Float(n).source();
-            let circle = format!("Requests.ShapeNodeRequest Requests.anyCommon (Requests.RequestCircle (let c = Requests.anyCircle in {{ c | cx = Just ({}), cy = Just ({}), r = Just ({}) }}))", float(edit.cx),float(edit.cy),float(edit.r));
             // Local bindings keep parser depth bounded even for wide scenes.
-            let mut bindings = format!("tail0 = Prepend ({circle}) ExactEnd\n");
+            let mut bindings = format!("tail0 = Prepend ({shape}) ExactEnd\n");
             for i in 0..count {
                 bindings.push_str(&format!(
                     "tail{} = Prepend Requests.AnyNode tail{i}\n",
@@ -94,7 +173,7 @@ impl Editor {
                 )
                 .map_err(|e| {
                     format!(
-                        "This destination's unravel could not add a circle: {}",
+                        "This destination's unravel could not add this shape: {}",
                         edit_error(e)
                     )
                 })?;

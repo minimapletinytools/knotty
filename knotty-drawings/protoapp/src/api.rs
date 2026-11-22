@@ -16,27 +16,12 @@ pub(super) fn dispatch(
         ("GET", "/api/tangle") => {
             drawing.refresh();
             let name = query_value(query, "definition");
-            let graph = drawing
-                .error()
-                .map_or(Ok(()), |e| Err(e.to_string()))
-                .and_then(|_| {
-                    let render = drawing.last_good().ok_or("No checked drawing.")?;
-                    let program = &render.snapshot.graph.entry().program;
-                    let default = if program.definition("cafe_table").is_some() {
-                        "cafe_table"
-                    } else {
-                        "program"
-                    };
-                    let selected = name.as_deref().unwrap_or(default);
-                    let graph = knot_workbench::tangle::project(&render.snapshot, selected)?;
-                    let (preview, preview_error) =
-                        match drawing.definition_preview(render, selected) {
-                            Ok(svg) => (svg, None),
-                            Err(reason) => (None, Some(reason)),
-                        };
-                    Ok(json!({"ok":true, "graph":graph, "preview":preview,
-                        "previewError":preview_error, "canUndo":editor.can_undo(drawing)}))
-                });
+            let graph = graph_view::response(
+                drawing,
+                editor,
+                name.as_deref(),
+                query_value(query, "embed").as_deref() == Some("1"),
+            );
             match graph {
                 Ok(response) => response,
                 Err(reason) => json!({"ok":false,"reason":reason}),
@@ -114,6 +99,13 @@ pub(super) fn dispatch(
             let check_only = path.ends_with("/check");
             match serde_json::from_str::<CreateCircleRequest>(body) {
                 Ok(edit) => editor.create_circle(drawing, &edit, check_only),
+                Err(e) => json!({"ok":false,"reason":format!("bad creation request: {e}")}),
+            }
+        }
+        ("POST", "/api/create/shape" | "/api/create/shape/check") => {
+            let check_only = path.ends_with("/check");
+            match serde_json::from_str::<CreateShapeRequest>(body) {
+                Ok(edit) => editor.create_shape(drawing, &edit, check_only),
                 Err(e) => json!({"ok":false,"reason":format!("bad creation request: {e}")}),
             }
         }

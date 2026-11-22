@@ -8,6 +8,7 @@ import "../monaco/build.mjs";
 const app = fileURLToPath(new URL("../", import.meta.url));
 const out = path.resolve(app, "../../dist");
 const demos = [
+  ["lantern-waddle", "The Lantern Waddle", "examples/lantern-waddle.knot"],
   ["bezier", "Bézier gradient", "example-drawing.knot"],
   ["makers-fair", "Makers Fair", "examples/makers-fair.knot"],
   ["circle-creation", "Circle creation", "examples/mapped-creation.knot"],
@@ -38,7 +39,8 @@ for (const [slug, title, source] of demos) {
     .replace("<head>", '<head>\n  <base href="../../assets/">')
     .replace("<body>", `<body data-demo="${slug}">`)
     .replace("<title>Knotty Drawings", `<title>${title} · Knotty Drawings`)
-    .replace('<a href="/tangle" class="text-button">Tangle</a>', '<a href="../" class="text-button">Demos</a>')
+    .replace('data-src="/tangle?embed=1"', 'data-src="../tangle/?embed=1"')
+    .replace('<a href="/tangle" class="back-link">Full editor</a>', '<a href="../" class="back-link">← Back to demos</a>')
     .replace('<script src="app.js">', '<script src="transport.js"></script>\n  <script src="app.js">'));
 }
 const stories = execFileSync("cargo", ["run", "--locked", "--quiet", "--release", "--bin", "knottydrawings", "--", "--export-stories"],

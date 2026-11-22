@@ -73,16 +73,20 @@ async function displayScene(data) {
       return;
     }
   }
-  if (circleTool && !circleTool.committing && circleTool.snapshot!==data.snapshot) stopCircle();
+  if (shapeTool && !shapeTool.committing && shapeTool.snapshot!==data.snapshot) stopShape();
   KnotSource.update(data.source ?? "");
   state.sourceRootKey=data.sourceRootKey || "";
   if (state.snapshot !== data.snapshot || data.error) geometryCache.clear();
+  if (state.snapshot !== data.snapshot && data.scene) logDrawing(`Loaded ${data.file.split("/").pop()} · revision ${data.revision}`);
   state.snapshot = data.snapshot;
   state.whips = data.whips || [];
   state.whipsEditable = data.whipsEditable;
   state.editability = null;
   state.revision = data.revision;
   state.error = data.error;
+  state.canUndo = data.canUndo;
+  const frame = $("drawing-graph");
+  if (!frame.hidden) frame.contentWindow.refreshDrawingGraph?.();
   $("file-name").textContent = data.file.split("/").pop();
   $("file-name").title = data.file;
   $("select-curve").hidden = !data.scene?.children?.some(n => n.id === "snake-curve");
@@ -105,6 +109,7 @@ async function displayScene(data) {
 
 function showError(error) {
   const status = $("file-status");
+  if (error && $("banner-detail").textContent !== error) logDrawing(error, true);
   $("banner").hidden = !error;
   $("banner-detail").textContent = error || "";
   status.textContent = error ? "Error" : "Up to date";
@@ -113,11 +118,12 @@ function showError(error) {
 
 async function poll() {
   try {
-    if (paintPicker || circleTool) { setTimeout(poll, 1000); return; }
+    if (paintPicker || shapeTool) { setTimeout(poll, 1000); return; }
     const response = await drawingRequest("/api/revision");
     const data = await response.json();
     if (data.revision !== state.revision || data.error !== state.error) await load();
-  } catch {
+  } catch (error) {
+    if ($("file-status").textContent !== "Not connected to knottydrawings") logDrawing(error.message, true);
     $("file-status").textContent = "Not connected to knottydrawings";
     $("file-status").classList.add("error");
   }
@@ -145,7 +151,7 @@ function ancestors(key) {
 // Selection ------------------------------------------------------------------------
 
 function select(key) {
-  if (paintPicker || circleTool) return;
+  if (paintPicker || shapeTool) return;
   state.geometry = null;
   state.selected = key;
   state.editability = selectedEditability();
@@ -286,7 +292,7 @@ function setupCanvas() {
 
   canvas.addEventListener("wheel", (event) => {
     event.preventDefault();
-    if (geometryDrag || circleTool?.gesture || circleTool?.committing) return;
+    if (geometryDrag || shapeTool?.gesture || shapeTool?.committing) return;
     const rect = canvas.getBoundingClientRect();
     // Pinch gestures arrive as ctrl+wheel with small deltas.
     const speed = event.ctrlKey ? 0.01 : 0.0015;
@@ -296,8 +302,8 @@ function setupCanvas() {
 
   canvas.addEventListener("pointerdown", (event) => {
     suppressCanvasClick=false;
-    if (paintPicker || circleTool?.committing) return;
-    if (circleTool && event.button===0 && !spaceHeld) {startCircle(event);return;}
+    if (paintPicker || shapeTool?.committing) return;
+    if (shapeTool && event.button===0 && !spaceHeld) {startShape(event);return;}
     const handle=event.target.closest?.("[data-geometry]")?.getAttribute("data-geometry");
     if (handle && event.button===0 && !spaceHeld) { startGeometryDrag(event,handle); return; }
     if (event.button === 1 || (event.button === 0 && spaceHeld)) {
@@ -309,7 +315,7 @@ function setupCanvas() {
   });
 
   canvas.addEventListener("pointermove", (event) => {
-    if (circleTool?.gesture) {moveCircle(event);return;}
+    if (shapeTool?.gesture) {moveShape(event);return;}
     if (geometryDrag) { moveGeometryDrag(event); return; }
     if (pan) {
       state.view.x = pan.viewX + event.clientX - pan.x;
@@ -325,16 +331,16 @@ function setupCanvas() {
     canvas.classList.remove("panning");
   };
   canvas.addEventListener("pointerup", event => {
-    if (circleTool?.gesture) {finishCircle(event);return;}
+    if (shapeTool?.gesture) {finishShape(event);return;}
     if (geometryDrag && event.pointerId===geometryDrag.pointerId) { moveGeometryDrag(event); finishGeometryDrag(true); } else endPan();
   });
-  canvas.addEventListener("pointercancel", () => { if (circleTool?.gesture) stopCircle(); if (geometryDrag) finishGeometryDrag(false); endPan(); });
-  canvas.addEventListener("lostpointercapture", () => { if (circleTool?.gesture) stopCircle(); if (geometryDrag && !geometryDrag.ended) finishGeometryDrag(false); });
+  canvas.addEventListener("pointercancel", () => { if (shapeTool?.gesture) stopShape(); if (geometryDrag) finishGeometryDrag(false); endPan(); });
+  canvas.addEventListener("lostpointercapture", () => { if (shapeTool?.gesture) stopShape(); if (geometryDrag && !geometryDrag.ended) finishGeometryDrag(false); });
   canvas.addEventListener("pointerleave", () => showHover(null));
 
   canvas.addEventListener("click", (event) => {
     if (suppressCanvasClick) { suppressCanvasClick=false; return; }
-    if (event.button !== 0 || spaceHeld || paintPicker || circleTool) return;
+    if (event.button !== 0 || spaceHeld || paintPicker || shapeTool) return;
     select(keyAt(event.target));
   });
 
@@ -343,7 +349,7 @@ function setupCanvas() {
     if (event.button === 1) event.preventDefault();
   });
 
-  new ResizeObserver(() => { if (circleTool?.gesture) stopCircle(); if (geometryDrag && !geometryDrag.ended) finishGeometryDrag(false); updateBoxes(); }).observe(canvas);
+  new ResizeObserver(() => { if (shapeTool?.gesture) stopShape(); if (geometryDrag && !geometryDrag.ended) finishGeometryDrag(false); updateBoxes(); }).observe(canvas);
 }
 
 // The deepest keyed node under the pointer; clicking the bare page selects nothing.
@@ -381,103 +387,118 @@ function updateBoxes() {
   renderGeometryWidget();
 }
 
-// Circle creation -----------------------------------------------------------------
+// Shape creation -----------------------------------------------------------------
 // The gesture is local SVG only. Release sends one request through the selected
 // output's unravel, which owns insertion policy and validates the source edit.
-let circleTool = null;
-function circleStatus(message, error=false) {
+let shapeTool = null;
+function shapeStatus(message, error=false) {
   $("creation-status").textContent=message;
   $("creation-status").classList.toggle("error",error);
 }
-function stopCircle() {
-  if (circleTool?.committing) return;
-  const gesture=circleTool?.gesture;
-  circleTool=null;
+function stopShape() {
+  if (shapeTool?.committing) return;
+  const gesture=shapeTool?.gesture;
+  if (shapeTool) $("add-" + shapeTool.kind).setAttribute("aria-pressed", "false");
+  shapeTool=null;
   $("creation-overlay").replaceChildren();
-  $("add-circle").setAttribute("aria-pressed","false");
-  $("canvas").classList.remove("creating-circle");
+  $("canvas").classList.remove("creating-shape");
   $("properties").inert=false;
   $("tree").inert=false;
   $("undo-edit").disabled=false;
   if (gesture && $("canvas").hasPointerCapture(gesture.pointerId)) $("canvas").releasePointerCapture(gesture.pointerId);
-  circleStatus("");
+  shapeStatus("");
   scheduleGeometryCheck();
 }
-async function activateCircle() {
-  if (circleTool) {stopCircle();return;}
+async function activateShape(kind = "circle") {
+  if (shapeTool?.committing) return;
+  if (shapeTool?.kind === kind) { stopShape(); return; }
+  if (shapeTool) stopShape();
   if (paintPicker || geometryDrag || !state.scene || state.error) return;
   const selected=state.selected===null?null:findNode(state.selected);
   const parent=selected && ["svg","group"].includes(selected.kind)?state.selected:
     selected?state.selected.split(".").slice(0,-1).join("."):state.sourceRootKey;
-  const tool={parent,snapshot:state.snapshot,ready:false,gesture:null,committing:false};
-  circleTool=tool;
+  const tool={kind,parent,snapshot:state.snapshot,ready:false,gesture:null,committing:false};
+  shapeTool=tool;
   clearTimeout(geometryTimer); ++geometrySequence; cancelGeometryCheck();
   state.geometry=null; renderGeometryWidget();
-  $("add-circle").setAttribute("aria-pressed","true");
+  $("add-" + kind).setAttribute("aria-pressed","true");
   $("properties").inert=true; $("tree").inert=true; $("undo-edit").disabled=true;
   const label=parent===""?"root":`container ${parent}`;
   tool.label=label;
-  circleStatus(`Checking circle creation in ${label}…`);
+  shapeStatus(`Checking ${shapeName(kind)} creation in ${label}…`);
   try {
-    const result=await (await drawingRequest("/api/create/circle/check",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({snapshot:tool.snapshot,parent,cx:0,cy:0,r:10})})).json();
-    if (circleTool!==tool) return;
+    const result=await (await drawingRequest("/api/create/shape/check",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({snapshot:tool.snapshot,parent,kind,...shapeGeometry(kind, 0, 0)})})).json();
+    if (shapeTool!==tool) return;
     if (!result.ok) throw Error(result.reason);
-    if (state.snapshot!==tool.snapshot) throw Error("The drawing changed. Choose the Circle tool again.");
+    if (state.snapshot!==tool.snapshot) throw Error("The drawing changed. Choose the shape tool again.");
     tool.ready=true;
-    $("canvas").classList.add("creating-circle");
-    circleStatus(`Circle → ${label}. Drag from the center; click for radius 10. Escape cancels.`);
+    $("canvas").classList.add("creating-shape");
+    shapeStatus(`${shapeName(kind)} → ${label}. Drag from the ${kind === "rect" ? "corner" : "center"}, or click to place. Escape cancels.`);
   } catch(error) {
-    if (circleTool===tool) circleStatus(`${label}: ${error.message} (Escape to exit)`,true);
+    if (shapeTool===tool) shapeStatus(`${label}: ${error.message} (Escape to exit)`,true);
   }
 }
-function startCircle(event) {
-  const tool=circleTool;
+function shapeName(kind) {
+  return kind === "rect" ? "rectangle" : kind;
+}
+
+function shapeGeometry(kind, x, y, end) {
+  const dx = end ? end.x - x : 0, dy = end ? end.y - y : 0;
+  if (kind === "rect") return { x: x + Math.min(0, dx), y: y + Math.min(0, dy),
+    width: end ? Math.max(0.000001, Math.abs(dx)) : 24, height: end ? Math.max(0.000001, Math.abs(dy)) : 16 };
+  if (kind === "ellipse") return { cx: x, cy: y,
+    rx: end ? Math.max(0.000001, Math.abs(dx)) : 12, ry: end ? Math.max(0.000001, Math.abs(dy)) : 8 };
+  return { cx: x, cy: y, r: end ? Math.max(0.000001, Math.hypot(dx, dy)) : 10 };
+}
+
+function startShape(event) {
+  const tool=shapeTool;
   event.preventDefault(); suppressCanvasClick=true;
   if (!tool?.ready || tool.gesture || tool.committing) return;
   try {
     const matrix=elementFor(tool.parent)?.getScreenCTM(), inverse=matrix?.inverse();
     if (!matrix || !inverse || ![inverse.a,inverse.b,inverse.c,inverse.d,inverse.e,inverse.f].every(Number.isFinite)) throw Error("The destination has no invertible coordinate frame.");
     const center=new DOMPoint(event.clientX,event.clientY).matrixTransform(inverse);
-    tool.gesture={pointerId:event.pointerId,matrix,inverse,cx:center.x,cy:center.y,r:10,startX:event.clientX,startY:event.clientY};
+    tool.gesture={pointerId:event.pointerId,matrix,inverse,cx:center.x,cy:center.y,geometry:shapeGeometry(tool.kind, center.x, center.y),startX:event.clientX,startY:event.clientY};
     $("canvas").setPointerCapture(event.pointerId);
-    paintCirclePreview();
-  } catch(error) {circleStatus(error.message,true);}
+    paintShapePreview();
+  } catch(error) {shapeStatus(error.message,true);}
 }
-function moveCircle(event) {
-  const gesture=circleTool?.gesture;
+function moveShape(event) {
+  const gesture=shapeTool?.gesture;
   if (!gesture || event.pointerId!==gesture.pointerId) return;
   if (Math.hypot(event.clientX-gesture.startX,event.clientY-gesture.startY)>3) gesture.dragged=true;
   if (gesture.dragged) {
     const local=new DOMPoint(event.clientX,event.clientY).matrixTransform(gesture.inverse);
-    gesture.r=Math.max(0.000001,Math.hypot(local.x-gesture.cx,local.y-gesture.cy));
+    gesture.geometry=shapeGeometry(shapeTool.kind, gesture.cx, gesture.cy, local);
   }
-  paintCirclePreview();
+  paintShapePreview();
 }
-function paintCirclePreview() {
-  const g=circleTool.gesture, rect=$("canvas").getBoundingClientRect(), m=g.matrix;
+function paintShapePreview() {
+  const g=shapeTool.gesture, rect=$("canvas").getBoundingClientRect(), m=g.matrix;
   const transform=`matrix(${m.a} ${m.b} ${m.c} ${m.d} ${m.e-rect.left} ${m.f-rect.top})`;
-  $("creation-overlay").replaceChildren(svgPart("circle",{cx:g.cx,cy:g.cy,r:g.r,transform,
+  $("creation-overlay").replaceChildren(svgPart(shapeTool.kind,{...g.geometry,transform,
     fill:"#d9365e33",stroke:"#d9365e","stroke-width":1.5,"vector-effect":"non-scaling-stroke"}));
 }
-async function finishCircle(event) {
-  const tool=circleTool, g=tool?.gesture;
+async function finishShape(event) {
+  const tool=shapeTool, g=tool?.gesture;
   if (!g || event.pointerId!==g.pointerId) return;
-  moveCircle(event);
+  moveShape(event);
   tool.gesture=null; tool.committing=true; tool.ready=false;
   suppressCanvasClick=true;
   if ($("canvas").hasPointerCapture(g.pointerId)) $("canvas").releasePointerCapture(g.pointerId);
-  circleStatus(`Adding circle to ${tool.label}…`);
+  shapeStatus(`Adding ${shapeName(tool.kind)} to ${tool.label}…`);
   try {
-    const result=await (await drawingRequest("/api/create/circle",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({snapshot:tool.snapshot,parent:tool.parent,cx:g.cx,cy:g.cy,r:g.r})})).json();
+    const result=await (await drawingRequest("/api/create/shape",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({snapshot:tool.snapshot,parent:tool.parent,kind:tool.kind,...g.geometry})})).json();
     if (!result.ok) throw Error(result.reason);
     await load();
-    tool.committing=false; stopCircle(); select(result.key);
-    $("edit-status").textContent="Added circle. Undo removes it.";
+    tool.committing=false; stopShape(); select(result.key);
+    $("edit-status").textContent=`Added ${shapeName(tool.kind)}. Undo removes it.`;
     $("edit-status").classList.remove("error");
   } catch(error) {
-    tool.committing=false; stopCircle();
+    tool.committing=false; stopShape();
     $("edit-status").textContent=error.message;
     $("edit-status").classList.add("error");
     await load();
@@ -503,7 +524,7 @@ function scheduleGeometryCheck() {
   state.geometry = null;
   $("geometry-status").textContent="";
   renderGeometryWidget();
-  if (key === null || !snapshot || state.error || paintPicker || circleTool) return;
+  if (key === null || !snapshot || state.error || paintPicker || shapeTool) return;
   const node=findNode(key), element=elementFor(key);
   if (!node || !element || typeof element.getBBox!=="function") return;
   let model;
@@ -801,15 +822,15 @@ function renderProperties() {
   const node = state.selected === null ? null : findNode(state.selected);
   container.replaceChildren();
   const controls = Array.from(state.whips.entries());
-  const global = controls.filter(([, w]) => w.keys == null);
-  const selected = controls.filter(([, w]) => w.keys?.includes(state.selected));
-  if (global.length) container.append(drawingControls(global, "Drawing"));
-  if (selected.length) container.append(drawingControls(selected, "Object controls"));
+  $("properties-title").hidden = !node;
   if (!node) {
-    $("properties-title").textContent = "Properties";
-    container.insertAdjacentHTML("beforeend", '<p class="empty">Select something in the drawing or the layers list to see its properties.</p>');
+    const application = controls.filter(([, w]) => w.keys == null);
+    if (application.length) container.append(drawingControls(application, "Application properties"));
+    else container.insertAdjacentHTML("beforeend", '<p class="empty">Select something in the drawing or the layers list to see its properties.</p>');
     return;
   }
+  const selected = controls.filter(([, w]) => w.keys?.includes(state.selected));
+  if (selected.length) container.append(drawingControls(selected, "Object controls"));
   $("properties-title").textContent = node.kind + (node.id ? " " + node.id : "") + "  " + node.key;
   for (const group of nodeGroups(node)) {
     const section = document.createElement("section");
@@ -1099,13 +1120,51 @@ function setLockedStyle(style) {
   const properties = $("properties");
   properties.classList.remove("locked-dim", "locked-plain", "locked-lock");
   properties.classList.add("locked-" + style);
-  $("locked-style").value = style;
-  storage.set("lockedStyle", style);
 }
 
 function typing(event) {
   const target = event.target;
   return Boolean(target.closest("#source-panel")) || target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement;
+}
+
+function setupInspectorTabs() {
+  const tabs = [...document.querySelectorAll(".inspector-tabs [role=tab]")];
+  function selectTab(active) {
+    for (const tab of tabs) {
+      const selected = tab === active;
+      tab.tabIndex = selected ? 0 : -1;
+      tab.setAttribute("aria-selected", String(selected));
+      $(tab.getAttribute("aria-controls")).hidden = !selected;
+    }
+  }
+  tabs.forEach((tab, index) => {
+    tab.onclick = () => selectTab(tab);
+    tab.onkeydown = event => {
+      const next = { ArrowLeft: index - 1, ArrowRight: index + 1, Home: 0, End: tabs.length - 1 }[event.key];
+      if (next === undefined) return;
+      event.preventDefault();
+      const target = tabs[(next + tabs.length) % tabs.length];
+      target.focus();
+      selectTab(target);
+    };
+  });
+}
+
+function logDrawing(message, error = false) {
+  if (!message) return;
+  const log = $("drawing-log");
+  const row = document.createElement("li"), time = document.createElement("time");
+  time.textContent = new Date().toLocaleTimeString();
+  row.classList.toggle("error", error);
+  row.append(time, String(message));
+  log.append(row);
+  if (log.children.length > 150) log.firstElementChild.remove();
+}
+window.addEventListener("drawing-log", ({ detail }) => logDrawing(detail.message, detail.level === "warn"));
+for (const id of ["edit-status", "creation-status"]) {
+  const status = $(id);
+  new MutationObserver(() => logDrawing(status.textContent, status.classList.contains("error")))
+    .observe(status, { childList: true });
 }
 
 function setupControls() {
@@ -1128,31 +1187,54 @@ function setupControls() {
       setPanel(name, open);
     });
   }
-  const sourceButton = $("toggle-source");
-  const showSource = (open) => {
-    $("source-panel").hidden = !open;
-    sourceButton.setAttribute("aria-pressed", String(open));
-    if (open) KnotSource.open();
+  const graphFrame = $("drawing-graph");
+  function showInspector(mode) {
+    $("source-panel").hidden = !mode;
+    $("source-heading").hidden = $("source-editor").hidden = mode !== "source";
+    graphFrame.hidden = mode !== "tangle";
+    for (const view of ["source", "tangle"]) $("toggle-" + view).setAttribute("aria-pressed", String(view === mode));
+    if (mode === "source") KnotSource.open();
+    if (mode === "tangle") {
+      if (!graphFrame.hasAttribute("src")) graphFrame.src = graphFrame.dataset.src;
+      else graphFrame.contentWindow.refreshDrawingGraph?.();
+    }
     if (state.scene) fit();
+  }
+  const initial = storage.get("panel.source", document.body.hasAttribute("data-demo")) ? "source" : null;
+  showInspector(storage.get("panel.inspector", initial));
+  for (const view of ["source", "tangle"]) {
+    const button = $("toggle-" + view);
+    button.onclick = () => {
+      const mode = button.getAttribute("aria-pressed") === "true" ? null : view;
+      storage.set("panel.inspector", mode);
+      showInspector(mode);
+    };
+  }
+  setupInspectorTabs();
+  const lockedStyle = $("locked-style");
+  lockedStyle.value = storage.get("lockedStyle", "dim");
+  setLockedStyle(lockedStyle.value);
+  lockedStyle.onchange = () => {
+    storage.set("lockedStyle", lockedStyle.value);
+    setLockedStyle(lockedStyle.value);
   };
-  showSource(storage.get("panel.source", document.body.hasAttribute("data-demo")));
-  sourceButton.onclick = () => {
-    const open = $("source-panel").hidden;
-    storage.set("panel.source", open);
-    showSource(open);
-  };
-  setLockedStyle(storage.get("lockedStyle", "dim"));
-  $("locked-style").addEventListener("change", (event) => setLockedStyle(event.target.value));
-  $("add-circle").addEventListener("click", activateCircle);
-  $("fit").addEventListener("click", () => {if (!circleTool?.gesture && !circleTool?.committing) fit();});
-  $("actual-size").addEventListener("click", () => {if (!circleTool?.gesture && !circleTool?.committing) actualSize();});
+  const palette = $("shape-tools");
+  for (const type of ["pointerdown", "pointermove", "pointerup", "click", "dblclick", "wheel"]) {
+    palette.addEventListener(type, event => event.stopPropagation());
+  }
+  palette.querySelectorAll("[data-shape]").forEach(button => {
+    button.onclick = () => activateShape(button.dataset.shape);
+  });
+  palette.ontoggle = () => { if (!palette.open && shapeTool) stopShape(); };
+  $("fit").addEventListener("click", () => {if (!shapeTool?.gesture && !shapeTool?.committing) fit();});
+  $("actual-size").addEventListener("click", () => {if (!shapeTool?.gesture && !shapeTool?.committing) actualSize();});
 
   document.addEventListener("keydown", (event) => {
-    if (circleTool && event.key==="Escape") {event.preventDefault();stopCircle();return;}
-    if (circleTool?.gesture || circleTool?.committing) return;
+    if (shapeTool && event.key==="Escape") {event.preventDefault();stopShape();return;}
+    if (shapeTool?.gesture || shapeTool?.committing) return;
     if (geometryDrag && event.key==="Escape") { event.preventDefault(); finishGeometryDrag(false); return; }
-    if (paintPicker || typing(event)) return;
-    if ((event.key==="c" || event.key==="C") && !event.ctrlKey && !event.metaKey && !event.altKey) {event.preventDefault();activateCircle();return;}
+    if (paintPicker || typing(event) || (event.code === "Space" && event.target.closest("button, summary, [role=tab]"))) return;
+    if ((event.key==="c" || event.key==="C") && !event.ctrlKey && !event.metaKey && !event.altKey) {event.preventDefault();activateShape();return;}
     if (event.code === "Space") {
       spaceHeld = true;
       $("canvas").classList.add("space");
@@ -1178,6 +1260,13 @@ $("select-curve").addEventListener("click", () => {
   if (curve) select(curve.key);
 });
 
+// Same-origin embedded editor uses this drawing's transport and undo history.
+window.drawingGraphHost = {
+  request: drawingRequest,
+  log: logDrawing,
+  revision: () => ({ snapshot: state.snapshot, error: state.error, canUndo: state.canUndo }),
+  reload: load,
+};
 setupControls();
 setupCanvas();
 if (document.body.dataset.demo) {

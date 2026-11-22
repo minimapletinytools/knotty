@@ -27,6 +27,12 @@ named_call :: Int -> Int
 named_call x = max x 4
 
 @story("Functions")
+named_callsites :: Int -> (Int, Int)
+named_callsites n =
+    let twice x = x + x
+    in (twice n, twice 4)
+
+@story("Functions")
 operators :: Int -> Int -> Int
 operators a b = a + b * 3
 

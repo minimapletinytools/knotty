@@ -40,7 +40,7 @@ Application specific knot programs can declare *whips* which declare a UI object
 
 [Open the gallery](https://minimapletinytools.github.io/knotty/) or go straight to the [Tangle storybook](https://minimapletinytools.github.io/knotty/tangle/).
 
-The drawing demos run Twine in a browser worker. Select a shape and change a property to see the drawing and its Knot source update together. **Source** toggles the read-only Monaco pane. **Undo** reverses an accepted edit. Reloading a demo restores the original drawing.
+The drawing demos run Twine in a browser worker. Select a shape and change a property to see the drawing and its Knot source update together. **Source** opens the read-only Monaco pane. **Tangle** opens a graph of the current drawing. Choose a definition and edit a number, connect a rope or reposition a node. Finishing the edit updates the drawing. **Undo** reverses an accepted edit. Reloading a demo restores the original drawing.
 
 ### Run locally
 

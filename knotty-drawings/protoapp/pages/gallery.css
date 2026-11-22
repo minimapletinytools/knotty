@@ -14,5 +14,8 @@ a { color: inherit; text-underline-offset: .22em; }
 .drawing img { width: 100%; height: 12rem; display: block; object-fit: contain; background: #eeefe7; }
 .drawing span { display: block; padding: .85rem 1rem; font-weight: 650; }
 .drawing:hover, a:focus-visible { outline: 2px solid #327255; }
-.stories { padding: 1.5rem 0; border-block: 1px solid #bfc6b7; }
+.stories { padding: clamp(1.25rem, 3vw, 2rem); border-radius: .6rem; background: #e6edde; }
+.stories a { display: inline-flex; align-items: center; min-height: 46px; padding: 0 1.4rem; border-radius: .4rem; background: #234c39; color: white; font-weight: 650; text-decoration: none; }
+.stories a:hover { background: #173929; }
+.stories a:focus-visible { outline-offset: 4px; }
 .stories p { margin-bottom: 0; }

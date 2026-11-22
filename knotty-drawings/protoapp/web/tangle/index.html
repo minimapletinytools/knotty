@@ -19,6 +19,7 @@
       <nav id="stories" aria-label="Syntax stories" hidden></nav>
       <section class="workspace">
         <div class="toolbar">
+          <select id="choose-definition" aria-label="Drawing definition" hidden></select>
           <h1 id="definition">Definition graph</h1>
           <button id="fit">Fit graph</button>
         </div>
@@ -26,6 +27,10 @@
           <div id="extent">
             <div id="board"><svg id="wires" aria-hidden="true">
               <defs>
+                <marker id="call-tip" orient="auto" markerUnits="userSpaceOnUse" viewBox="0 0 8 8"
+                        markerWidth="8" markerHeight="8" refX="15" refY="4" overflow="visible">
+                  <polygon points="0,0 8,4 0,8" fill="context-stroke"/>
+                </marker>
                 <marker id="bind-tip" orient="auto" markerUnits="userSpaceOnUse" viewBox="0 0 16 10"
                         markerWidth="16" markerHeight="10" refX="16" refY="5">
                   <rect width="16" height="10" fill="#eff5f8"/>

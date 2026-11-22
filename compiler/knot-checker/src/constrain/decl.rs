@@ -174,7 +174,7 @@ fn pattern_names(pattern: &CPattern, out: &mut Vec<String>) {
 
 /// Tarjan's SCC algorithm over nodes `0..n`, returned in dependency order:
 /// a component's dependencies always come before it.
-fn scc_order(n: usize, edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
+pub fn scc_order(n: usize, edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
     struct State<'e> {
         edges: &'e [Vec<usize>],
         counter: usize,

@@ -9,11 +9,29 @@ type alias Feed a = { value : a, pinned : Maybe a }
 -- Registering its constructor recipe does not enable growth on every Node list.
 type ShapeAdditions = ShapeAdditions (ListConstraint NodeRequest)
 
+finiteCoordinate :: Float -> Bool
+finiteCoordinate n = not (isNaN n || isInfinite n)
+
 instance Constriction ShapeAdditions (List Node) where
   fits (ShapeAdditions request) actual = fits request actual
-  materialize request = do
-    (cx, cy, r) <- circleAdditionArguments { value = [], pinned = Nothing } request
-    pure [ShapeNode defaultCommon (Circle { cx = cx, cy = cy, r = r, fill = defaultFill, stroke = defaultStroke })]
+  materialize (ShapeAdditions request) = case request of
+    Prepend (ShapeNodeRequest _ (RequestRect box)) ExactEnd -> do
+      x <- box.x
+      y <- box.y
+      width <- box.width
+      height <- box.height
+      if width > 0 && height > 0 && all finiteCoordinate [x, y, width, height]
+      then pure [ShapeNode defaultCommon (Rect { x = x, y = y, width = width, height = height, rx = 0, ry = 0, fill = defaultFill, stroke = defaultStroke })] else Nothing
+    Prepend (ShapeNodeRequest _ (RequestEllipse oval)) ExactEnd -> do
+      cx <- oval.cx
+      cy <- oval.cy
+      rx <- oval.rx
+      ry <- oval.ry
+      if rx > 0 && ry > 0 && all finiteCoordinate [cx, cy, rx, ry]
+      then pure [ShapeNode defaultCommon (Ellipse { cx = cx, cy = cy, rx = rx, ry = ry, fill = defaultFill, stroke = defaultStroke })] else Nothing
+    _ -> do
+      (cx, cy, r) <- circleAdditionArguments { value = [], pinned = Nothing } (ShapeAdditions request)
+      pure [ShapeNode defaultCommon (Circle { cx = cx, cy = cy, r = r, fill = defaultFill, stroke = defaultStroke })]
 
 🧶EditableShapes :: (Feed (List Node), Feed (List Node)) -> ListConstraint NodeRequest -> Maybe (ListConstraint NodeRequest, ShapeAdditions)
 🧶EditableShapes (generated, additions) request = do
@@ -43,7 +61,7 @@ circleAdditionArguments input (ShapeAdditions request) = case input.value of
       cx <- chooseExact x rx
       cy <- chooseExact y ry
       r <- chooseExact radius rr
-      if r > 0 && not (isNaN cx || isInfinite cx || isNaN cy || isInfinite cy || isNaN r || isInfinite r)
+      if r > 0 && all finiteCoordinate [cx, cy, r]
       then Just (cx, cy, r) else Nothing
     _ -> Nothing
 
@@ -58,6 +76,18 @@ unravelCircleShape :: Feed Circle -> ShapeRequest -> Maybe CircleRequest
 unravelCircleShape _ request = case request of
   AnyShape -> Just anyCircle
   RequestCircle circle -> Just circle
+  _ -> Nothing
+
+unravelRectShape :: Feed Rect -> ShapeRequest -> Maybe RectRequest
+unravelRectShape _ request = case request of
+  AnyShape -> Just anyRect
+  RequestRect rect -> Just rect
+  _ -> Nothing
+
+unravelEllipseShape :: Feed Ellipse -> ShapeRequest -> Maybe EllipseRequest
+unravelEllipseShape _ request = case request of
+  AnyShape -> Just anyEllipse
+  RequestEllipse ellipse -> Just ellipse
   _ -> Nothing
 
 -- Rules route requests to existing source arguments. Fixed constructor defaults

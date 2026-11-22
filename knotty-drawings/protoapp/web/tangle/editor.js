@@ -1,12 +1,15 @@
 const $ = (id) => document.getElementById(id);
-const definition = new URLSearchParams(location.search).get('definition');
+const params = new URLSearchParams(location.search);
+let definition = params.get('definition');
+const host = params.get('embed') === '1' && window.frameElement?.id === 'drawing-graph'
+  ? window.parent.drawingGraphHost : null;
 const catalogUrl = document.documentElement.dataset.catalog;
-const storyMode = Boolean(catalogUrl) || location.pathname === '/tangle/stories';
+const storyMode = !host && (Boolean(catalogUrl) || location.pathname === '/tangle/stories');
 const changes = new Map();
 let graph,
   selected = null,
   busy = false,
-  fitted = window.innerWidth >= 900,
+  fitted = Boolean(host) || window.innerWidth >= 900,
   previewUrl,
   canUndo = false;
 let rootItem,
@@ -36,7 +39,8 @@ function status(message, error = false) {
 }
 
 function updateButtons() {
-  $('save').disabled = busy || !graph;
+  $('choose-definition').disabled = busy || changes.size > 0;
+  $('save').disabled = busy || !graph || (host && (!changes.size || staleGraph()));
   $('undo').disabled = busy || (!canUndo && !changes.size);
   $('undo').textContent = changes.size ? 'Discard edits' : 'Undo';
 }
@@ -44,6 +48,7 @@ function updateButtons() {
 function hint() {
   updateButtons();
   if (storyMode) status('Hover a connector to inspect its type and ropes.');
+  else if (host && changes.size && staleGraph()) status('Drawing changed. Discard edits to load the current graph.', true);
   else if (selected !== null) status('Choose an input socket for ' + ports.get(selected).name + '.');
   else if (changes.size)
     status(changes.size + (changes.size === 1 ? ' unsaved edit' : ' unsaved edits'));
@@ -161,8 +166,8 @@ function selectPort(id) {
   resize();
 }
 
-function field(expr, parentLabel, index, name, sources) {
-  const label = parentLabel + ', input ' + (index + 1);
+function field(expr, parentLabel, index, name, sources, onBind) {
+  const label = onBind ? 'Callsite function' : parentLabel + ', input ' + (index + 1);
   if (expr.kind === 'number') {
     const input = el('input', 'literal');
     input.value = expr.label;
@@ -176,6 +181,10 @@ function field(expr, parentLabel, index, name, sources) {
         input.value !== expr.label,
         input,
       );
+    if (host) {
+      input.onchange = commitEmbedded;
+      input.onkeydown = event => { if (event.key === 'Enter') input.blur(); };
+    }
     return input;
   }
   if (expr.kind !== 'reference') return expressionName(el('span', 'inline-value', expr.label), expr);
@@ -186,10 +195,13 @@ function field(expr, parentLabel, index, name, sources) {
     socket: endpoint,
     from: (captures) => sources(Number(socket.dataset.parameter), captures),
     control: socket,
+    recursive: expr.recursive,
   };
   wires.push(wire);
   function bind(port) {
     const binding = ports.get(port);
+    wire.recursive = expr.recursive && port === expr.parameter;
+    onBind?.(binding);
     socket.dataset.parameter = port;
     describe(endpoint, { ty: port === expr.parameter ? expr.ty : binding.ty, label: binding.name });
     socket.setAttribute('aria-label', label + ', connected to ' + binding.name);
@@ -211,6 +223,7 @@ function field(expr, parentLabel, index, name, sources) {
       socket,
     );
     selectPort(null);
+    commitEmbedded();
   }
   bind(expr.parameter);
   if (storyMode) return socket;
@@ -262,6 +275,25 @@ function boundarySource(header, outerSource, local) {
   };
 }
 
+function bindOutput(p, control) {
+  control.setAttribute('aria-label', 'Connect parameter ' + p.name);
+  control.setAttribute('aria-pressed', 'false');
+  control.draggable = !storyMode;
+  if (!storyMode) control.onclick = () => selectPort(selected === p.port ? null : p.port);
+  control.ondragstart = (e) => {
+    e.dataTransfer.setData('text/plain', p.name);
+    selectPort(p.port);
+  };
+  control.ondragend = () => selectPort(null);
+  ports.set(p.port, { ...p, control });
+  if (control.matches('.definition-port')) {
+    control.setAttribute('role', 'button');
+    control.onkeydown = e => {
+      if (!storyMode && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); control.click(); }
+    };
+  }
+}
+
 // A pattern consumes one value and exposes each checked binding on its inner side.
 function patternHub(input, local, inArm = false) {
   const hub = el('div', 'pattern-hub');
@@ -283,16 +315,7 @@ function patternHub(input, local, inArm = false) {
     const mark = nub(whole || scalar ? 'round' : 'square');
     control.append(mark);
     describe(mark, { ty: p.ty, label: p.name });
-    control.setAttribute('aria-label', 'Connect parameter ' + p.name);
-    control.setAttribute('aria-pressed', 'false');
-    control.draggable = !storyMode;
-    if (!storyMode) control.onclick = () => selectPort(selected === p.port ? null : p.port);
-    control.ondragstart = (e) => {
-      e.dataTransfer.setData('text/plain', p.name);
-      selectPort(p.port);
-    };
-    control.ondragend = () => selectPort(null);
-    ports.set(p.port, { name: p.name, ty: p.ty, control });
+    bindOutput(p, control);
     local.set(p.port, mark);
     return control;
   }
@@ -375,7 +398,7 @@ function boxed(scope, name, outerSource, armOwner = null, explicitBlock = false,
     left.inert = closed;
     selectPort(null);
   };
-  const item = { box, out, children: [], definition: definition || forwardsFunction, inlet: patterns[0]?.inlet };
+  const item = { box, out, bindings: local, children: [], definition: definition || forwardsFunction, inlet: patterns[0]?.inlet };
   layouts.push({ canvas, left, roots, owner: armOwner || item, padding: [0, 16] });
   return item;
 }
@@ -486,15 +509,24 @@ function arrange(frame, captureSources) {
   }
   const result = trees.pop();
   const top = captureLane ? left.offsetHeight + gapY : gapY;
-  const width = Math.max(0, ...trees.map(tree => tree.width));
-  let y = top;
-  for (const tree of trees) {
+  // Named functions are shared producers. Lay them above the row of call sites.
+  const bindings = trees.filter(tree => !tree.item.definition);
+  const definitions = trees.filter(tree => tree.item.definition);
+  let definitionX = 0;
+  for (const tree of definitions) {
+    place(tree, definitionX, top);
+    definitionX += tree.width + gapX;
+  }
+  const bindingTop = top + Math.max(0, ...definitions.map(tree => tree.height + gapX));
+  const width = Math.max(0, ...bindings.map(tree => tree.width));
+  let y = bindingTop;
+  for (const tree of bindings) {
     place(tree, width - tree.width, y);
     y += tree.height + gapY;
   }
   // Place the bindings beside their result, retaining source order down the column.
-  const resultY = Math.max(top, (top + y - gapY) / 2 - result.mid);
-  place(result, trees.length ? width + gapX : 0, resultY);
+  const resultY = Math.max(bindingTop, (bindingTop + y - gapY) / 2 - result.mid);
+  place(result, bindings.length ? width + gapX : 0, resultY);
   frame.nodes = nodes;
   frame.bounds = placeNodes(frame);
 }
@@ -509,13 +541,29 @@ function expression(expr, canvas, sources) {
 function scopedSteps(expr, canvas, source, local) {
   const steps = expr.steps || [];
   // Allocate ports first so a simultaneous do-let group can refer to itself.
-  const bindings = steps.map(step => step.pattern && patternHub(step.pattern, local));
+  const bindings = steps.map(step => {
+    if (step.named_function) {
+      const [binding] = step.pattern.parameters;
+      ports.set(binding.port, binding);
+      return null;
+    }
+    return step.pattern && patternHub(step.pattern, local);
+  });
   const roots = steps.map((step, index) => {
+    if (step.named_function) {
+      const [binding] = step.pattern.parameters;
+      const fn = namedDefinition(step.value.scope, binding, source);
+      local.set(binding.port, fn.out);
+      canvas.append(fn.box);
+      movable(fn, step.value);
+      return fn;
+    }
     const rhs = expression(step.value, canvas, source);
     const binding = bindings[index];
     if (!binding) return rhs;
     describe(binding.inlet, step.value);
     binding.box.classList.add('binding-knot');
+    markRecursive(binding.box, step.pattern.parameters.some(p => p.recursive));
     canvas.append(binding.box);
     wires.push({ from: rhs.out, socket: binding.inlet, kind: step.kind === 'let' ? 'value' : 'bind' });
     return { box: binding.box, children: [rhs] };
@@ -583,23 +631,24 @@ function slubChain(stages, canvas, sources, input, upstream, returnsFunction) {
   chain.append(entry);
   for (const step of stages) {
     const pill = el('span', 'slub');
+    markRecursive(pill, step.recursive);
     if (!pinned(step) && step.kind === 'reference') {
-      const inlet = endpoint('', 'stage-function');
+      const inlet = endpoint('', 'stage-function', 'callee-inlet');
       describe(inlet.mark, step);
       inlet.row.append(expressionName(el('span', 'slub-label', step.label), step));
       pill.append(inlet.row);
-      wires.push({ from: captures => sources(step.parameter, captures), socket: inlet.mark, parameter: step.parameter });
+      wires.push({ from: captures => sources(step.parameter, captures), socket: inlet.mark, recursive: step.recursive, parameter: step.parameter });
     } else if (inlineStage(step)) {
       pill.append(expressionName(el('span', 'slub-label', step.label), step));
       step.inputs.forEach((arg, i) =>
         pill.append(field(arg, step.label, i, step.labels?.[i] || '', sources)));
     } else {
       const fn = expression(step, canvas, sources);
-      const inlet = endpoint('<apply>', 'stage-function');
+      const inlet = endpoint('Call', 'stage-function', 'callee-inlet');
       describe(inlet.mark, step);
       pill.append(inlet.row);
       children.push(fn);
-      wires.push({ from: fn.out, socket: inlet.mark });
+      wires.push({ from: fn.out, socket: inlet.mark, recursive: step.recursive });
     }
     chain.append(pill);
   }
@@ -664,22 +713,42 @@ function makeExpression(expr, canvas, sources, forwarded = []) {
     return chain;
   }
   const knot = el('article', 'knot ' + base.kind);
+  markRecursive(knot, base.recursive);
   const item = { box: knot, children: [] };
   canvas.append(knot);
   let label = base.label;
   switch (base.kind) {
     case 'field-access': label = '.' + label; break;
-    case 'apply': label = '<apply>'; break;
+    case 'callsite': label = base.inputs[0].kind === 'reference' ? base.inputs[0].label : 'Call'; break;
     case 'source': label = 'Source'; break;
   }
   const title = expressionName(el('div', 'knot-label', label), base);
-  if (base.callee_port !== undefined) {
-    const inlet = describe(nub(), { ty: base.callable?.at_site ?? ports.get(base.callee_port).ty, label });
-    inlet.classList.add('callee-inlet');
-    title.prepend(inlet);
-    wires.push({ from: captures => sources(base.callee_port, captures), socket: inlet, parameter: base.callee_port });
-  }
   knot.append(title);
+  let args = base.inputs;
+  if (base.kind === 'callsite') {
+    const [callee, ...operands] = args;
+    args = operands;
+    if (callee.kind === 'reference' && !pinned(callee)) {
+      const socket = field(callee, label, 0, '', sources, binding => {
+        markRecursive(knot, callee.recursive && binding.port === callee.parameter);
+        title.textContent = binding.name;
+        functionName(title, binding.port === callee.parameter ? base.callable : binding.callable);
+      });
+      socket.classList.add('callee-socket');
+      socket.querySelector('.nublet').classList.add('callee-inlet');
+      knot.append(socket);
+    } else {
+      const fn = expression(callee, canvas, sources);
+      item.children.push(fn);
+      const inlet = describe(nub('callee-inlet'), callee);
+      knot.append(inlet);
+      wires.push({ from: fn.out, socket: inlet, recursive: callee.recursive });
+    }
+  } else if (base.callee_port !== undefined) {
+    const inlet = describe(nub('callee-inlet'), { ty: base.callable.at_site, label });
+    knot.append(inlet);
+    wires.push({ from: captures => sources(base.callee_port, captures), socket: inlet, recursive: base.recursive, parameter: base.callee_port });
+  }
   const body = el('div', 'knot-body');
   const rail = el('div', 'input-rail');
   function add(arg, i, name) {
@@ -713,11 +782,11 @@ function makeExpression(expr, canvas, sources, forwarded = []) {
     rail.append(el('pre', 'fold', base.label));
   } else if (base.kind === 'number' || base.kind === 'reference') add(base, 0, '');
   else
-    base.inputs.forEach((arg, i) =>
+    args.forEach((arg, i) =>
       add(arg, i, base.labels?.[i] || (base.kind === 'list' ? String(i + 1) : '')),
     );
   for (const [i, { argument, from }] of forwarded.entries()) {
-    const inlet = endpoint(base.labels?.[base.inputs.length + i] || '', 'left');
+    const inlet = endpoint(base.labels?.[args.length + i] || '', 'left');
     describe(inlet.mark, argument);
     rail.append(inlet.row);
     wires.push({ from, socket: inlet.mark });
@@ -728,7 +797,7 @@ function makeExpression(expr, canvas, sources, forwarded = []) {
   if (item.definition) {
     knot.classList.add('function-value');
     for (const [i, ty] of base.open_inputs.entries()) {
-      const unused = endpoint(base.labels?.[base.inputs.length + i] || '', 'left');
+      const unused = endpoint(base.labels?.[args.length + i] || '', 'left');
       unused.mark.classList.add('open-input');
       describe(unused.mark, { ty, label: 'Unconnected input' });
       rail.append(unused.row);
@@ -815,6 +884,7 @@ function movable(item, expr) {
       }
       resize();
       hint();
+      commitEmbedded();
     }
     drag = null;
   };
@@ -836,9 +906,9 @@ function definitionBox(scope, name, outerSource) {
   const inputs = [...scope.inputs, ...implicit];
   const result = { ty: fn.applied_result, label: name + ' result' };
   return boxed({ inputs, body: result }, name, outerSource, null, false, (canvas, source, patterns) => {
-    const direct = ['call', 'value', 'apply', 'operator'].includes(fn.kind);
+    const direct = ['call', 'value', 'callsite', 'operator'].includes(fn.kind);
     const call = direct ? { ...fn, kind: fn.kind === 'value' ? 'call' : fn.kind }
-      : { kind: 'apply', label: 'apply', inputs: [fn], callable: fn.callable };
+      : { kind: 'callsite', label: 'Call', inputs: [fn], callable: fn.callable };
     call.ty = result.ty;
     call.open_inputs = undefined;
     const forwarded = implicit.map((argument, i) => ({ argument, from: patterns[scope.inputs.length + i].out }));
@@ -849,6 +919,23 @@ function definitionBox(scope, name, outerSource) {
   });
 }
 
+function markRecursive(element, recursive) {
+  element.classList.toggle('recursive-knot', Boolean(recursive));
+  if (recursive) element.setAttribute('aria-description', 'Recursive');
+  else element.removeAttribute('aria-description');
+}
+
+function namedDefinition(scope, binding, outerSource) {
+  ports.set(binding.port, binding);
+  const item = definitionBox(scope, binding.name, outerSource);
+  markRecursive(item.box, binding.recursive);
+  functionName(item.box.querySelector('.box-toggle'), binding.callable);
+  describe(item.out, { ty: binding.ty, label: binding.name });
+  bindOutput(binding, item.out);
+  item.bindings.set(binding.port, item.out);
+  return item;
+}
+
 function render() {
   inspect(null);
   const board = $('board');
@@ -857,9 +944,9 @@ function render() {
   wires = [];
   ports = new Map();
   selected = null;
-  rootItem = definitionBox(graph.scope, graph.definition);
-  functionName(rootItem.box.querySelector('.box-toggle'), graph.callable);
-  if (rootItem.definition) describe(rootItem.out, { ty: graph.ty, label: graph.definition });
+  rootItem = graph.definition_port === undefined ? definitionBox(graph.scope, graph.definition)
+    : namedDefinition(graph.scope, { name: graph.definition, port: graph.definition_port, ty: graph.ty, callable: graph.callable, recursive: graph.recursive });
+  markRecursive(rootItem.box, graph.recursive);
   rootItem.frame = { canvas: board, nodes: [rootItem], padding: [24, 24] };
   movable(rootItem, graph);
   board.append(rootItem.box);
@@ -874,6 +961,13 @@ function resize() {
     ...wire,
     from: typeof wire.from === 'function' ? wire.from(captures) : wire.from,
   }));
+  // A shared capture segment carries the tint if any use downstream closes the cycle.
+  for (const wire of ordinary) {
+    if (!wire.recursive) continue;
+    for (let segment = captures.get(wire.from); segment && !segment.recursive; segment = captures.get(segment.from)) {
+      segment.recursive = true;
+    }
+  }
   for (const anchor of board.querySelectorAll('.capture'))
     anchor.hidden = !captures.has(anchor.querySelector('.nublet'));
   const captureSources = new Set([...captures.values()].map(w => w.from.closest('.inputs-boundary')));
@@ -937,11 +1031,22 @@ function drawWires(connections) {
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     const verticalBend = Math.max(8, Math.abs(v - y) * 0.4);
     let exit = [x + bend, y];
-    if (start.classList.contains('definition-port')) exit = [x, y + verticalBend];
+    if (start.classList.contains('definition-port')) exit = [x, y + Math.min(24, verticalBend)];
     else if (start.classList.contains('capture-triangle')) exit = [x, y + verticalBend];
+    const entersCall = wire.socket.classList.contains('callee-inlet');
     const entersBottom = wire.socket.classList.contains('definition-port');
-    const entry = entersCapture || entersBottom || wire.socket.closest('.stage-function') ? [u, v - verticalBend] : [u - bend, v];
+    const entry = entersCapture || entersBottom || entersCall ? [u, v - verticalBend] : [u - bend, v];
     let d = `M ${x} ${y} C ${exit.join(' ')} ${entry.join(' ')} ${u} ${v}`;
+    const owner = start.matches('.scope-box > .definition-port[role=button]') && start.parentElement;
+    if (owner && owner.contains(wire.socket)) {
+      // Leave the bottom diamond, then return above the target through the right gutter.
+      const target = wire.socket.closest('.scope-box, .knot, .slub');
+      const right = Math.max(x, u, (target.getBoundingClientRect().right - origin.left) / scale) + 12;
+      const bottom = y + 12, top = v - 14, r = 6;
+      d = `M ${x} ${y} Q ${x} ${bottom} ${x+r} ${bottom} H ${right-r}
+        Q ${right} ${bottom} ${right} ${bottom-r} V ${top+r}
+        Q ${right} ${top} ${right-r} ${top} H ${u+r} Q ${u} ${top} ${u} ${v}`;
+    }
     if (wire.kind === 'pattern') {
       const trunk = (wire.socket.closest('.arms').getBoundingClientRect().left - board.left) / scale + 7;
       d = `M ${x} ${y} V ${y + 11} H ${trunk} V ${v} H ${u}`;
@@ -949,11 +1054,11 @@ function drawWires(connections) {
     if (wire.kind) path.classList.add('rope-' + wire.kind);
     path.setAttribute('d', d);
     const parameter = wire.control ? Number(wire.control.dataset.parameter) : wire.parameter;
-    if (parameter !== undefined)
-      path.setAttribute(
-        'class',
-        selected === parameter ? 'lit-wire' : 'parameter-wire',
-      );
+    if (parameter !== undefined) path.classList.add(selected === parameter ? 'lit-wire' : 'parameter-wire');
+    if (entersCapture || start.classList.contains('capture-triangle')) path.classList.add('rope-capture');
+    if (wire.recursive) path.classList.add('rope-recursive');
+    if (entersCall) path.setAttribute('marker-end', 'url(#call-tip)');
+    if (start.classList.contains('definition-port') && parameter !== undefined) path.classList.add('definition-rope');
     layer.append(path);
     wire.path = path;
     if (touchesInspected(wire)) path.classList.add('inspected-wire');
@@ -967,7 +1072,7 @@ function drawWires(connections) {
 }
 
 async function request(url, body) {
-  const response = await fetch(
+  const response = await (host ? host.request : fetch)(
     url,
     body === undefined
       ? {}
@@ -977,7 +1082,7 @@ async function request(url, body) {
           body: JSON.stringify(body),
         },
   );
-  if (!response.ok) throw Error('Request failed (' + response.status + ').');
+  if (response.ok === false) throw Error('Request failed (' + response.status + ').');
   const data = await response.json();
   if (data.ok === false || data.error) throw Error(data.reason || data.error);
   return data;
@@ -1008,10 +1113,17 @@ async function loadStory() {
 }
 
 async function load() {
-  const result = storyMode ? await loadStory() : await request(
-    definition ? '/api/tangle?definition=' + encodeURIComponent(definition) : '/api/tangle',
-  );
+  const query = new URLSearchParams();
+  if (host) query.set('embed', '1');
+  if (definition) query.set('definition', definition);
+  const result = storyMode ? await loadStory() : await request('/api/tangle' + (query.size ? '?' + query : ''));
   graph = result.graph;
+  if (host) {
+    definition = graph.definition;
+    const picker = $('choose-definition');
+    picker.replaceChildren(...result.definitions.map(name => new Option(name, name)));
+    picker.value = definition;
+  }
   sourceBytes = new TextEncoder().encode(graph.source);
   canUndo = result.canUndo;
   changes.clear();
@@ -1037,32 +1149,60 @@ async function load() {
   hint();
 }
 
+let refreshPending = false;
+function staleGraph() {
+  const revision = host.revision();
+  return revision.error || graph?.snapshot !== revision.snapshot;
+}
+function refreshDrawingGraph() {
+  if (!host) return;
+  if (busy) { refreshPending = true; return; }
+  const revision = host.revision();
+  canUndo = revision.canUndo;
+  updateButtons();
+  if (revision.error) { status(revision.error, true); return; }
+  if (!revision.snapshot) return;
+  if (staleGraph()) {
+    if (changes.size) hint();
+    else run(load);
+  } else {
+    resize();
+    if ($('status').classList.contains('error')) hint();
+  }
+}
 async function run(action) {
   if (busy) return;
   busy = true;
   $('board').inert = true;
-  $('save').disabled = $('undo').disabled = true;
+  updateButtons();
   try {
     await action();
   } catch (error) {
     status(error.message, true);
+    host?.log?.(error.message, true);
   } finally {
     busy = false;
     $('board').inert = false;
     updateButtons();
+    if (refreshPending) { refreshPending = false; refreshDrawingGraph(); }
   }
 }
 
-$('save').onclick = () =>
-  run(async () => {
-    await request('/api/tangle', {
-      snapshot: graph.snapshot,
-      definition: graph.definition,
-      changes: [...changes.values()],
-    });
-    await load();
-    status('Saved.');
+function commitEmbedded() {
+  if (host && changes.size && !staleGraph()) run(saveChanges);
+}
+async function saveChanges() {
+  await request('/api/tangle', {
+    snapshot: graph.snapshot,
+    definition: graph.definition,
+    changes: [...changes.values()],
   });
+  if (host) await host.reload();
+  await load();
+  status('Saved.');
+  host?.log?.('Saved Tangle edit.');
+}
+$('save').onclick = () => run(saveChanges);
 $('undo').onclick = () =>
   run(async () => {
     if (changes.size) {
@@ -1071,6 +1211,7 @@ $('undo').onclick = () =>
       return;
     }
     await request('/api/undo', { snapshot: graph.snapshot });
+    if (host) await host.reload();
     await load();
     status('Edit undone.');
   });
@@ -1104,4 +1245,15 @@ if (storyMode) {
   $('gallery-link').textContent = catalogUrl ? 'Demos' : 'Definition editor';
   $('undo').hidden = $('save').hidden = $('preview-heading').hidden = true;
 }
-run(load);
+if (host) {
+  document.body.classList.add('embedded');
+  $('reload').textContent = 'Discard edits';
+  $('choose-definition').hidden = false;
+  $('choose-definition').onchange = event => {
+    definition = event.target.value;
+    run(load);
+  };
+  refreshDrawingGraph();
+} else {
+  run(load);
+}

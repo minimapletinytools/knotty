@@ -160,18 +160,25 @@ aside {
   overflow: visible;
   pointer-events: none;
 }
-#wires path, .capture-ropes path {
+/* A rope's role, scope crossing, recursion and interaction state compose. */
+#board {
+  --rope-ink: #292b2e;
+  --rope-recursion: #476686;
+  --rope-active: #b8530e;
+}
+:is(#wires, .capture-ropes) path {
   fill: none;
-  stroke: #748f80;
-  stroke-width: 1.6;
+  stroke: var(--rope-ink);
+  stroke-width: 1.5;
 }
-#wires .parameter-wire {
-  stroke: #94aa9c;
-  stroke-width: 1.2;
+:is(#wires, .capture-ropes) .rope-capture {
+  stroke-linecap: round;
+  stroke-dasharray: 0.1 3.5;
 }
-#wires .lit-wire, .capture-ropes .lit-wire {
-  stroke: #ba6b19;
-  stroke-width: 2.5;
+:is(#wires, .capture-ropes) .rope-recursive { stroke: var(--rope-recursion); }
+:is(#wires, .capture-ropes) :is(.inspected-wire, .lit-wire) {
+  stroke: var(--rope-active);
+  stroke-width: 2.4;
 }
 #extent {
   overflow: hidden;
@@ -391,7 +398,6 @@ aside {
   min-height: 18px;
   padding: 1px 7px 1px 10px;
 }
-.callee-inlet,
 .left > .nublet,
 .socket > .nublet,
 .chain-head {
@@ -433,10 +439,6 @@ aside {
   height: 100%;
   pointer-events: none;
   overflow: visible;
-}
-.capture-ropes path {
-  stroke-linecap: round;
-  stroke-dasharray: 0.1 4;
 }
 .capture {
   align-self: flex-start;
@@ -576,8 +578,10 @@ footer {
   display: none;
 }
 
-.monadic-context {
-  background: radial-gradient(#9db9c6 1px, transparent 1.4px) 0 0 / 10px 10px, #eff5f8;
+.monadic-context { background-color: #eff5f8; }
+.monadic-context > .scope-body {
+  background: radial-gradient(#9db9c6 1px, transparent 1.4px) 0 0 / 10px 10px;
+  border-radius: 0 0 10px 10px;
 }
 .context-label, .alternatives > .scope-header {
   font: 600 13px ui-monospace, monospace;
@@ -586,14 +590,9 @@ footer {
   background: #fff3c9;
   border-color: #aa9655;
 }
-#wires .rope-bind {
-  stroke: #396b79;
-  stroke-width: 6px;
-}
-#wires .rope-bind-gap {
-  stroke: #eff5f8;
-  stroke-width: 2px;
-}
+#wires .rope-bind, #wires .rope-bind-gap { stroke-dasharray: 5 1.4; }
+#wires .rope-bind { stroke-width: 3.8; }
+#wires .rope-bind-gap { stroke: #eff5f8; stroke-width: 1.2; }
 .alternatives {
   border: 1.5px solid #ac9681;
   background: repeating-linear-gradient(45deg, #faf5ec, #faf5ec 6px, #f3ecdf 7px, #faf5ec 8px);
@@ -657,15 +656,6 @@ footer {
   background-color: #aa4a0f;
   border-color: #783508;
 }
-#wires .rope-pattern, #wires .rope-merge {
-  stroke: #a38465;
-}
-#wires .inspected-wire, .capture-ropes .inspected-wire {
-  stroke: #b8530e;
-}
-#wires .inspected-wire:not(.rope-bind), .capture-ropes .inspected-wire {
-  stroke-width: 2.8;
-}
 .nublet.inspected {
   background-color: #b8530e;
   border-color: #783508;
@@ -725,17 +715,38 @@ footer {
   #stories { max-height: 145px; flex: none; }
 }
 
-.knot.apply {
-  background: #ede7f5;
-  border-color: #9886ab;
-  color: #513869;
+.knot > .callee-socket, .knot > .callee-inlet {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+}
+.knot > .callee-socket { padding: 0; min-height: 0; width: 16px; height: 16px; }
+.callee-socket > .callee-inlet { position: static; transform: none; }
+.callee-inlet {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #657468;
+  background: #fbfcf8;
+  color: #334b3b;
+  font: bold 12px/1 ui-monospace, monospace;
+}
+.callee-inlet::before { content: '$'; }
+.knot:has(> .callee-inlet, > .callee-socket) > .knot-label { padding-top: 9px; }
+/* Keep the dotted recursion texture on the header so the scope context shows through. */
+.recursive-knot > :is(.scope-header, .knot-label), .slub.recursive-knot, .binding-knot.recursive-knot {
+  background-image: radial-gradient(circle, #94adc580 0.9px, transparent 1.2px);
+  background-size: 7px 7px;
 }
 .knot.function-value {
   border: 2px dashed #7396b7;
   border-radius: 9px;
   background-color: #e6eef6;
 }
-.knot.apply.function-value { background-color: #ede7f5; }
+
 .nublet.open-input { background: white; }
 .function-name.inspected { text-decoration: underline dotted; text-underline-offset: 3px; }
 #port-tip small { display: block; margin-top: 3px; color: #c4d3be; }
@@ -781,8 +792,8 @@ footer {
   border-color: #92a080;
 }
 #wires #bind-tip path {
-  stroke: #244e5c;
-  stroke-width: 1.8px;
+  stroke: var(--rope-ink);
+  stroke-width: 1.25px;
   fill: none;
 }
 
@@ -793,3 +804,12 @@ footer {
   padding: 2px 6px;
   font: 600 11px/1.4 system-ui, sans-serif;
 }
+
+.embedded { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+.embedded header { display: none; }
+.embedded .slash, .embedded #module, .embedded #gallery-link, .embedded aside, .embedded #definition { display: none; }
+.embedded main { flex: 1; min-height: 0; display: flex; }
+.embedded .workspace { width: 100%; height: 100%; }
+.embedded .toolbar { padding: 6px 8px; gap: 6px; }
+.embedded select { min-width: 0; max-width: 65%; padding: 4px; font: inherit; }
+.embedded footer { min-height: 30px; padding: 4px 8px; }

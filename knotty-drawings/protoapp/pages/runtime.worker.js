@@ -17,8 +17,12 @@ async function load(demo) {
     ...Object.entries(imports).map(([name, source]) => [name, new File(encode.encode(source), { readonly: true })]),
     [demo + ".knot", new File(encode.encode(entry))], ["request.json", request], ["response.json", response],
   ]);
-  const wasi = new WASI([], [], [new OpenFile(new File([])), ConsoleStdout.lineBuffered(console.log),
-    ConsoleStdout.lineBuffered(console.warn), new PreopenDirectory("/", [["project", files]])], { debug: false });
+  const output = level => ConsoleStdout.lineBuffered(message => {
+    console[level](message);
+    self.postMessage({ log: { level, message } });
+  });
+  const wasi = new WASI([], [], [new OpenFile(new File([])), output("log"),
+    output("warn"), new PreopenDirectory("/", [["project", files]])], { debug: false });
   const instance = await WebAssembly.instantiate(module, { wasi_snapshot_preview1: wasi.wasiImport });
   wasi.initialize(instance);
   function dispatch(message) {

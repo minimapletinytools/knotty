@@ -1,0 +1,156 @@
+module LanternWaddle exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+import DrawingBack exposing (Feed)
+
+-- Clear the selection to invite chicks, or select the moon to change the snow.
+-- Edit a scarf's fill or a lantern's radius in Properties to change the whole family.
+@whip(IntSlider "Trailing chicks" 1 4)
+chickCount :: Int
+chickCount = 3
+
+-- Six flakes travel in each gust. The moon edits the total, so 29 -> 30
+-- trades five stray flakes for one more gust in a single undoable edit.
+gusts :: Int
+gusts = 4
+
+strays :: Int
+strays = 4
+
+@unravel(snowfallBack)
+snowfall :: Int -> Int -> Int
+snowfall groups singles = groups * 6 + singles
+
+snowfallBack :: (Feed Int, Feed Int) -> Maybe Int -> Maybe (Maybe Int, Maybe Int)
+snowfallBack _ wanted = case wanted of
+    Nothing -> Just (Nothing, Nothing)
+    Just total -> if total < 0 then Nothing else Just (Just (div total 6), Just (mod total 6))
+
+@whip(OnNode moon (IntSlider "Snowflakes" 0 72))
+snowCount :: Int
+snowCount = snowfall gusts strays
+
+yarn :: Color
+yarn = Rgb 238 114 85
+
+flame :: Float
+flame = 8.0
+
+-- The second scarf is knitted in the photographic negative of the first.
+-- Taking the negative twice recovers the original dye exactly.
+negative :: Color -> Color
+negative (Rgb r g b) = Rgb (255 - r) (255 - g) (255 - b)
+
+@unravel(dyeBack)
+dye :: Bool -> Color -> Color
+dye contrast color = if contrast then negative color else color
+
+dyeBack :: (Feed Bool, Feed Color) -> Maybe Color -> Maybe (Maybe Bool, Maybe Color)
+dyeBack (contrast, _) wanted = case wanted of
+    Nothing -> Just (Nothing, Nothing)
+    Just color -> Just (Nothing, Just (dye contrast.value color))
+
+-- Either the glass or its halo can drive the shared flame. Keep the five-unit
+-- halo and the housing sizes fixed; reject a radius below the unlit minimum.
+@unravel(wickBack)
+wick :: Float -> Float -> Float -> Float
+wick housing halo light = 2 + halo + housing * light
+
+wickBack :: (Feed Float, Feed Float, Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float, Maybe Float)
+wickBack (housing, halo, _) wanted = case wanted of
+    Nothing -> Just (Nothing, Nothing, Nothing)
+    Just radius ->
+        if radius < 2 + halo.value || housing.value <= 0 then Nothing
+        else Just (Nothing, Nothing, Just ((radius - 2 - halo.value) / housing.value))
+
+ink = rgb 34 48 65
+cream = rgb 255 244 212
+honey = rgb 249 174 83
+ice = rgb 213 236 231
+
+brush color commands = path commands |> set_fill color
+at x y size node = set_transform [Translate x y, Scale size size] node
+thread color width commands =
+    path commands |> set_no_fill |> set_stroke color |> set_stroke_width width |> set_stroke_linecap RoundCap
+
+scarf contrast =
+    rounded_rect 16 44 47 10 5 |> set_fill (dye contrast yarn)
+
+leadScarf :: Node
+leadScarf = scarf False |> set_id "lead-scarf"
+
+penguin contrast band housing =
+    let
+        wool = dye contrast yarn
+    in group
+        [ ellipse 42 101 39 4 |> set_fill (rgb 159 199 201)
+        , ellipse 30 98 13 4 |> set_fill honey
+        , ellipse 53 99 14 4 |> set_fill honey
+        , brush ink [MoveTo 12 79, CurveTo 8 53 18 11 39 9, CurveTo 67 5 69 40 67 63, CurveTo 79 87 69 99 45 99, CurveTo 26 101 12 95 12 79, ClosePath]
+        , brush cream [MoveTo 26 42, CurveTo 25 27 35 20 43 29, CurveTo 52 17 65 24 65 38, CurveTo 64 51 68 66 67 78, CurveTo 67 98 36 101 27 88, CurveTo 19 77 30 58 26 42, ClosePath]
+        , circle 41 35 2.6 |> set_fill ink
+        , circle 58 33 2.6 |> set_fill ink
+        , ellipse 35 41 5 2.6 |> set_fill (rgb 247 176 155)
+        , brush honey [MoveTo 50 37, LineTo 66 37, LineTo 54 43, ClosePath]
+        , brush wool [MoveTo 22 47, CurveTo 17 53 11 54 7 55, LineTo 9 62, CurveTo 18 62 25 56 29 51, ClosePath]
+        , band
+        , thread ink 1.8 [MoveTo 61 60, CurveTo 70 54 79 54 79 67]
+        , circle 79 74 (wick housing 5 flame) |> set_fill (rgb 248 205 126) |> set_fill_opacity 0.32
+        , circle 79 74 (wick housing 0 flame) |> set_fill (rgb 255 211 119)
+        , rounded_rect 74 62 10 3 1.5 |> set_fill ink
+        , brush ink [MoveTo 48 54, CurveTo 55 54 61 60 67 57, CurveTo 70 62 62 70 56 69, CurveTo 50 68 46 62 48 54, ClosePath]
+        ]
+
+moon :: Node
+moon = circle 554 69 27 |> set_fill cream |> set_id "moon"
+
+looseFlake i =
+    let
+        x = fromIntegral (mod (71 * i + 13 * i * i) 630 + 4)
+        y = fromIntegral (mod (43 * i + 3 * i * i) 165 + 18)
+        r = if mod i 5 == 0 then 1.8 else 1
+    in circle x y r |> set_fill ice
+
+gust i =
+    let
+        x = fromIntegral (mod (149 * i) 563 + 14)
+        y = fromIntegral (mod (51 * i) 126 + 23)
+        flake j = circle (x + fromIntegral j * 7) (y + 6 * sin (fromIntegral j * 0.65)) 1.3 |> set_fill ice
+    in map flake (intRange 0 1 5)
+
+sky = group
+    [ rect 0 0 640 375 |> set_fill (rgb 29 48 71)
+    , brush (rgb 47 86 102) [MoveTo 0 57, CurveTo 103 147 173 10 293 33, CurveTo 348 44 396 88 472 49, CurveTo 396 103 349 73 288 62, CurveTo 175 41 129 169 0 102, ClosePath]
+    , brush (rgb 82 134 136) [MoveTo 0 82, CurveTo 115 155 175 28 285 47, CurveTo 330 53 351 72 387 71, CurveTo 339 83 312 60 277 59, CurveTo 158 53 119 169 0 95, ClosePath]
+    , brush (rgb 57 85 110) [MoveTo 0 211, LineTo 60 178, LineTo 110 190, LineTo 192 142, LineTo 251 180, LineTo 302 165, LineTo 363 193, LineTo 453 143, LineTo 487 164, LineTo 519 151, LineTo 640 193, LineTo 640 264, LineTo 0 264, ClosePath]
+    , brush (rgb 134 177 188) [MoveTo 0 229, CurveTo 111 197 205 227 309 202, CurveTo 434 174 520 241 640 202, LineTo 640 274, LineTo 0 274, ClosePath]
+    , brush ice [MoveTo 0 240, CurveTo 145 210 261 262 401 224, CurveTo 511 201 586 228 640 220, LineTo 640 375, LineTo 0 375, ClosePath]
+    ]
+
+chick x y contrast =
+    penguin contrast (scarf contrast) 0.5 |> at x y 0.64
+
+chicks = group
+    ([chick 259 244 True]
+        <> (if chickCount >= 2 then [chick 196 249 False] else [])
+        <> (if chickCount >= 3 then [chick 133 244 True] else [])
+        <> (if chickCount >= 4 then [chick 70 249 False] else []))
+    |> set_id "chicks"
+
+caption x y size words =
+    text x y words |> set_font_family "Georgia, serif" |> set_font_size size |> set_fill ink
+
+program :: Container
+program = svg 640 375 (editableShapes
+    [ sky
+    , group (concatMap gust (intRange 0 1 (gusts - 1)) <> map looseFlake (intRange 1 1 strays)) |> set_id "snow"
+    , moon
+    , chicks
+    , penguin True (scarf True) 0.75 |> at 343 198 1.02 |> set_id "scout"
+    , penguin False leadScarf 1 |> at 475 150 1.46 |> set_id "leader"
+    , caption 25 344 26 "The Lantern Waddle"
+    , caption 26 363 11 "Select the moon for snow. Clear selection for chicks."
+    , caption 346 344 12 "Recolor a scarf to dye the family’s yarn."
+    , caption 346 361 12 "Resize a lantern to change every flame."
+    ] [])

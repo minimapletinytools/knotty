@@ -3,6 +3,7 @@ mod drawing_value;
 mod edit;
 #[cfg(not(target_os = "wasi"))]
 mod geometry_worker;
+mod graph_view;
 mod render_profile;
 mod scene_response;
 mod scene_svg;
@@ -12,7 +13,7 @@ mod storybook;
 mod whips;
 
 use drawing::{Drawing, SvgRenderer};
-use edit::{CreateCircleRequest, EditRequest, Editor, PreviewRequest};
+use edit::{CreateCircleRequest, CreateShapeRequest, EditRequest, Editor, PreviewRequest};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 mod api;
@@ -28,7 +29,23 @@ mod browser;
 fn query_value(query: &str, name: &str) -> Option<String> {
     query.split('&').find_map(|pair| {
         let (k, v) = pair.split_once('=')?;
-        (k == name).then(|| v.replace("%2E", ".").replace("%2e", "."))
+        if k != name {
+            return None;
+        }
+        let mut bytes = v.bytes();
+        let mut decoded = Vec::with_capacity(v.len());
+        while let Some(byte) = bytes.next() {
+            decoded.push(match byte {
+                b'%' => {
+                    let high = (bytes.next()? as char).to_digit(16)?;
+                    let low = (bytes.next()? as char).to_digit(16)?;
+                    (high * 16 + low) as u8
+                }
+                b'+' => b' ',
+                _ => byte,
+            });
+        }
+        String::from_utf8(decoded).ok()
     })
 }
 
