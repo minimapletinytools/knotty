@@ -748,7 +748,7 @@ function alternatives(expr, canvas, sources) {
 // A pipeline supplies a value now. A composition has no value yet: its chain
 // is itself the function node, with an open head and a definition port below.
 // A composition chain composes its stages (∘) instead of applying them ($).
-function slubChain(stages, canvas, sources, input, upstream, returnsFunction, composes = false) {
+function slubChain(stages, canvas, sources, input, upstream, returnsFunction, composes = false, result = null) {
   const chain = el('div', 'slub-chain' + (composes ? ' compose' : ''));
   const callee = 'callee-inlet' + (composes ? ' compose-inlet' : '');
   const entry = describe(nub(), input);
@@ -790,6 +790,12 @@ function slubChain(stages, canvas, sources, input, upstream, returnsFunction, co
     }
     chain.append(pill);
   }
+  if (result) {
+    // A composition's result leaves when it is called, so its tail is open like its head.
+    const tail = describe(nub(), result);
+    tail.classList.add('chain-tail', 'open-input');
+    chain.append(tail);
+  }
   chain.append(exit);
   if (upstream) wires.push({ from: upstream, socket: entry });
   canvas.append(chain);
@@ -818,7 +824,8 @@ const breaksSlub = (stage) => pinned(stage) && ['reference', 'call', 'value'].in
 
 function composition(expr, canvas, sources) {
   const input = { implicit: true, label: 'Composition input', ty: expr.open_inputs[0] };
-  return slubChain(compositionStages(expr), canvas, sources, input, null, true, true);
+  const result = { label: 'Composition result', ty: expr.composition_result };
+  return slubChain(compositionStages(expr), canvas, sources, input, null, true, true, result);
 }
 
 function makeExpression(expr, canvas, sources, forwarded = []) {

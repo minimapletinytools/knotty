@@ -804,6 +804,9 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
         assert.equal(await chain.locator(':scope > .slub').first().evaluate(e => getComputedStyle(e).borderTopStyle), 'dotted');
         assert.equal(await chain.locator('.compose-inlet').count(), named ? 0 : 3);
         assert.equal(await chain.locator(':scope > .chain-head.open-input').count(), 1);
+        assert.equal(await chain.locator(':scope > .chain-tail.open-input').count(), 1);
+        await chain.locator('.chain-tail').focus();
+        assert.equal(await page.getByRole('tooltip').locator('strong').innerText(), 'Int');
         assert.equal(await chain.locator(':scope > .definition-port').count(), 1);
         assert.equal(await page.locator('.knot.callsite > .knot-label').textContent(), '<inline>');
         await chain.locator('.chain-head').focus();
