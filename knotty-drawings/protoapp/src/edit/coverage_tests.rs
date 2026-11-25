@@ -954,3 +954,21 @@ fn source_text_bursts_undo_together_and_other_edits_start_new_steps() {
         f.original
     );
 }
+
+#[test]
+fn locate_names_the_lines_behind_each_field_without_writing() {
+    let mut f = Fixture::source("module Drawing exposing (..)\nimport KnottyDrawings exposing (..)\nimport Types exposing (..)\npageWidth :: Float\npageWidth = 210\nprogram =\n    svg 300 300\n        [ rect 4 5 pageWidth 40 |> set_fill (rgb 250 247 240)\n        ]\n".into());
+    let snapshot = f.snapshot();
+    let found = f.editor.locate(&mut f.drawing, &snapshot, "0");
+    assert_eq!(found["ok"], true, "{found}");
+    let lines = found["lines"].as_array().unwrap();
+    let at = |n: u64| lines.iter().find(|l| l["line"] == n).unwrap_or_else(|| panic!("line {n}: {found}"));
+    assert_eq!(at(5)["fields"], json!(["width"]));
+    assert_eq!(at(5)["text"], "pageWidth = 210");
+    for field in ["x", "y", "height", "fill.paint"] {
+        assert!(at(8)["fields"].as_array().unwrap().contains(&json!(field)), "{field}: {found}");
+    }
+    assert_eq!(std::fs::read_to_string(f.drawing.path()).unwrap(), f.original);
+    assert!(!f.editor.can_undo(&f.drawing));
+    assert_eq!(f.editor.locate(&mut f.drawing, "stale", "0")["ok"], false);
+}

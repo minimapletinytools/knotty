@@ -252,6 +252,15 @@ async function checkLanternWaddle(page) {
     await page.locator("#undo-edit").click();
     await page.waitForFunction(() => Number(document.querySelector("#stage svg circle").getAttribute("r")) === 24);
     await page.waitForFunction(({ lines, expected }) => lines.innerText === expected, { lines: sourceLines, expected: original });
+    // Copy for AI names the repository file and the circle's source line.
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.locator("#stage svg circle").first().click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Copy for AI" }).click();
+    await page.locator("#copy-toast", { hasText: "Copied reference for AI." }).waitFor();
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    assert.match(copied, /^Knotty drawing element in knotty-drawings\/examples\/mapped-creation\.knot\n/);
+    assert.match(copied, /circle · scene key "\d+(\.\d+)*" · svg › /);
+    assert.match(copied, /line +\d+: .*radius = 24.*← .*r/);
     await page.locator("#stage svg").first().click({position: { x: 4, y: 4 }});
     await page.locator("#add-circle").click();
     await page.waitForFunction(() => shapeTool?.ready);

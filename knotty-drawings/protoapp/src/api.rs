@@ -43,6 +43,11 @@ pub(super) fn dispatch(
                 "error": drawing.error(),
             })
         }
+        ("GET", "/api/locate") => editor.locate(
+            drawing,
+            &query_value(query, "snapshot").unwrap_or_default(),
+            &query_value(query, "key").unwrap_or_default(),
+        ),
         ("GET", "/api/scene") => {
             drawing.refresh();
             scene_response::payload(drawing, editor, false, None)

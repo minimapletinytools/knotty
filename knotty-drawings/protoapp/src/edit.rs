@@ -8,6 +8,7 @@ pub use graph::GraphEdit;
 mod geometry;
 mod preview;
 mod properties;
+mod locate;
 mod source;
 pub use source::SourceText;
 use crate::drawing::Drawing;

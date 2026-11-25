@@ -1260,6 +1260,121 @@ $("select-curve").addEventListener("click", () => {
   if (curve) select(curve.key);
 });
 
+// Copy for AI -----------------------------------------------------------------------
+// Right-click an element in Layers or on the canvas to copy a reference an agent
+// can act on: the file, the element's place in the scene and its source lines.
+
+const AI_FIELDS = ["x", "y", "width", "height", "cx", "cy", "r", "rx", "ry", "x1", "y1", "x2", "y2",
+  "content", "font.size", "fill.paint", "stroke.paint", "stroke.width"];
+
+function describeValue(value) {
+  if (Array.isArray(value) && value.length === 3 && value.every(Number.isInteger)) return `rgb(${value.join(" ")})`;
+  if (typeof value === "number") return String(Math.round(value * 1000) / 1000);
+  return JSON.stringify(value);
+}
+
+function elementReference(key, located) {
+  const node = findNode(key);
+  const name = n => n.kind + (n.id ? "#" + n.id : "");
+  const trail = ancestors(key).concat(key === "" ? [] : [key]).map(k => {
+    const n = findNode(k), index = k === "" ? "" : `[${k.split(".").pop()}]`;
+    return name(n) + index;
+  });
+  const file = document.body.dataset.sourcePath || located.file || $("file-name").title;
+  const props = AI_FIELDS.filter(f => node.props[f] !== undefined && node.props[f] !== null
+      && !(f === "stroke.width" && !node.props["stroke.paint"]))
+    .map(f => `${f}=${describeValue(node.props[f])}`);
+  const lines = [
+    `Knotty drawing element in ${file}`,
+    `${name(node)} · scene key "${key}" · ${trail.join(" › ")}`,
+  ];
+  if (props.length) lines.push(props.join(" "));
+  if (located.lines?.length) {
+    lines.push("Source:");
+    const width = Math.max(...located.lines.map(l => String(l.line).length));
+    for (const l of located.lines) {
+      lines.push(`  line ${String(l.line).padStart(width)}: ${l.text.trim()}    ← ${l.fields.join(", ")}`);
+    }
+  } else {
+    lines.push(located.reason ? `Source: not located (${located.reason})`
+      : "Source: no literal in this file sets these fields; the element is computed.");
+  }
+  return lines.join("\n");
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const area = Object.assign(document.createElement("textarea"), { value: text });
+    document.body.append(area);
+    area.select();
+    const ok = document.execCommand("copy");
+    area.remove();
+    if (!ok) throw new Error("Clipboard is unavailable.");
+  }
+}
+
+let toastTimer;
+function toast(message, error = false) {
+  const note = $("copy-toast");
+  note.textContent = message;
+  note.classList.toggle("error", error);
+  note.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { note.hidden = true; }, 2500);
+}
+
+async function copyForAI(key) {
+  const snapshot = state.snapshot;
+  try {
+    const query = new URLSearchParams({ snapshot, key });
+    const located = await (await drawingRequest("/api/locate?" + query)).json();
+    if (snapshot !== state.snapshot || !findNode(key)) throw new Error("Drawing changed; try again.");
+    const text = elementReference(key, located.ok ? located : { reason: located.reason });
+    await copyText(text);
+    toast("Copied reference for AI.");
+    logDrawing("Copied for AI:\n" + text);
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+function setupContextMenu() {
+  const menu = $("context-menu"), item = $("copy-for-ai");
+  let target = null;
+  const close = () => { menu.hidden = true; target = null; };
+  const open = (key, x, y) => {
+    if (paintPicker || shapeTool || geometryDrag) return false;
+    select(key === "" ? null : key);
+    target = key;
+    menu.hidden = false;
+    const { width, height } = menu.getBoundingClientRect();
+    menu.style.left = Math.min(x, innerWidth - width - 4) + "px";
+    menu.style.top = Math.min(y, innerHeight - height - 4) + "px";
+    item.focus();
+    return true;
+  };
+  $("tree").addEventListener("contextmenu", event => {
+    const row = event.target.closest(".tree-row");
+    if (row && open(row.dataset.key, event.clientX, event.clientY)) event.preventDefault();
+  });
+  $("canvas").addEventListener("contextmenu", event => {
+    // Selection handles and boxes sit above the drawing; look beneath them.
+    const stage = $("stage");
+    const element = document.elementsFromPoint(event.clientX, event.clientY)
+      .map(e => stage.contains(e) && e.closest("[data-key]")).find(Boolean);
+    if (!element) return;
+    if (open(element.getAttribute("data-key"), event.clientX, event.clientY)) event.preventDefault();
+  });
+  item.addEventListener("click", () => { const key = target; close(); if (key !== null) copyForAI(key); });
+  document.addEventListener("pointerdown", event => { if (!menu.hidden && !menu.contains(event.target)) close(); }, true);
+  menu.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); } });
+  addEventListener("blur", close);
+  addEventListener("resize", close);
+  $("canvas").addEventListener("wheel", close, { passive: true });
+}
+
 // Same-origin embedded editor uses this drawing's transport and undo history.
 window.drawingGraphHost = {
   request: drawingRequest,
@@ -1269,6 +1384,7 @@ window.drawingGraphHost = {
 };
 setupControls();
 setupCanvas();
+setupContextMenu();
 if (document.body.dataset.demo) {
   load().catch(error => { showError(error.message); $("file-status").textContent = "Could not load demo"; });
 } else {

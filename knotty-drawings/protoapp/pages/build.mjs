@@ -37,7 +37,7 @@ for (const [slug, title, source] of demos) {
   await writeFile(path.join(dir, "preview.svg"), svg);
   await writeFile(path.join(dir, "index.html"), drawingHtml
     .replace("<head>", '<head>\n  <base href="../../assets/">')
-    .replace("<body>", `<body data-demo="${slug}">`)
+    .replace("<body>", `<body data-demo="${slug}" data-source-path="knotty-drawings/${source}">`)
     .replace("<title>Knotty Drawings", `<title>${title} · Knotty Drawings`)
     .replace('data-src="/tangle?embed=1"', 'data-src="../tangle/?embed=1"')
     .replace('<a href="/tangle" class="back-link">Full editor</a>', '<a href="../" class="back-link">← Back to demos</a>')
