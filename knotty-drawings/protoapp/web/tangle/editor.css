@@ -86,8 +86,9 @@ header button {
 }
 main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(245px, 24vw, 380px);
+  grid-template-columns: minmax(0, 1fr) var(--aside-width, clamp(245px, 24vw, 380px));
   height: calc(100dvh - 56px);
+  position: relative;
 }
 .workspace {
   display: flex;
@@ -692,7 +693,7 @@ footer {
   margin-right: 6px;
 }
 .story-mode main {
-  grid-template-columns: clamp(165px, 16vw, 235px) minmax(0, 1fr) clamp(205px, 22vw, 340px);
+  grid-template-columns: clamp(165px, 16vw, 235px) minmax(0, 1fr) var(--aside-width, clamp(205px, 22vw, 340px));
 }
 #stories {
   overflow: auto;
@@ -816,3 +817,9 @@ footer {
 .embedded footer { min-height: 30px; padding: 4px 8px; }
 
 #viewport.panning { cursor: grabbing; }
+
+/* Divider beside the source pane; positioned over the aside's left edge. */
+#aside-handle { position: absolute; z-index: 5; top: 0; bottom: 0; width: 8px; cursor: col-resize; touch-action: none; }
+#aside-handle:hover, #aside-handle:focus-visible, #aside-handle.dragging { background: linear-gradient(to right, transparent 3px, #327255 3px 5px, transparent 5px); outline: none; }
+.embedded #aside-handle { display: none; }
+@media (max-width: 780px) { #aside-handle { display: none; } }

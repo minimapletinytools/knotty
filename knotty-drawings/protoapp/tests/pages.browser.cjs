@@ -366,6 +366,25 @@ async function checkLanternWaddle(page) {
     await page.waitForFunction(() => [...document.querySelectorAll("#board input.literal")].map(i => i.value).join() === "3");
     await page.locator("aside #source .squiggly-error").waitFor({ state: "detached" });
     assert.match((await storyLines.innerText()).replaceAll("\u00a0", " "), /b \* 3/);
+    // The source pane divider resizes the aside, is remembered and resets on double-click.
+    assert(await page.locator("#aside-handle").isHidden(), "no divider at phone width");
+    await page.setViewportSize({ width: 1440, height: 960 });
+    const asideWidth = () => page.locator("aside").evaluate(a => a.getBoundingClientRect().width);
+    const asideBefore = await asideWidth();
+    const divider = await page.locator("#aside-handle").boundingBox();
+    assert(Math.abs(divider.x + divider.width / 2 - (await page.locator("aside").boundingBox()).x) < 2);
+    await page.mouse.move(divider.x + 4, divider.y + 300);
+    await page.mouse.down();
+    await page.mouse.move(divider.x + 4 - 150, divider.y + 300, { steps: 5 });
+    await page.mouse.up();
+    assert(Math.abs(await asideWidth() - asideBefore - 150) < 3, `${asideBefore} → ${await asideWidth()}`);
+    await page.reload();
+    await page.locator("aside #source .view-lines").waitFor();
+    assert(Math.abs(await asideWidth() - asideBefore - 150) < 3);
+    const moved = await page.locator("#aside-handle").boundingBox();
+    assert(Math.abs(moved.x + moved.width / 2 - (await page.locator("aside").boundingBox()).x) < 2);
+    await page.locator("#aside-handle").dblclick();
+    assert(Math.abs(await asideWidth() - asideBefore) < 3);
     assert.deepEqual(errors, []);
     console.log("Static drawing, live Monaco, preview/cancel/accept/undo, mobile and storybook checks passed.");
   } finally { await browser.close(); }

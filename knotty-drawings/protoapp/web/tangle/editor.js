@@ -1375,6 +1375,60 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') inspect(null);
 });
 window.addEventListener('resize', resize);
+
+// Drag the divider beside the source pane to resize it; the width is remembered,
+// arrow keys nudge it and a double-click restores the default.
+(() => {
+  const handle = $('aside-handle'), main = document.querySelector('main'), aside = document.querySelector('aside');
+  const KEY = 'tangle.asideWidth', MIN_ASIDE = 200, MIN_GRAPH = 320;
+  const stored = () => { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } };
+  const store = width => { try { localStorage.setItem(KEY, JSON.stringify(width)); } catch { /* not remembered */ } };
+  const place = () => { handle.style.left = aside.offsetLeft - 4 + 'px'; };
+  let width = null, drag = null;
+  const apply = next => {
+    if (next === null) main.style.removeProperty('--aside-width');
+    else {
+      const nav = $('stories').hidden ? 0 : $('stories').offsetWidth;
+      const max = Math.max(MIN_ASIDE, main.clientWidth - nav - MIN_GRAPH);
+      next = Math.round(Math.min(Math.max(next, MIN_ASIDE), max));
+      main.style.setProperty('--aside-width', next + 'px');
+    }
+    width = next;
+    place();
+  };
+  const commit = () => { store(width); resize(); };
+  apply(stored());
+  // The workspace changes size when the story list appears, moving the aside.
+  const observer = new ResizeObserver(place);
+  observer.observe(aside);
+  observer.observe(document.querySelector('.workspace'));
+  addEventListener('resize', () => { if (width !== null) apply(width); else place(); });
+  handle.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add('dragging');
+    drag = { x: e.clientX, width: aside.offsetWidth };
+  });
+  handle.addEventListener('pointermove', e => { if (drag) apply(drag.width + drag.x - e.clientX); });
+  const end = () => {
+    if (!drag) return;
+    drag = null;
+    handle.classList.remove('dragging');
+    commit();
+  };
+  handle.addEventListener('pointerup', end);
+  handle.addEventListener('lostpointercapture', end);
+  handle.addEventListener('dblclick', () => { apply(null); commit(); });
+  handle.addEventListener('keydown', e => {
+    const step = e.shiftKey ? 80 : 20;
+    const delta = { ArrowLeft: step, ArrowRight: -step }[e.key];
+    if (delta === undefined) return;
+    e.preventDefault();
+    apply(aside.offsetWidth + delta);
+    commit();
+  });
+})();
 window.addEventListener('beforeunload', (event) => {
   if (changes.size) event.preventDefault();
 });
