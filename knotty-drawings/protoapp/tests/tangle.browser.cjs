@@ -127,7 +127,7 @@ async function controlFlow(page) {
   assert.equal(await page.locator('.monadic-context .binding-knot').count(), 3);
   assert.equal(await page.locator('#wires .rope-sequence').count(), 0);
   assert.equal(await page.locator('#wires .rope-bind').count(), 2);
-  assert.equal(await page.locator('#wires .rope-bind-gap[marker-end]').count(), 2);
+  assert.equal(await page.locator('.nublet.bind-inlet').count(), 2);
   assert.equal(await page.locator('#wires .rope-value').count(), 1);
   await checkHover(page.locator('.binding-knot .left .nublet').first(), /List/, /\[24, 60, 96\]/, 1);
   const pure = page.locator('article.call').filter({ has: page.getByText('pure', { exact: true }) });
@@ -244,7 +244,7 @@ local_fn = do
   await lambda.waitFor();
   assert.equal(await page.locator('.monadic-context').count(), 1);
   assert.equal(await page.locator('.binding-knot').count(), 2);
-  assert.equal(await page.locator('#wires .rope-bind-gap[marker-end]').count(), 1);
+  assert.equal(await page.locator('.nublet.bind-inlet').count(), 1);
   assert.equal(await lambda.locator('.capture:visible').getAttribute('aria-label'), 'Captured n');
   const captured = await projected('captured');
   const [ordinary, bind] = captured.scope.body.steps;

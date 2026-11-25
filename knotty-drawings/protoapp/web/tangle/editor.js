@@ -571,6 +571,8 @@ function scopedSteps(expr, canvas, source, local) {
     binding.box.classList.add('binding-knot');
     markRecursive(binding.box, step.pattern.parameters.some(p => p.recursive));
     canvas.append(binding.box);
+    // A bind is an ordinary rope; its inlet dot carries the >>= mark.
+    if (step.kind !== 'let') binding.inlet.classList.add('bind-inlet');
     wires.push({ from: rhs.out, socket: binding.inlet, kind: step.kind === 'let' ? 'value' : 'bind' });
     return { box: binding.box, children: [rhs] };
   });
@@ -1206,12 +1208,6 @@ function drawWires(connections) {
     layer.append(path);
     wire.path = path;
     if (touchesInspected(wire)) path.classList.add('inspected-wire');
-    if (wire.kind === 'bind') {
-      const gap = path.cloneNode(false);
-      gap.setAttribute('class', 'rope-bind-gap');
-      gap.setAttribute('marker-end', 'url(#bind-tip)');
-      svg.append(gap);
-    }
   }
 }
 
