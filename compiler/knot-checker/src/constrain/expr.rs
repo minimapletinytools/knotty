@@ -578,9 +578,15 @@ mod tests {
     fn pipe_and_composition() {
         assert_eq!(type_of("it = 1 |> (\\x -> x + 1)\n"), "Int");
         assert_eq!(
-            type_of("it f g = f >> g\n"),
+            type_of("it f g = f |>> g\n"),
             "(a -> b) -> (b -> c) -> a -> c"
         );
+    }
+
+    #[test]
+    fn then_sequences_two_actions() {
+        // `>>` is the monadic then; composition is `|>>`.
+        assert_eq!(type_of("it m k = m >> k\n"), "Monad a => a b -> a c -> a c");
     }
 
     #[test]

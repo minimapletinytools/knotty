@@ -749,6 +749,10 @@ footer {
   font: bold 12px/1 ui-monospace, monospace;
 }
 .callee-inlet::before { content: '$'; }
+.callee-inlet.compose-inlet::before { content: '∘'; font-size: 14px; }
+/* Composition stages are functions waiting for a value, like the dotted box around them. */
+.slub-chain.compose > .slub { border-style: dotted; }
+.slub > .slub-inlet { position: relative; top: auto; transform: none; flex: none; }
 .knot:has(> .callee-inlet, > .callee-socket) > .knot-label { padding-top: 9px; }
 /* Keep the dotted recursion texture on the header so the scope context shows through. */
 .recursive-knot > :is(.scope-header, .knot-label), .slub.recursive-knot, .binding-knot.recursive-knot {

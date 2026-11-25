@@ -775,11 +775,33 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
           assert.equal(await page.locator('path.inspected-wire').count(), 1);
         }
       }
+      if (definition === 'composed_expression_argument' || definition === 'piped_expression_argument') {
+        // A stage with an expression argument stays a pill; the argument enters through a connector.
+        const chain = page.locator('.slub-chain');
+        assert.deepEqual(await chain.locator('.slub').allTextContents(), ['negate', 'max']);
+        assert.equal(await chain.locator('.slub .slub-inlet').count(), 1);
+        assert.equal(await chain.evaluate(e => e.classList.contains('compose')), definition.startsWith('composed'));
+        await chain.locator('.slub-inlet').focus();
+        assert.equal(await page.locator('path.inspected-wire').count(), 1);
+      }
+      if (definition === 'positioned_composition_stage') {
+        // A positioned stage leaves the chain: its compositions are ordinary operator nodes.
+        assert.equal(await page.locator('.slub').count(), 0);
+        assert.deepEqual((await page.locator('.knot > .knot-label').allTextContents()).sort(),
+          ['<inline>', 'max', 'negate', '|>>', '|>>']);
+      }
+      if (definition === 'monadic_then') {
+        assert.deepEqual(await page.locator('.knot > .knot-label').allTextContents(), ['>>']);
+      }
       if (definition === 'composed_functions' || definition === 'composed_callbacks') {
-        const box = page.getByRole('region', { name: '>> scope', exact: true });
+        const box = page.getByRole('region', { name: '|>> scope', exact: true });
         const named = definition === 'composed_functions';
         assert.deepEqual(await box.locator('.slub').allTextContents(),
-          named ? ['String.length', 'max'] : ['f', 'g', 'Call']);
+          named ? ['String.length', 'max'] : ['f', 'g', 'λ']);
+        // Composition stages are dotted and compose (∘); the box is then called through an <inline> site.
+        assert.equal(await box.locator('.slub-chain.compose > .slub').first().evaluate(e => getComputedStyle(e).borderTopStyle), 'dotted');
+        assert.equal(await box.locator('.compose-inlet').count(), named ? 0 : 3);
+        assert.equal(await page.locator('.knot.callsite > .knot-label').textContent(), '<inline>');
         assert.equal(await box.locator(':scope > .definition-port').count(), 1);
         assert.equal(await box.locator('.capture:visible').count(), named ? 0 : 2);
         for (const [mark, ty] of [['.chain-head', named ? 'String' : 'Int'], ['.chain-tail', 'Int']]) {

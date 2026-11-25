@@ -454,11 +454,14 @@ function arrange(frame, captureSources) {
     const inputWidth = Math.max(0, ...values.map(b => b.width));
     const w = item.box.offsetWidth, h = item.box.offsetHeight;
     let x = values.length ? inputWidth + gapX : 0;
-    const mid = Math.max(h / 2, values[0]?.mid || 0);
-    let bottom = 0;
+    // Inputs marked offRow sit beneath the consumer, leaving its row clear for the rope that enters it.
+    const lead = values[0] && !values[0].item.offRow;
+    if (values.length && !lead) x = 0;
+    const mid = Math.max(h / 2, lead ? values[0].mid : 0);
+    let bottom = lead ? 0 : mid + h / 2;
     for (const [i, branch] of values.entries()) {
-      branch.x = inputWidth - branch.width;
-      branch.y = i === 0 ? mid - branch.mid : bottom + gapY;
+      branch.x = lead ? inputWidth - branch.width : 0;
+      branch.y = i === 0 && lead ? mid - branch.mid : bottom + gapY;
       bottom = branch.y + branch.height;
     }
 
@@ -484,7 +487,7 @@ function arrange(frame, captureSources) {
       rowWidth = last.x + last.width;
     }
     return { item, branches, nodeX: x, nodeY: above + mid - h / 2, mid: above + mid,
-      width: Math.max(rowWidth, x + w), height: above + Math.max(mid + h / 2, bottom) };
+      width: Math.max(rowWidth, x + w, lead ? 0 : inputWidth), height: above + Math.max(mid + h / 2, bottom) };
   }
 
   const nodes = [];
@@ -745,8 +748,10 @@ function alternatives(expr, canvas, sources) {
 
 // A pipeline supplies a value now. A composition supplies it later through
 // the inner port of a function box. Both use the same chain of stages.
-function slubChain(stages, canvas, sources, input, upstream, returnsFunction) {
-  const chain = el('div', 'slub-chain');
+// A composition chain composes its stages (∘) instead of applying them ($).
+function slubChain(stages, canvas, sources, input, upstream, returnsFunction, composes = false) {
+  const chain = el('div', 'slub-chain' + (composes ? ' compose' : ''));
+  const callee = 'callee-inlet' + (composes ? ' compose-inlet' : '');
   const entry = describe(nub(), input);
   entry.classList.add('chain-head');
   const exit = returnsFunction ? functionOutput() : nub();
@@ -757,18 +762,27 @@ function slubChain(stages, canvas, sources, input, upstream, returnsFunction) {
     const pill = el('span', 'slub');
     markRecursive(pill, step.recursive);
     if (!pinned(step) && step.kind === 'reference') {
-      const inlet = endpoint('', 'stage-function', 'callee-inlet');
+      const inlet = endpoint('', 'stage-function', callee);
       describe(inlet.mark, step);
       inlet.row.append(expressionName(el('span', 'slub-label', step.label), step));
       pill.append(inlet.row);
       wires.push({ from: captures => sources(step.parameter, captures), socket: inlet.mark, recursive: step.recursive, parameter: step.parameter });
-    } else if (inlineStage(step)) {
+    } else if (slubStage(step)) {
       pill.append(expressionName(el('span', 'slub-label', step.label), step));
-      step.inputs.forEach((arg, i) =>
-        pill.append(field(arg, step.label, i, step.labels?.[i] || '', sources)));
+      step.inputs.forEach((arg, i) => {
+        if (inline(arg)) return pill.append(field(arg, step.label, i, step.labels?.[i] || '', sources));
+        // An argument too large to sit in the pill keeps its own node and enters through a connector.
+        const inlet = describe(nub('round slub-inlet'), arg);
+        if (step.labels?.[i]) inlet.title = step.labels[i];
+        pill.append(inlet);
+        const child = expression(arg, canvas, sources);
+        child.offRow = composes;
+        children.push(child);
+        wires.push({ from: child.out, socket: inlet });
+      });
     } else {
       const fn = expression(step, canvas, sources);
-      const inlet = endpoint('Call', 'stage-function', 'callee-inlet');
+      const inlet = endpoint(step.scope ? 'λ' : '', 'stage-function', callee);
       describe(inlet.mark, step);
       pill.append(inlet.row);
       children.push(fn);
@@ -782,22 +796,33 @@ function slubChain(stages, canvas, sources, input, upstream, returnsFunction) {
   return { box: chain, out: exit, children, definition: returnsFunction };
 }
 
-function inlineStage(expr) {
-  return !pinned(expr) && ['call', 'value'].includes(expr.kind) && expr.inputs.every(inline);
+// A call can sit on a chain as a pill: simple arguments show inline, the rest
+// enter through connectors.
+function slubStage(expr) {
+  return !pinned(expr) && ['call', 'value'].includes(expr.kind);
 }
 
-function composition(expr, canvas, sources) {
+function compositionStages(expr) {
   const stages = [];
   function flatten(stage) {
     if (stage.kind === 'composition' && !pinned(stage)) stage.inputs.forEach(flatten);
     else stages.push(stage);
   }
   expr.inputs.forEach(flatten);
+  return stages;
+}
+
+// A position on a stage that would otherwise be a pill takes it off the chain,
+// so the compositions around it fall back to ordinary operator nodes.
+const breaksSlub = (stage) => pinned(stage) && ['reference', 'call', 'value'].includes(stage.kind);
+
+function composition(expr, canvas, sources) {
+  const stages = compositionStages(expr);
   const input = { implicit: true, label: 'Composition input', ty: expr.open_inputs[0] };
   const result = { label: 'Composition result', ty: expr.composition_result };
-  const item = boxed({ inputs: [input], body: result }, '>>', sources, null, false,
+  const item = boxed({ inputs: [input], body: result }, '|>>', sources, null, false,
     (inner, source, [argument]) => {
-      const chain = slubChain(stages, inner, source, input, argument.out, false);
+      const chain = slubChain(stages, inner, source, input, argument.out, false, true);
       describe(chain.out, result);
       return chain;
     });
@@ -810,7 +835,7 @@ function composition(expr, canvas, sources) {
 function makeExpression(expr, canvas, sources, forwarded = []) {
   // Only stages with inline captures can sit on a rope. More complex
   // right-hand expressions retain explicit inputs and their own ropes.
-  if (expr.kind === 'composition') return composition(expr, canvas, sources);
+  if (expr.kind === 'composition' && !compositionStages(expr).some(breaksSlub)) return composition(expr, canvas, sources);
   if (expr.kind === 'if' || expr.kind === 'case') return alternatives(expr, canvas, sources);
   if (expr.kind === 'do' || expr.kind === 'let') {
     const item = boxed({ inputs: [], body: expr }, expr.kind, sources, null, true);
@@ -826,7 +851,7 @@ function makeExpression(expr, canvas, sources, forwarded = []) {
   let base = expr;
   while (base.kind === 'pipe' && (base === expr || !pinned(base))) {
     const rhs = base.inputs[1];
-    if (!inlineStage(rhs)) break;
+    if (!slubStage(rhs)) break;
     stages.unshift(rhs);
     base = base.inputs[0];
   }
@@ -843,7 +868,7 @@ function makeExpression(expr, canvas, sources, forwarded = []) {
   let label = base.label;
   switch (base.kind) {
     case 'field-access': label = '.' + label; break;
-    case 'callsite': label = base.inputs[0].kind === 'reference' ? base.inputs[0].label : 'Call'; break;
+    case 'callsite': label = base.inputs[0].kind === 'reference' ? base.inputs[0].label : '<inline>'; break;
     case 'source': label = 'Source'; break;
   }
   const title = expressionName(el('div', 'knot-label', label), base);
@@ -1033,7 +1058,7 @@ function definitionBox(scope, name, outerSource) {
   return boxed({ inputs, body: result }, name, outerSource, null, false, (canvas, source, patterns) => {
     const direct = ['call', 'value', 'callsite', 'operator'].includes(fn.kind);
     const call = direct ? { ...fn, kind: fn.kind === 'value' ? 'call' : fn.kind }
-      : { kind: 'callsite', label: 'Call', inputs: [fn], callable: fn.callable };
+      : { kind: 'callsite', label: '<inline>', inputs: [fn], callable: fn.callable };
     call.ty = result.ty;
     call.open_inputs = undefined;
     const forwarded = implicit.map((argument, i) => ({ argument, from: patterns[scope.inputs.length + i].out }));
@@ -1181,7 +1206,10 @@ function drawWires(connections) {
     else if (start.classList.contains('capture-triangle')) exit = [x, y + verticalBend];
     const entersCall = wire.socket.classList.contains('callee-inlet');
     const entersBottom = wire.socket.classList.contains('definition-port');
-    const entry = entersCapture || entersBottom || entersCall ? [u, v - verticalBend] : [u - bend, v];
+    // A pill's argument connector sits mid-chain, so its rope arrives vertically from its node's side.
+    const entersPill = wire.socket.classList.contains('slub-inlet');
+    const entry = entersPill ? [u, v + (y < v ? -1 : 1) * Math.max(14, verticalBend)]
+      : entersCapture || entersBottom || entersCall ? [u, v - verticalBend] : [u - bend, v];
     let d = `M ${x} ${y} C ${exit.join(' ')} ${entry.join(' ')} ${u} ${v}`;
     const owner = start.matches('.scope-box > .definition-port[role=button]') && start.parentElement;
     if (owner && owner.contains(wire.socket)) {

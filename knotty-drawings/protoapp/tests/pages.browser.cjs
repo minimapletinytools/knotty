@@ -306,7 +306,7 @@ async function checkLanternWaddle(page) {
     await page.goto(base + "tangle/?definition=incomplete_case");
     await page.getByText("⚠ Incomplete match").waitFor();
     const stories = page.locator("#stories a");
-    assert.equal(await stories.count(), 65);
+    assert.equal(await stories.count(), 69);
     await stories.filter({ hasText: "unreachable case" }).click();
     await page.getByText("⚠ Unreachable arm").waitFor();
     // Wheel zooms about the cursor; the middle button pans.

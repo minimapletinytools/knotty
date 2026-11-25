@@ -24,8 +24,8 @@ Knot represents a middle ground between Haskell and Elm, tailored specifically t
 * **Type Declarations**: ADTs are defined using the `type` keyword instead of `data`, and aliases use `type alias`.
 * **Module & Import System**: Every file is a module, imports are qualified by default, and namespace control is managed via the `exposing` keyword.
 * **No `where` clauses**: All local scope bindings must use `let...in` (matching Elm's let-only scoping).
-* **Pipe Operators**: Forward pipe (`|>`) and forward composition (`>>`) replace `.` and `$`.
-* **No `.` or `$` Operators**: Haskell's backward composition (`.`) and low-precedence right-associative application (`$`) are both omitted — `|>`/`>>` cover chaining and composition, and parentheses handle the rest.
+* **Pipe Operators**: Forward pipe (`|>`) and forward composition (`|>>`) replace `.` and `$`.
+* **No `.` or `$` Operators**: Haskell's backward composition (`.`) and low-precedence right-associative application (`$`) are both omitted — `|>`/`|>>` cover chaining and composition, and parentheses handle the rest.
 * **No Map Literals**: Maps are constructed using `Map.fromList` (matching Elm's `Dict.fromList`).
 * **Simplified Imports**: No `qualified` or `hiding` keywords (matching Elm's import design).
 * **Pattern Aliases (`as`)**: Pattern aliases use `as` instead of Haskell's `@` to prevent syntactic conflicts with layout annotations.

@@ -575,7 +575,7 @@ impl Projection<'_> {
                 };
                 let kind = match op {
                     Ref::Builtin(n) if n == "|>" => "pipe",
-                    Ref::Builtin(n) if n == ">>" => "composition",
+                    Ref::Builtin(n) if n == "|>>" => "composition",
                     Ref::Local(_) | Ref::TopLevel(_) => {
                         callee_port = self.binding_port(e.id);
                         "operator"

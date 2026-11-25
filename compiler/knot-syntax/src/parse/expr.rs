@@ -1165,7 +1165,7 @@ mod tests {
         // `>>=` mustn't stop short at `>>` and strand `= f`, nor `<*>` at `<`.
         assert_eq!(chain_ops(&ex("m >>= f >>= g")), [">>=", ">>="]);
         assert_eq!(chain_ops(&ex("mf <*> ma")), ["<*>"]);
-        assert_eq!(chain_ops(&ex("a |> f >> g")), ["|>", ">>"]);
+        assert_eq!(chain_ops(&ex("a |> f |>> g")), ["|>", "|>>"]);
     }
 
     #[test]

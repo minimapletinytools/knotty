@@ -50,11 +50,23 @@ infix_callback choose a b = a `choose` b
 
 @story("Functions")
 composed_functions :: String -> Int
-composed_functions = String.length >> max 1
+composed_functions = String.length |>> max 1
 
 @story("Functions")
 composed_callbacks :: (Int -> Int) -> (Int -> Int) -> Int -> Int
-composed_callbacks f g = f >> g >> (\x -> x + 1)
+composed_callbacks f g = f |>> g |>> (\x -> x + 1)
+
+@story("Functions")
+composed_expression_argument :: Int -> Int -> Int -> Int
+composed_expression_argument a b = negate |>> max (a + b)
+
+@story("Functions")
+piped_expression_argument :: Int -> Int -> Int -> Int
+piped_expression_argument a b x = x |> negate |> max (a + b)
+
+@story("Functions")
+positioned_composition_stage :: (Int -> Int) -> Int -> Int
+positioned_composition_stage f = f |>> @position(8, 8) negate |>> max 1
 
 @story("Functions")
 qualified_call :: String -> Int
@@ -240,6 +252,10 @@ effect_only_binds action = do
     unused <- action
     used <- action
     pure used
+
+@story("Do blocks")
+monadic_then :: Maybe Int -> Maybe Int -> Maybe Int
+monadic_then first second = first >> second
 
 @story("Do blocks")
 final_expression :: Maybe Int

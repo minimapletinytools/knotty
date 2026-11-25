@@ -3,7 +3,7 @@ module Prelude exposing (..)
 -- Knot's prelude: in scope in every module. Ported from Haskell's Prelude,
 -- keeping Knot's own names where the language already chose differently
 -- (`map` for fmap, `empty` for mempty, `Result`/`Ok`/`Err` for Either, `|>`
--- and `>>` for pipes). This file is the prelude's specification (spec §12).
+-- and `|>>` for pipes). This file is the prelude's specification (spec §12).
 --
 -- Only a library module like this one may declare interfaces, primitives
 -- (a signature with no definition: the runtime provides the value), and
@@ -45,7 +45,7 @@ infix 4 (==), (/=), (<), (<=), (>), (>=)
 infixl 4 (<*>), (*>), (<*)
 infixr 3 (&&)
 infixr 2 (||)
-infixl 1 (|>), (>>), (>>=)
+infixl 1 (|>), (|>>), (>>), (>>=)
 infixl 9 (!!)
 
 
@@ -134,8 +134,8 @@ flip f x y = f y x
 (|>) :: a -> (a -> b) -> b
 (|>) x f = f x
 
-(>>) :: (a -> b) -> (b -> c) -> a -> c
-(>>) f g x = g (f x)
+(|>>) :: (a -> b) -> (b -> c) -> a -> c
+(|>>) f g x = g (f x)
 
 until :: (a -> Bool) -> (a -> a) -> a -> a
 until p f x = if p x then x else until p f (f x)
@@ -373,6 +373,10 @@ interface Functor f => Applicative f where
 
 interface Applicative m => Monad m where
   (>>=) :: m a -> (a -> m b) -> m b
+
+-- Monadic then: run the first action for its effect and keep the second.
+(>>) :: Monad m => m a -> m b -> m b
+(>>) m k = m >>= (\_ -> k)
 
 interface Foldable t where
   foldr :: (a -> b -> b) -> b -> t a -> b
