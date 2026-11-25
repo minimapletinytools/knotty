@@ -399,7 +399,7 @@ function boxed(scope, name, outerSource, armOwner = null, explicitBlock = false,
     selectPort(null);
   };
   const item = { box, out, bindings: local, children: [], definition: definition || forwardsFunction, inlet: patterns[0]?.inlet };
-  layouts.push({ canvas, left, roots, owner: armOwner || item, padding: [0, 16] });
+  layouts.push({ canvas, left, roots, owner: armOwner || item, padding: [0, 16], bands: roots.bands });
   return item;
 }
 
@@ -417,6 +417,7 @@ function outputDot() {
 
 // Coordinates describe the top left in the containing canvas, in unscaled pixels.
 function placeNodes(frame, moving, dx = 0, dy = 0) {
+  if (frame.bands) return placeBands(frame, moving, dx, dy);
   // Keep the starting envelope during a drag so the opposite edges stay still.
   const bounds = moving ? { ...frame.bounds } : { left: 0, top: 0, right: 0, bottom: 0 };
   const positions = frame.nodes.map(item => {
@@ -497,12 +498,17 @@ function arrange(frame, captureSources) {
   }
 
   const trees = roots.map(measure);
-  if (canvas.closest('.scope-box').classList.contains('monadic-context')) {
-    let y = captureLane ? left.offsetHeight + gapY : gapY;
-    for (const tree of trees) {
-      place(tree, 0, y);
-      y += tree.height + 30;
-    }
+  if (frame.bands) {
+    frame.top = captureLane ? left.offsetHeight + gapY : 0;
+    frame.clamp = bandClamp;
+    // Each band stacks its trees from its own top; grouped lets share a band.
+    const next = frame.bands.map(() => BAND.pad);
+    trees.forEach((tree, i) => {
+      const band = roots[i].band, start = nodes.length;
+      place(tree, BAND.gutter + BAND.pad, next[band]);
+      for (const item of nodes.slice(start)) item.band = band;
+      next[band] += tree.height + gapY;
+    });
     frame.nodes = nodes;
     frame.bounds = placeNodes(frame);
     return;
@@ -569,7 +575,123 @@ function scopedSteps(expr, canvas, source, local) {
     return { box: binding.box, children: [rhs] };
   });
   roots.push(expression(expr.inputs[0], canvas, source));
+  if (expr.kind === 'do') roots.bands = doBands(expr, steps, roots, bindings, canvas, local);
   return roots;
+}
+
+// A do block is a sequence: one horizontal band per statement, in source order,
+// whether it desugars to >>= (a bind), >> (a discarded result) or a pure let.
+// Nodes stay inside their statement's band; bands grow to fit their contents.
+// A discarded result ends in a drop mark so it is never left dangling, and a
+// bind whose names are never used is marked as kept only for its effect.
+function doBands(expr, steps, roots, bindings, canvas, local) {
+  const bands = [];
+  const byStatement = new Map();
+  steps.forEach((step, index) => {
+    let band = byStatement.get(step.statement);
+    if (!band) {
+      band = { kind: step.kind, steps: [], ports: [], hubs: [] };
+      byStatement.set(step.statement, band);
+      bands.push(band);
+    }
+    band.steps.push(step);
+    roots[index].band = bands.indexOf(band);
+    if (bindings[index]) band.hubs.push(bindings[index].box);
+    for (const p of step.pattern?.parameters || []) band.ports.push(local.get(p.port));
+    if (step.kind === 'discard') {
+      band.sink = el('span', 'drop-sink', '⊘');
+      band.sink.setAttribute('role', 'img');
+      band.sink.setAttribute('aria-label', 'Result discarded (>>)');
+      band.sink.title = 'Result discarded: only the effect is sequenced (>>)';
+      canvas.append(band.sink);
+      wires.push({ from: roots[index].out, socket: band.sink, kind: 'discard' });
+    }
+  });
+  roots.at(-1).band = bands.length;
+  bands.push({ kind: 'result', steps: [], ports: [], hubs: [] });
+  const labels = { bind: '>>=', discard: '>>', let: 'let', result: '⇒' };
+  const titles = {
+    bind: 'Bind (>>=): run this effect and name its result for later statements',
+    discard: 'Sequence (>>): run this effect and discard its result',
+    let: 'Let: pure bindings, no effect to sequence',
+    result: 'Result: the last statement is the value of the do block',
+  };
+  bands.forEach((band, index) => {
+    band.element = el('div', 'do-band ' + band.kind);
+    band.element.setAttribute('role', 'group');
+    const gutter = el('div', 'band-gutter');
+    const op = el('span', 'band-op', labels[band.kind]);
+    gutter.title = titles[band.kind];
+    gutter.append(op);
+    const names = band.steps.map(step => step.pattern?.pattern).filter(Boolean);
+    if (band.kind === 'bind' && names.length) gutter.append(el('span', 'band-pattern', names.join(', ')));
+    band.element.setAttribute('aria-label', `Statement ${index + 1}: ${titles[band.kind].split(':')[0]}`);
+    band.element.append(gutter);
+  });
+  // Keep the bands behind the nodes, in order.
+  canvas.prepend(...bands.map(band => band.element));
+  return bands;
+}
+
+const BAND = { gutter: 64, pad: 12, min: 48, sink: 34 };
+function bandClamp([x, y]) {
+  return [Math.max(BAND.gutter + BAND.pad, x), Math.max(BAND.pad, y)];
+}
+
+// Positions inside a band are relative to that band, so a growing band never
+// pushes another statement's nodes into it.
+function placeBands(frame, moving, dx = 0, dy = 0) {
+  const heights = frame.bands.map(() => BAND.min);
+  let right = BAND.gutter + BAND.pad;
+  const positions = frame.nodes.map(item => {
+    const [x, y] = bandClamp([item.at[0] + (item === moving ? dx : 0), item.at[1] + (item === moving ? dy : 0)]);
+    heights[item.band] = Math.max(heights[item.band], y + item.box.offsetHeight + BAND.pad);
+    right = Math.max(right, x + item.box.offsetWidth);
+    return [x, y];
+  });
+  const sinks = frame.bands.some(band => band.sink);
+  const width = right + (sinks ? BAND.sink + BAND.pad : BAND.pad);
+  const tops = [];
+  let top = frame.top;
+  for (const height of heights) {
+    tops.push(top);
+    top += height;
+  }
+  frame.nodes.forEach((item, i) => {
+    item.box.style.left = positions[i][0] + 'px';
+    item.box.style.top = tops[item.band] + positions[i][1] + 'px';
+  });
+  frame.bands.forEach((band, i) => {
+    Object.assign(band.element.style, { top: tops[i] + 'px', height: heights[i] + 'px', width: width + 'px' });
+    if (band.sink) {
+      band.sink.style.left = right + BAND.pad + 'px';
+      band.sink.style.top = tops[i] + heights[i] / 2 + 'px';
+    }
+  });
+  frame.canvas.style.width = width + 'px';
+  frame.canvas.style.height = top + frame.padding[1] / 2 + 'px';
+  return { left: 0, top: 0, right: width, bottom: top };
+}
+
+// Names bound but never used: the statement is kept only for its effect.
+function markUnusedBindings() {
+  for (const layout of layouts) {
+    for (const band of layout.bands || []) {
+      if (band.kind !== 'bind') continue;
+      const used = band.ports.map(mark => connections.some(wire => wire.from === mark));
+      band.ports.forEach((mark, i) => {
+        const control = mark.closest('.port') || mark;
+        control.classList.toggle('unused-name', !used[i]);
+        if (!used[i]) control.title = 'Never used: this bind is kept only for its effect';
+      });
+      const idle = !used.some(Boolean);
+      for (const hub of band.hubs) {
+        hub.classList.toggle('unused-binding', idle);
+        if (idle) hub.title = band.ports.length ? 'Bound names are never used; only the effect is sequenced'
+          : 'Wildcard bind: only the effect is sequenced';
+      }
+    }
+  }
 }
 
 function alternatives(expr, canvas, sources) {
@@ -868,7 +990,8 @@ function movable(item, expr) {
   handle.onpointerup = e => {
     if (drag?.id !== e.pointerId) return;
     if (suppressClick) {
-      const xy = offset(e).map((delta, i) => Math.round(drag.at[i] + delta));
+      let xy = offset(e).map((delta, i) => Math.round(drag.at[i] + delta));
+      if (item.frame?.clamp) xy = item.frame.clamp(xy);
       const target = expr.id ?? null;
       const key = 'position:' + target;
       if (xy.some((v, i) => v !== drag.at[i])) {
@@ -977,6 +1100,7 @@ function resize() {
   rootItem.frame.bounds = placeNodes(rootItem.frame);
   board.style.translate = '';
   connections = [...captures.values(), ...ordinary];
+  markUnusedBindings();
   const w = board.offsetWidth,
     h = board.offsetHeight;
   const scale = zoom ?? (fitted

@@ -234,6 +234,14 @@ sequential_do_lets margin = do
     pure total
 
 @story("Do blocks")
+effect_only_binds :: Maybe Int -> Maybe Int
+effect_only_binds action = do
+    _ <- action
+    unused <- action
+    used <- action
+    pure used
+
+@story("Do blocks")
 final_expression :: Maybe Int
 final_expression = do
     Just 3

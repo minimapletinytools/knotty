@@ -823,3 +823,77 @@ footer {
 #aside-handle:hover, #aside-handle:focus-visible, #aside-handle.dragging { background: linear-gradient(to right, transparent 3px, #327255 3px 5px, transparent 5px); outline: none; }
 .embedded #aside-handle { display: none; }
 @media (max-width: 780px) { #aside-handle { display: none; } }
+
+/* Do blocks: one band per statement, sequenced down the left rail. */
+.do-band {
+  position: absolute;
+  left: 0;
+  box-sizing: border-box;
+  border-top: 1px solid #c9d9e1;
+  pointer-events: none;
+}
+.do-band:first-child { border-top: 0; }
+.do-band:nth-child(even) { background: rgb(255 255 255 / 0.5); }
+.band-gutter {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding-top: 10px;
+  border-right: 1px solid #c9d9e1;
+  font: 600 11px ui-monospace, monospace;
+  color: #34525f;
+  pointer-events: auto;
+  isolation: isolate;
+}
+.band-gutter::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid #7f9ca9;
+}
+.do-band:first-child .band-gutter::before { top: 18px; }
+.do-band.result .band-gutter::before { bottom: auto; height: 18px; }
+.do-band:first-child.result .band-gutter::before { display: none; }
+.do-band.let .band-gutter::before { border-left-style: dashed; opacity: 0.55; }
+.do-band:not(:first-child) .band-gutter::after {
+  content: '';
+  position: absolute;
+  left: calc(50% - 4px);
+  top: 0;
+  border: 4px solid transparent;
+  border-top: 5px solid #7f9ca9;
+}
+.band-op {
+  background: #fff;
+  border: 1px solid #9db6c2;
+  border-radius: 9px;
+  padding: 1px 6px;
+}
+.do-band.let .band-op { color: #6c8592; border-style: dashed; }
+.do-band.result .band-op { background: #34525f; border-color: #34525f; color: #fff; }
+.band-pattern {
+  max-width: 52px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  background: #fff3c9;
+  border-radius: 4px;
+  padding: 0 3px;
+}
+.drop-sink {
+  position: absolute;
+  translate: 0 -50%;
+  color: #7f9ca9;
+  font: 15px/1 ui-monospace, monospace;
+}
+#wires .rope-discard { stroke: #8fa7b2; stroke-dasharray: 3 3; }
+.unused-binding, .unused-name { opacity: 0.55; }
+.unused-name { text-decoration: line-through dotted; }
