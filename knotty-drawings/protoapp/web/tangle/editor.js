@@ -856,25 +856,6 @@ function composition(expr, canvas, sources) {
   return slubChain(compositionStages(expr), canvas, sources, input, null, true, true, result);
 }
 
-// `a + b + c` needs no parentheses, so it is one knot with three operands and
-// not a knot per `+`. The side that chains without parentheses gives the
-// associativity: the left for `+`, the right for `:`.
-function operatorChain(expr) {
-  const chains = (child) => child.kind === 'operator' && child.label === expr.label && !child.grouped
-    && !pinned(child) && child.callee_port === undefined;
-  if (expr.kind !== 'operator' || expr.callee_port !== undefined) return expr.inputs;
-  const operands = [];
-  let [left, right] = expr.inputs;
-  if (chains(left)) {
-    for (operands.unshift(right); chains(left); [left, right] = left.inputs) operands.unshift(left.inputs[1]);
-    operands.unshift(left);
-  } else {
-    for (operands.push(left); chains(right); [left, right] = right.inputs) operands.push(right.inputs[0]);
-    operands.push(right);
-  }
-  return operands;
-}
-
 function makeExpression(expr, canvas, sources, forwarded = []) {
   // Only stages with inline captures can sit on a rope. More complex
   // right-hand expressions retain explicit inputs and their own ropes.
@@ -916,7 +897,7 @@ function makeExpression(expr, canvas, sources, forwarded = []) {
   }
   const title = expressionName(el('div', 'knot-label', label), base);
   knot.append(title);
-  let args = operatorChain(base);
+  let args = base.inputs;
   if (base.kind === 'callsite') {
     const [callee, ...operands] = args;
     args = operands;
@@ -975,9 +956,7 @@ function makeExpression(expr, canvas, sources, forwarded = []) {
   } else if (base.kind === 'number' || base.kind === 'reference') add(base, 0, '');
   else
     args.forEach((arg, i) =>
-      add(arg, i, base.labels?.[i] || (base.kind === 'list' ? String(i + 1)
-        // A chained operator repeats on each later operand: a, + b, + c.
-        : base.kind === 'operator' && args.length > 2 && i ? base.label : '')),
+      add(arg, i, base.labels?.[i] || (base.kind === 'list' ? String(i + 1) : '')),
     );
   for (const [i, { argument, from }] of forwarded.entries()) {
     const inlet = endpoint(base.labels?.[args.length + i] || '', 'left');

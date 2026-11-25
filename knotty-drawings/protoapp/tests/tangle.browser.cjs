@@ -790,13 +790,6 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
         assert.deepEqual((await page.locator('.knot > .knot-label').allTextContents()).sort(),
           ['<inline>', 'max', 'negate', '|>>', '|>>']);
       }
-      if (definition === 'operator_chains') {
-        // Same-operator chains without parentheses are one knot; parentheses and other operators are not.
-        assert.deepEqual((await page.locator('.knot.operator > .knot-label').allTextContents()).sort(),
-          ['*', '+', '+', '-', '-', ':']);
-        const sum = page.locator('.knot.operator', { has: page.locator(':scope > .knot-label', { hasText: /^\+$/ }) }).first();
-        assert.deepEqual(await sum.locator('.input-rail > *').count(), 3);
-      }
       if (definition === 'list_spine_pattern') {
         // A cons spine is one column of rows; a constructor element keeps its own group.
         const rows = page.locator('.pattern-chain').first().locator(':scope > .pattern-row');

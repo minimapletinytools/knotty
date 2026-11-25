@@ -212,9 +212,6 @@ pub struct Expr {
     labels: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     visible: Vec<usize>,
-    /// An operand written in parentheses: it does not chain with its parent operator.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    grouped: bool,
     span: Span,
 }
 
@@ -569,13 +566,6 @@ impl Projection<'_> {
             TExpr::BinOp(op, left, right, op_ty) => {
                 callable = self.callable(op, e.id, *op_ty);
                 inputs.extend([self.expr(left), self.expr(right)]);
-                // Operand spans exclude their parentheses, so these sit beside the operator.
-                let between = self
-                    .source
-                    .get(left.span.end as usize..right.span.start as usize)
-                    .unwrap_or("");
-                inputs[0].grouped = between.contains(')');
-                inputs[1].grouped = between.contains('(');
                 let name = match op {
                     Ref::Imported { name, .. }
                     | Ref::Builtin(name)
@@ -712,7 +702,6 @@ impl Projection<'_> {
             ty,
             inputs,
             parameter,
-            grouped: false,
             span: e.span,
             scope,
             arms,
