@@ -399,4 +399,20 @@ Remaining work/decisions:
 - Replacement boundaries: settle the primitive-type TODO; current implementation
   also reconstructs supported nominal data at editable read-only references.
 
+- Growth through `map`. `growMap` is the growable variant and uses `Default`;
+  plain `map` stays shape preserving. Still to decide: which of the two should
+  be the default spelling, and a consistent naming scheme for "same function,
+  different unravel" variants. Making plain `map` growable needs the engine to
+  look up `Default` optionally, so that element types without one still unravel.
+- `@stock(value)` (V2, to consider). An annotation on a function that overrides
+  the default for its input, for when one type needs different starting values
+  in different places. Deferred because `materialize` instances are ordinary
+  code: they can call `default` but cannot see an annotation, so the two would
+  disagree. Open questions if revisited: a wrapper such as `\d -> f d` loses the
+  inner function's stock; what the expression may refer to on a local lambda;
+  several arguments take a tuple.
+- Branch choice. A default (like the old seed) fixes which branch of a callback
+  runs, so creation can only reach outputs on that branch. Lifting this needs
+  the engine to try other branches, not a different default.
+
 Recursively higher-order execution and source wrapping remain deferred.

@@ -217,6 +217,13 @@ impl Lower<'_> {
             let body = self.add(o, Kind::Case(value, vec![(product.pattern(&inputs), body)]));
             return self.lambdas(o, vec![request], body);
         }
+        if name == "default" {
+            let fields = dictionaries[0]
+                .iter()
+                .map(|d| self.method(*d, "Default", "default", vec![], o))
+                .collect();
+            return self.product_value(&products[0], fields, o);
+        }
         if name == "empty" {
             let fields = dictionaries[0]
                 .iter()
@@ -351,7 +358,7 @@ impl Lower<'_> {
             for (name, _) in &iface.methods {
                 let body = if matches!(
                     name.as_str(),
-                    "==" | "compare" | "showsPrec" | "fits" | "materialize"
+                    "==" | "compare" | "showsPrec" | "fits" | "materialize" | "default"
                 ) {
                     self.generated_method(
                         std::slice::from_ref(&product),

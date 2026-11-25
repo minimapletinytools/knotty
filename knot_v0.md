@@ -25,7 +25,7 @@ cover reverse editing. The compiler loads the [bundled Prelude](compiler/knot-ca
   nominal applications in both positions, with overlap and termination checks.
   No functional dependencies, instance-directed inference or implicit conversions.
 - Custom record, tuple and unit instances are rejected, including through aliases.
-  Automatic structural `Eq`, `Ord` and `Show` remain available and cannot be
+  Automatic structural `Eq`, `Ord`, `Show` and `Default` remain available and cannot be
   overridden. Use a single-constructor ADT to own custom behavior; dedicated
   `newtype` syntax is not implemented.
 - Interfaces are a closed prelude-defined set. Users may add instances, not new
@@ -63,7 +63,7 @@ cover reverse editing. The compiler loads the [bundled Prelude](compiler/knot-ca
 - Generated callback companions support unary
   and multiargument callbacks, with a `Maybe` request and an `Eq` requirement for
   each ordinary input. Author-written companions may choose other constraints.
-  Prelude `map` preserves length and `growMap` opts into seeded growth. Editing
+  Prelude `map` preserves length and `growMap` opts into growth from the element type's `Default`. Editing
   already-supplied callback arguments and callbacks that themselves accept functions are deferred.
 - The design specifies `Maybe T` as the default sensitivity for primitives and
   `ListConstraint` for lists. The bundled Prelude still declares `Sensitivity`
@@ -147,8 +147,8 @@ Available now:
   conversions are runtime errors. Exact decimal expansion is demand-driven and
   bounded by session limits (default maximum absolute exponent: 4096).
 - Derived `Eq`/`Ord`/`Show` for ADTs, including recursive fields; pointwise
-  `Semigroup`/`Monoid` for single-constructor types; structural `Eq`/`Ord`/`Show`
-  for tuples, closed records and unit. Generated methods use checker-exported
+  `Semigroup`/`Monoid` for single-constructor types; structural `Eq`/`Ord`/`Show`/`Default`
+  for tuples, closed records and unit. `Default` is never derived for ADTs. Generated methods use checker-exported
   field evidence and preserve custom instance behavior, short-circuit comparisons
   and precedence-aware rendering, including Float and String fields.
 - All declared text primitives, Haskell-style String rendering (including

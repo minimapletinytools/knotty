@@ -3,17 +3,21 @@ module CustomInputs exposing (..)
 import KnottyDrawings exposing (..)
 import Types exposing (..)
 
--- This schema and its factory are entirely application-authored Knot.
+-- This schema is entirely application-authored Knot.
 -- Select the root and use Circle (C). The callback doubles the stored x value.
-type alias Dot = { x : Float, y : Float, size : Float, color : Color, label : String }
+-- A record's default comes from its fields. Label is a type of our own, so it
+-- declares what a new dot is called.
+type Label = Label String deriving Eq
 
-fresh :: Unit -> Dot
-fresh _ = { x = 0, y = 0, size = 10, color = tomato, label = "new dot" }
+instance Default Label where
+  default = Label "new dot"
+
+type alias Dot = { x : Float, y : Float, size : Float, color : Color, label : Label }
 
 dots :: List Dot
 dots =
-  [ { x = 40, y = 80, size = 24, color = tomato, label = "first dot" }
-  , { x = 100, y = 120, size = 32, color = rgb 70 130 180, label = "second dot" }
+  [ { x = 40, y = 80, size = 24, color = tomato, label = Label "first dot" }
+  , { x = 100, y = 120, size = 32, color = rgb 70 130 180, label = Label "second dot" }
   ]
 
-program = svg 300 200 (growMap (fresh ()) (\d -> circle (d.x * 2) d.y d.size |> set_fill d.color) dots)
+program = svg 300 200 (growMap (\d -> circle (d.x * 2) d.y d.size |> set_fill d.color) dots)

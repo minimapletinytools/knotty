@@ -649,7 +649,7 @@ fn mapped_creation_inserts_input_records_and_preserves_callbacks_and_existing_co
     let created = std::fs::read_to_string(f.drawing.path()).unwrap();
     assert!(created.contains("40 + 40"), "{created}");
     assert!(
-        created.contains("growMap defaultCircleInput circleFromInput dots"),
+        created.contains("growMap circleFromInput dots"),
         "{created}"
     );
     assert!(created.contains("radius = (18.0)"), "{created}");
@@ -677,7 +677,7 @@ fn mapped_creation_inserts_input_records_and_preserves_callbacks_and_existing_co
 }
 
 #[test]
-fn mapped_creation_uses_the_actual_callback_and_retains_seed_branch_guards() {
+fn mapped_creation_uses_the_actual_callback_and_retains_default_branch_guards() {
     for (callback, x, succeeds) in [
         (
             "\\d -> circle (d.x * 2) d.y d.radius |> set_fill d.color",
@@ -690,8 +690,9 @@ fn mapped_creation_uses_the_actual_callback_and_retains_seed_branch_guards() {
             false,
         ),
     ] {
-        let mut f = Fixture::new(&format!(
-            "svg 200 200 (growMap defaultCircleInput ({callback}) [])"
+        // With no seed to fix it, the input type comes from the list's own signature.
+        let mut f = Fixture::source(format!(
+            "module Drawing exposing (..)\nimport KnottyDrawings exposing (..)\nimport Types exposing (..)\ndots :: List CircleInput\ndots = []\nprogram = svg 200 200 (growMap ({callback}) dots)\n"
         ));
         let req = CreateCircleRequest {
             snapshot: f.snapshot(),
@@ -730,12 +731,13 @@ fn custom_mapped_input_schema_registers_its_materializer_entirely_in_knot() {
     let result = f.editor.create_circle(&mut f.drawing, &request, false);
     assert_eq!(result["ok"], true, "{result}");
     assert_eq!(f.value("2", "cx"), json!(60.0));
-    assert_eq!(f.value("2", "fill.paint"), json!([255, 99, 71]));
+    // The library colour and the application label each come from their own Default instance.
+    assert_eq!(f.value("2", "fill.paint"), json!([0, 0, 0]));
     let created = std::fs::read_to_string(f.drawing.path()).unwrap();
     assert!(created.contains("x = (30.0)"), "{created}");
-    assert!(created.contains("label = \"new dot\""), "{created}");
+    assert!(created.contains("Label \"new dot\""), "{created}");
     assert!(
-        created.contains("growMap (fresh ()) (\\d -> circle (d.x * 2)"),
+        created.contains("growMap (\\d -> circle (d.x * 2)"),
         "{created}"
     );
     let snapshot = f.snapshot();

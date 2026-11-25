@@ -580,7 +580,7 @@ pub fn build_instance_table(
 
 /// Interfaces every tuple, record, and `()` gets structurally, from its
 /// parts, with no declaration (spec §10.4).
-pub const STRUCTURAL_INTERFACES: &[&str] = &["Eq", "Ord", "Show"];
+pub const STRUCTURAL_INTERFACES: &[&str] = &["Eq", "Ord", "Show", "Default"];
 
 fn is_structural(interface: &str) -> bool {
     STRUCTURAL_INTERFACES.contains(&interface)

@@ -12,6 +12,10 @@ type alias Id = String
 -- stroke opacities.
 type Color = Rgb Int Int Int deriving Eq
 
+-- A newly created value is black until something says otherwise.
+instance Default Color where
+  default = Rgb 0 0 0
+
 -- One editable input schema for mapped drawings. growMap itself is generic.
 type alias CircleInput = { x : Float, y : Float, radius : Float, color : Color }
 

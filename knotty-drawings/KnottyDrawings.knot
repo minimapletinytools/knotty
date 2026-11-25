@@ -14,9 +14,6 @@ editableShapes :: List Node -> List Node -> List Node
 editableShapes generated additions = generated <> additions
 
 -- Mapped creation inserts input data, preserving this rendering computation.
-defaultCircleInput :: CircleInput
-defaultCircleInput = { x = 0, y = 0, radius = 10, color = Rgb 0 0 0 }
-
 circleFromInput :: CircleInput -> Node
 circleFromInput input = circle input.x input.y input.radius |> set_fill input.color
 

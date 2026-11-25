@@ -165,6 +165,12 @@ instance Eq t => Constriction (List t) t where
     [] -> Nothing
     first : _ -> Just first
 
+-- A starting value for making one from nothing. A reverse edit that has to
+-- create a value, with no current one to adjust, refines this. Tuples, records
+-- and unit take theirs from their parts; other types declare an instance.
+interface Default a where
+  default :: a
+
 -- Optional demand for any input, even when its constraint has no wildcard.
 -- This is an explicit wrapper, not an implicit conversion.
 type FieldRequest s = NoRequest | RequestField s
@@ -696,6 +702,28 @@ instance Semigroup String where
 
 instance Monoid String where
   empty = ""
+
+-- Built-in defaults. A number's is zero; a container's is empty.
+instance Default Int where
+  default = 0
+
+instance Default Integer where
+  default = 0
+
+instance Default Float where
+  default = 0
+
+instance Default Bool where
+  default = False
+
+instance Default String where
+  default = ""
+
+instance Default (List a) where
+  default = []
+
+instance Default (Maybe a) where
+  default = Nothing
 
 instance Functor IO where
   map f m = primIOBind m (\x -> primIOPure (f x))
@@ -1491,14 +1519,20 @@ materializationDraft factory unravel =
         if fits request candidate then Just candidate else Nothing
   in { value = original, finish = finish }
 
--- Opt-in positional growth. The seed may be a lazy factory call; ordinary map
--- stays shape preserving. Only missing slots demand the seed.
+-- Opt-in positional growth; ordinary map stays shape preserving. Forward,
+-- growMap is map. Backward, a request longer than the input adds elements.
+-- A new element has no current value to adjust, so its callback is reversed
+-- against the element type's default, and the result is handed to the input
+-- list to create. Existing elements are reversed through the callback as usual.
 @unravel(growMapBack)
-growMap :: a -> (a -> b) -> List a -> List b
-growMap _ f values = map f values
+growMap :: (a -> b) -> List a -> List b
+growMap f values = map f values
 
-growMapBack :: Eq a => { forward : a -> b, unravel : { value : a, pinned : Maybe a } -> s -> Maybe (Maybe a) } -> ({ value : a, pinned : Maybe a }, { value : List a, pinned : Maybe (List a) }) -> ListConstraint s -> Maybe (Maybe a, ListConstraint (Maybe a))
-growMapBack unraveler (seed, input) request =
+-- unraveler: the callback, as its forward function and its reverse rule.
+-- input: the current list and its pin. request: the wanted output list.
+-- Returns the wanted input list, with an exact value for each new element.
+growMapBack :: (Eq a, Default a) => { forward : a -> b, unravel : { value : a, pinned : Maybe a } -> s -> Maybe (Maybe a) } -> { value : List a, pinned : Maybe (List a) } -> ListConstraint s -> Maybe (ListConstraint (Maybe a))
+growMapBack unraveler input request =
   let walk values wanted = case wanted of
         AnyRemainder -> Just AnyRemainder
         ExactEnd -> Just ExactEnd
@@ -1508,11 +1542,11 @@ growMapBack unraveler (seed, input) request =
             more <- walk rest tail
             pure (Prepend chosen more)
           [] -> do
-            let draft = materializationDraft (\_ -> effectiveFeed seed) chooseExact
+            let draft = materializationDraft (\_ -> default) chooseExact
             wanted <- unraveler.unravel { value = draft.value, pinned = Nothing } head
             candidate <- draft.finish wanted
             more <- walk [] tail
             pure (Prepend (Just candidate) more)
   in do
     result <- walk input.value request
-    if pinAllows input result then Just (Nothing, result) else Nothing
+    if pinAllows input result then Just result else Nothing

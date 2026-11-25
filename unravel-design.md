@@ -19,6 +19,24 @@ interface Constriction c t where
 
 We can refer to the value `c` as a "request".
 
+### Defaults
+
+```knot
+interface Default a where
+  default :: a
+```
+
+`default` is the value to start from when one has to be created and there is no current value to adjust.
+A reverse rule runs against a real forward evaluation, so creating an input needs a starting input first:
+run the callback on `default`, reverse the request through it, then materialize the result.
+
+- `materialize` turns a request into the value it describes. `default` supplies what no request describes.
+  An instance's `materialize` may call `default` for the parts its request leaves open.
+- Built-in types have defaults: zero for numbers, `False`, `""`, `[]`, `Nothing`.
+- Tuples, closed records and unit take theirs from their parts, like `Eq` and `Show`.
+- Any other type declares an instance. There is no derived default, so a sum type's author picks the constructor.
+- A missing instance is not a type error where growth is optional. The edit that needs it is rejected.
+
 ## 2. Feeds and Unravels
 
 A function can be annotated with one or more "unravel" function.

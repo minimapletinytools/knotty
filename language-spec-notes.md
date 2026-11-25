@@ -359,8 +359,10 @@ insufficient. Declaration order within a module does not matter.
 
 ### 10.4 Structural Automatic Derivation
 
-Knot automatically supplies `Eq`, `Ord`, `Show` for tuples, closed records and unit
-when their components support them. These instances cannot be overridden. Open-row
+Knot automatically supplies `Eq`, `Ord`, `Show` and `Default` for tuples, closed records and unit
+when their components support them. `Default` gives the starting value for creating one
+(`default :: a`): zero, `False`, `""`, `[]` and `Nothing` for built-in types, an explicit
+instance for any other nominal type. These instances cannot be overridden. Open-row
 obligations must close before resolution; they cannot be generalized in v0.
 
 Records compare fields alphabetically and render as `{ x = 1, y = 2 }` (empty:

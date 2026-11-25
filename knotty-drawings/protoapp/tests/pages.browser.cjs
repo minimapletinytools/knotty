@@ -294,7 +294,7 @@ async function checkLanternWaddle(page) {
     await page.mouse.move(points[1].x, points[1].y, { steps: 5 });
     await page.mouse.up();
     await page.waitForFunction(() => document.querySelectorAll("#stage svg circle").length === 3);
-    assert((await code.innerText()).replaceAll("\u00a0", " ").includes("growMap defaultCircleInput"));
+    assert((await code.innerText()).replaceAll("\u00a0", " ").includes("growMap circleFromInput dots"));
     await page.locator("#undo-edit").click();
     await page.waitForFunction(() => document.querySelectorAll("#stage svg circle").length === 2);
     await page.setViewportSize({ width: 390, height: 844 });
