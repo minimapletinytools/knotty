@@ -366,6 +366,11 @@ function bobbin(input, local, inArm = false) {
     }
     const heading = el('div', 'pattern-heading');
     if (shape.label) heading.append(el('span', 'pattern-symbol', shape.label));
+    if (shape.constructor === true) {
+      // Matching a constructor borrows the look of the knot that builds it.
+      heading.firstChild.classList.add('adt-name');
+      group.classList.add('pattern-ctor');
+    }
     for (const name of shape.bindings) heading.append(port(byName.get(name)));
     group.append(heading);
     if (!shape.children.length) return;

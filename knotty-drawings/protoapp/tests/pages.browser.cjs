@@ -273,7 +273,8 @@ async function checkLanternWaddle(page) {
     await page.waitForFunction(({ lines, expected }) => lines.innerText === expected, { lines: sourceLines, expected: original });
     // Copy for AI names the repository file and the circle's source line.
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-    await page.locator("#stage svg circle").first().click({ button: "right" });
+    // The selection's move handle may cover the circle; the menu hit-tests beneath it.
+    await page.locator("#stage svg circle").first().click({ button: "right", force: true });
     await page.getByRole("menuitem", { name: "Copy for AI" }).click();
     await page.locator("#copy-toast", { hasText: "Copied reference for AI." }).waitFor();
     const copied = await page.evaluate(() => navigator.clipboard.readText());

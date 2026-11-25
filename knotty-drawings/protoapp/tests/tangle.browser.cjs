@@ -826,6 +826,10 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
         const arm = page.getByRole('region', { name: (tuple ? 'Just (x, y)' : '(Just n : rest) as all') + ' scope' });
         const hub = arm.locator(':scope > .scope-body > .inputs-boundary');
         assert.equal(await hub.locator('.pattern-group .pattern-symbol').innerText(), tuple ? '(,)' : 'Just');
+        // A constructor pattern wears its constructor knot's brick and green; structure does not.
+        const just = hub.locator('.pattern-ctor', { has: page.locator(':scope > .pattern-heading > .adt-name', { hasText: 'Just' }) }).first();
+        assert.equal(await just.evaluate(e => getComputedStyle(e).backgroundColor), 'rgb(239, 244, 232)');
+        assert.equal(await hub.locator('.pattern-ctor').count(), 1);
         if (!tuple) {
           // The `as` name hangs under the pattern's bobbin, which keeps the only left eyelet.
           assert.equal(await hub.locator('.bobbin.aliased > .pattern-named > .pattern-as .as-bobbin .port').innerText(), 'all');

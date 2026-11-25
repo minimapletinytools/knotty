@@ -806,6 +806,13 @@ footer {
   background: #f7fafb;
   padding-block: 3px;
 }
+/* A constructor pattern wears its constructor knot's brick and green. */
+.pattern-group.pattern-ctor, .pattern-part.pattern-ctor, .bobbin.pattern-ctor, .bobbin-core.pattern-ctor {
+  background: #eff4e8;
+  border-color: #92a080;
+}
+.pattern-part.pattern-ctor { border: 1px solid #92a080; border-radius: 6px; }
+.pattern-ctor > .pattern-heading > .pattern-symbol { color: #4c5c38; }
 /* `pattern as name`: the name's small bobbin hangs under the pattern, tacked on by an `as` dot. */
 .bobbin.aliased { border: 0; background: none; padding: 0; }
 .bobbin-core {

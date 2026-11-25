@@ -101,6 +101,9 @@ struct PatternShape {
     /// `as` names for the whole of this pattern, outermost last.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     aliases: Vec<String>,
+    /// A named data constructor, as opposed to tuple, record or list structure.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    constructor: bool,
     children: Vec<PatternShape>,
 }
 
@@ -122,10 +125,13 @@ fn pattern_shape(p: &TypedPattern, source: &str) -> PatternShape {
             inner.aliases.push(name.clone());
             inner
         }
-        TPattern::Ctor(r, parts) => shape(
-            knot_checker::print::ref_name(r),
-            parts.iter().map(child).collect(),
-        ),
+        TPattern::Ctor(r, parts) => PatternShape {
+            constructor: true,
+            ..shape(
+                knot_checker::print::ref_name(r),
+                parts.iter().map(child).collect(),
+            )
+        },
         TPattern::Tuple(parts) => shape(
             format!("({})", ",".repeat(parts.len() - 1)),
             parts.iter().map(child).collect(),
