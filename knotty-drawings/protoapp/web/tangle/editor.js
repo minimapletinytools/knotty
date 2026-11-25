@@ -1132,7 +1132,80 @@ async function loadStory() {
   return story;
 }
 
-// Saved source in Monaco, read-only; plain text until it loads or if it is unavailable.
+// Story source is editable: each pause re-checks the story module with the edit
+// spliced in and redraws its graph. Nothing is saved; Reset or reload restores it.
+let storyOriginal = null, storyTimer, storySequence = 0, storyWorker, storySerial = 0;
+const storyPending = new Map();
+function checkStory(body) {
+  const runtime = document.documentElement.dataset.runtime;
+  if (!runtime) {
+    return fetch('/api/tangle/story', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body) }).then(r => r.json());
+  }
+  // Static Pages: the drawing runtime checks stories in a worker, without a drawing.
+  if (!storyWorker) {
+    storyWorker = new Worker(new URL(runtime, location.href), { type: 'module' });
+    storyWorker.onmessage = ({ data: { id, value, error } }) => {
+      const call = storyPending.get(id);
+      if (!call) return;
+      storyPending.delete(id);
+      if (error) call.reject(Error(error)); else call.resolve(value);
+    };
+    storyWorker.onerror = e => {
+      for (const call of storyPending.values()) call.reject(Error(e.message || 'Story runtime failed to load.'));
+      storyPending.clear();
+    };
+  }
+  return new Promise((resolve, reject) => {
+    const id = ++storySerial;
+    storyPending.set(id, { resolve, reject });
+    storyWorker.postMessage({ id, demo: null,
+      request: { url: '/api/tangle/story', method: 'POST', body: JSON.stringify(body) } });
+  });
+}
+function storyStatus(message, error = false) {
+  status(message, error);
+  $('reload').hidden = true;
+}
+function showStory(next) {
+  graph = next;
+  sourceBytes = new TextEncoder().encode(graph.source);
+  render();
+}
+function editStory(text) {
+  $('reset-story').hidden = text === storyOriginal.graph.source;
+  clearTimeout(storyTimer);
+  storyStatus('Checking…');
+  storyTimer = setTimeout(async () => {
+    const sequence = ++storySequence;
+    try {
+      const result = await checkStory({ definition: storyOriginal.graph.definition, source: text });
+      if (sequence !== storySequence) return;
+      if (!result.ok) {
+        sourceView.markers(result.line ? [{ line: result.line, column: result.column, message: result.reason }] : []);
+        storyStatus(result.reason.replace(/^.*?tangle-stories\.knot:\s?/, 'Line '), true);
+        return;
+      }
+      sourceView.markers([]);
+      showStory(result.graph);
+      storyStatus($('reset-story').hidden ? 'Hover a connector to inspect its type and ropes.'
+        : 'Story edited. Reset story or reload to restore the original.');
+    } catch (error) {
+      if (sequence === storySequence) storyStatus(error.message, true);
+    }
+  }, 300);
+}
+$('reset-story').onclick = () => {
+  clearTimeout(storyTimer);
+  storySequence++;
+  sourceView?.set(storyOriginal.graph.source);
+  sourceView?.markers([]);
+  $('reset-story').hidden = true;
+  showStory(storyOriginal.graph);
+  hint();
+};
+
+// Saved source in Monaco; plain text until it loads or if it is unavailable.
 let sourceView, sourceLoading, shownSource = '';
 function showSource(text) {
   shownSource = text;
@@ -1146,7 +1219,7 @@ function showSource(text) {
   document.head.append(css);
   sourceLoading = import(url.href).then(({ create }) => {
     $('source-text').remove();
-    sourceView = create($('source'), shownSource, null, { readOnly: true, fit: true });
+    sourceView = create($('source'), shownSource, storyMode ? editStory : null, { readOnly: !storyMode, fit: true });
   }).catch(() => {});
 }
 
@@ -1155,6 +1228,10 @@ async function load() {
   if (host) query.set('embed', '1');
   if (definition) query.set('definition', definition);
   const result = storyMode ? await loadStory() : await request('/api/tangle' + (query.size ? '?' + query : ''));
+  if (storyMode) {
+    storyOriginal = result;
+    $('source-heading').textContent = 'Story source';
+  }
   if (graph?.definition !== result.graph.definition) zoom = null;
   graph = result.graph;
   if (host) {

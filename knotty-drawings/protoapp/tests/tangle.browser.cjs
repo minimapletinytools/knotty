@@ -653,6 +653,19 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
     const names = await navigation.locator('a').allTextContents();
     const catalog = (await api(url, '/api/tangle/stories')).stories;
     const graphs = new Map(catalog.map(({ graph }) => [graph.definition, graph]));
+    // Story source edits re-check the story on the native server too.
+    await page.goto(url + '/tangle/stories?definition=operators');
+    await page.locator('aside #source .view-lines').waitFor();
+    await page.locator('aside #source .view-line span span', { hasText: /^3$/ }).last().dblclick();
+    await page.keyboard.type('9');
+    await page.waitForFunction(() => document.querySelector('#board input.literal')?.value === '9');
+    const broken = await page.evaluate(async source => (await fetch('/api/tangle/story', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ definition: 'operators', source }) })).json(),
+      graphs.get('operators').source.replace('b * 3', 'b * "x"'));
+    assert.equal(broken.ok, false);
+    assert.equal(broken.line, 3);
+    await page.goto(url + '/tangle/stories');
     assert(names.includes('nested captures'));
     for (const name of ['inferred swap', 'fixed length pattern', 'grouped numbers', 'qualified infix',
       'incomplete case', 'unreachable case']) assert(names.includes(name));

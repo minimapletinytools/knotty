@@ -344,6 +344,28 @@ async function checkLanternWaddle(page) {
     assert((await saved.boundingBox()).height > 40);
     await stories.filter({ hasText: "incomplete case" }).click();
     await page.waitForFunction(() => /incomplete_case/.test(document.querySelector("aside #source .view-lines")?.innerText));
+    // Story source is editable: the graph follows valid edits, errors are marked, Reset restores.
+    await page.goto(base + "tangle/?definition=operators");
+    const storyLines = page.locator("aside #source .view-lines");
+    await storyLines.waitFor();
+    await page.getByRole("heading", { name: "Story source" }).waitFor();
+    const literals = () => page.locator("#board input.literal").evaluateAll(inputs => inputs.map(i => i.value));
+    assert.deepEqual(await literals(), ["3"]);
+    const storyWord = async (word, typed) => {
+      await page.locator("aside #source .view-line span span", { hasText: new RegExp(`^${word}$`) }).last().dblclick();
+      await page.keyboard.type(typed);
+    };
+    await storyWord("3", "7");
+    await page.waitForFunction(() => [...document.querySelectorAll("#board input.literal")].some(i => i.value === "7"));
+    await page.getByRole("button", { name: "Reset story" }).waitFor();
+    await storyWord("7", "(");
+    await page.locator("aside #source .squiggly-error").first().waitFor();
+    await page.locator("#status.error").waitFor();
+    assert.deepEqual(await literals(), ["7"]);
+    await page.getByRole("button", { name: "Reset story" }).click();
+    await page.waitForFunction(() => [...document.querySelectorAll("#board input.literal")].map(i => i.value).join() === "3");
+    await page.locator("aside #source .squiggly-error").waitFor({ state: "detached" });
+    assert.match((await storyLines.innerText()).replaceAll("\u00a0", " "), /b \* 3/);
     assert.deepEqual(errors, []);
     console.log("Static drawing, live Monaco, preview/cancel/accept/undo, mobile and storybook checks passed.");
   } finally { await browser.close(); }

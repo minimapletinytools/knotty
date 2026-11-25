@@ -8,7 +8,6 @@ mod render_profile;
 mod scene_response;
 mod scene_svg;
 mod scene_value;
-#[cfg(not(target_os = "wasi"))]
 mod storybook;
 mod whips;
 

@@ -51,7 +51,7 @@ await writeFile(path.join(dir, "stories.json"), stories);
 await cp("web/tangle/editor.js", path.join(dir, "editor.js"));
 await cp("web/tangle/editor.css", path.join(dir, "editor.css"));
 await writeFile(path.join(dir, "index.html"), (await text("web/tangle/index.html"))
-  .replace('<html lang="en"', '<html data-catalog="./stories.json" data-monaco="../assets/source-editor/" lang="en"')
+  .replace('<html lang="en"', '<html data-catalog="./stories.json" data-monaco="../assets/source-editor/" data-runtime="../assets/runtime.worker.js" lang="en"')
   .replace('href="/tangle.css"', 'href="./editor.css"').replace('src="/tangle.js"', 'src="./editor.js"')
   .replace('href="/tangle/stories"', 'href="./"').replace('href="/"', 'href="../"'));
 const cards = demos.map(([slug, title]) =>

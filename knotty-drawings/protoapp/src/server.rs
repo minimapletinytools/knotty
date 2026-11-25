@@ -176,6 +176,11 @@ fn handle(
         (Method::Get, "/api/tangle/stories") => {
             request.respond(json_response(storybook::catalog()))
         }
+        (Method::Post, "/api/tangle/story") => {
+            let mut body = String::new();
+            request.as_reader().read_to_string(&mut body)?;
+            request.respond(json_response(&storybook::edit_request(&body)))
+        }
         (Method::Get, "/tangle" | "/tangle/stories") => request.respond(text(
             include_str!("../web/tangle/index.html"),
             "text/html; charset=utf-8",

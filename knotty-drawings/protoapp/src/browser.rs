@@ -31,6 +31,10 @@ fn handle(msg: Message) -> Result<Value, String> {
             *session = Some((drawing, Editor::new(false)));
             return Ok(json!({"ok": true}));
         }
+        // The storybook needs no drawing.
+        if (msg.method.as_str(), msg.url.as_str()) == ("POST", "/api/tangle/story") {
+            return Ok(storybook::edit_request(&msg.body));
+        }
         let (drawing, editor) = session.as_mut().ok_or("Open a drawing first")?;
         let (path, query) = msg.url.split_once('?').unwrap_or((&msg.url, ""));
         match (msg.method.as_str(), path) {
