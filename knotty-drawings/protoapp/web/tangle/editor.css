@@ -791,6 +791,15 @@ footer {
   gap: 3px;
   padding: 3px 0 0 9px;
 }
+/* A cons chain: one row per element, the `:` in its own column, the tail set apart. */
+.pattern-row {
+  display: grid;
+  grid-template-columns: 1.6ch 1fr;
+  align-items: start;
+  gap: 4px;
+}
+.pattern-row > .pattern-symbol { padding: 3px 0 0 5px; font-size: 13px; }
+.pattern-row.pattern-tail { border-top: 1px dashed #b9c4cc; margin-top: 2px; padding-top: 2px; }
 .pattern-group {
   border: 1px solid #b1bec9;
   border-radius: 6px;

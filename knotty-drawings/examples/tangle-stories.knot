@@ -45,6 +45,10 @@ qualified_infix :: String -> M.Map String Int -> Bool
 qualified_infix key table = key `M.member` table
 
 @story("Functions")
+operator_chains :: Int -> Int -> Int -> List Int
+operator_chains a b c = a + b + c : a - (b - c) : a * b + c : []
+
+@story("Functions")
 infix_callback :: (Int -> Int -> Int) -> Int -> Int -> Int
 infix_callback choose a b = a `choose` b
 
@@ -133,6 +137,13 @@ list_patterns :: List Int -> Int
 list_patterns xs = case xs of
     [] -> 0
     first : _ -> first
+
+@story("Branches and patterns")
+list_spine_pattern :: List (Maybe Int) -> Int
+list_spine_pattern xs = case xs of
+    first : Just second : third : rest -> second
+    [only] -> 0
+    _ -> 0
 
 @story("Branches and patterns")
 fixed_length_pattern :: List Int -> Int

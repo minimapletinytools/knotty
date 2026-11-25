@@ -689,7 +689,7 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
       }
       if (definition === 'fixed_length_pattern') {
         const arm = page.getByRole('region', { name: '[a, b] scope', exact: true });
-        assert.deepEqual(await arm.locator('.pattern-symbol').allTextContents(), [':', ':', '[]']);
+        assert.deepEqual(await arm.locator('.pattern-symbol').allTextContents(), ['', ':', ':', '[]']);
       }
       if (definition === 'grouped_numbers') {
         assert.deepEqual(await page.locator('input.literal').evaluateAll(inputs => inputs.map(el => el.value)), ['0x10', '2.5']);
@@ -789,6 +789,20 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
         assert.equal(await page.locator('.slub').count(), 0);
         assert.deepEqual((await page.locator('.knot > .knot-label').allTextContents()).sort(),
           ['<inline>', 'max', 'negate', '|>>', '|>>']);
+      }
+      if (definition === 'operator_chains') {
+        // Same-operator chains without parentheses are one knot; parentheses and other operators are not.
+        assert.deepEqual((await page.locator('.knot.operator > .knot-label').allTextContents()).sort(),
+          ['*', '+', '+', '-', '-', ':']);
+        const sum = page.locator('.knot.operator', { has: page.locator(':scope > .knot-label', { hasText: /^\+$/ }) }).first();
+        assert.deepEqual(await sum.locator('.input-rail > *').count(), 3);
+      }
+      if (definition === 'list_spine_pattern') {
+        // A cons spine is one column of rows; a constructor element keeps its own group.
+        const rows = page.locator('.pattern-chain').first().locator(':scope > .pattern-row');
+        assert.deepEqual(await rows.locator(':scope > .pattern-symbol').allTextContents(), ['', ':', ':', ':']);
+        assert.equal(await rows.locator('.pattern-group').count(), 1);
+        assert.equal(await rows.last().evaluate(e => e.classList.contains('pattern-tail')), true);
       }
       if (definition === 'monadic_then') {
         assert.deepEqual(await page.locator('.knot > .knot-label').allTextContents(), ['>>']);
