@@ -47,7 +47,7 @@ function updateButtons() {
 
 function hint() {
   updateButtons();
-  if (storyMode) status('Hover a connector to inspect its type and ropes.');
+  if (storyMode) status('Hover an eyelet to inspect its type and ropes.');
   else if (host && changes.size && staleGraph()) status('Drawing changed. Discard edits to load the current graph.', true);
   else if (selected !== null) status('Choose an input socket for ' + ports.get(selected).name + '.');
   else if (changes.size)
@@ -63,8 +63,8 @@ function stage(expr, change, changed, control) {
   hint();
 }
 
-function nub(shape = 'round') {
-  const mark = el('span', 'nublet ' + shape);
+function eyelet(shape = 'round') {
+  const mark = el('span', 'eyelet ' + shape);
   mark.setAttribute('aria-hidden', 'true');
   return mark;
 }
@@ -74,7 +74,7 @@ function describe(mark, value) {
   if (!mark.closest('button, .capture')) {
     mark.removeAttribute('aria-hidden');
     mark.setAttribute('role', 'img');
-    mark.setAttribute('aria-label', value.ty + ' connector');
+    mark.setAttribute('aria-label', value.ty + ' eyelet');
     mark.tabIndex = 0;
   }
   return mark;
@@ -115,13 +115,13 @@ function expressionName(node, expr) {
   return functionName(node, { ...info, origin: ['Constructor of ' + expr.constructor_type, info.origin].filter(Boolean).join(' · ') });
 }
 
-function connectorAt(target) {
-  return target.closest('.nublet, .function-name') || target.closest('.rail-end, .port, .socket')?.querySelector('.nublet');
+function eyeletAt(target) {
+  return target.closest('.eyelet, .function-name') || target.closest('.rail-end, .port, .socket')?.querySelector('.eyelet');
 }
 
 function touchesInspected(wire) {
   if (!inspected) return false;
-  const mark = inspected.matches('.port') ? inspected.querySelector('.nublet') : inspected;
+  const mark = inspected.matches('.port') ? inspected.querySelector('.eyelet') : inspected;
   const peer = conditionalPeers.get(mark);
   return wire.from === mark || wire.socket === mark ||
     (peer !== undefined && (wire.from === peer || wire.socket === peer));
@@ -189,7 +189,7 @@ function field(expr, parentLabel, index, name, sources, onBind) {
   }
   if (expr.kind !== 'reference') return expressionName(el('span', 'inline-value', expr.label), expr);
   const socket = el('button', 'socket', name);
-  const endpoint = nub();
+  const endpoint = eyelet();
   socket.prepend(endpoint);
   const wire = {
     socket: endpoint,
@@ -249,7 +249,7 @@ const inline = (expr) => leaf(expr) && !pinned(expr) && !(expr.kind === 'value' 
 
 function endpoint(label, side, shape = 'round') {
   const row = el('span', 'rail-end ' + side, label);
-  const mark = nub(shape);
+  const mark = eyelet(shape);
   row.append(mark);
   return { row, mark };
 }
@@ -295,24 +295,24 @@ function bindOutput(p, control) {
 }
 
 // A pattern consumes one value and exposes each checked binding on its inner side.
-function patternHub(input, local, inArm = false) {
-  const hub = el('div', 'pattern-hub');
+function bobbin(input, local, inArm = false) {
+  const pill = el('div', 'bobbin');
   if (input.implicit) {
-    hub.classList.add('scalar');
+    pill.classList.add('scalar');
     const inlet = endpoint('', 'left');
     const outlet = endpoint('', 'port');
     for (const mark of [inlet.mark, outlet.mark]) describe(mark, input);
-    hub.append(inlet.row, outlet.row);
-    return { box: hub, inlet: inlet.mark, out: outlet.mark };
+    pill.append(inlet.row, outlet.row);
+    return { box: pill, inlet: inlet.mark, out: outlet.mark };
   }
   const scalar = input.parameters.length === 1 && input.parameters[0].name === input.pattern;
   const trunk = endpoint('', 'left', scalar ? 'round' : 'triangle');
-  hub.classList.toggle('scalar', scalar);
+  pill.classList.toggle('scalar', scalar);
   describe(trunk.mark, { ty: input.ty, label: input.pattern });
-  hub.append(trunk.row);
+  pill.append(trunk.row);
   function port(p, whole = false) {
     const control = functionName(el('button', 'port', p.name), p.callable);
-    const mark = nub(whole || scalar ? 'round' : 'square');
+    const mark = eyelet(whole || scalar ? 'round' : 'square');
     control.append(mark);
     describe(mark, { ty: p.ty, label: p.name });
     bindOutput(p, control);
@@ -334,9 +334,9 @@ function patternHub(input, local, inArm = false) {
     }
     group.append(list);
   }
-  if (scalar) hub.append(port(input.parameters[0]));
-  else if (!inArm || input.parameters.length) draw(input.shape, hub);
-  return { box: hub, inlet: trunk.mark };
+  if (scalar) pill.append(port(input.parameters[0]));
+  else if (!inArm || input.parameters.length) draw(input.shape, pill);
+  return { box: pill, inlet: trunk.mark };
 }
 
 // A box owns its layout and boundary ports. Children return the anchor for
@@ -370,7 +370,7 @@ function boxed(scope, name, outerSource, armOwner = null, explicitBlock = false,
   if (patternArm) box.append(toggle);
   const local = new Map();
   const source = boundarySource(header, outerSource, local);
-  const patterns = scope.inputs.map(input => patternHub(input, local, !!armOwner));
+  const patterns = scope.inputs.map(input => bobbin(input, local, !!armOwner));
   left.append(...patterns.map(p => p.box));
   const block = scope.body.kind;
   let roots;
@@ -404,13 +404,13 @@ function boxed(scope, name, outerSource, armOwner = null, explicitBlock = false,
 }
 
 function functionOutput() {
-  const mark = nub('diamond');
+  const mark = eyelet('diamond');
   mark.classList.add('definition-port');
   return mark;
 }
 
 function outputDot() {
-  const dot = nub();
+  const dot = eyelet();
   dot.classList.add('output-dot');
   return dot;
 }
@@ -555,7 +555,7 @@ function scopedSteps(expr, canvas, source, local) {
       ports.set(binding.port, binding);
       return null;
     }
-    return step.pattern && patternHub(step.pattern, local);
+    return step.pattern && bobbin(step.pattern, local);
   });
   const roots = steps.map((step, index) => {
     if (step.named_function) {
@@ -594,13 +594,13 @@ function doBands(expr, steps, roots, bindings, canvas, local) {
   steps.forEach((step, index) => {
     let band = byStatement.get(step.statement);
     if (!band) {
-      band = { kind: step.kind, steps: [], ports: [], hubs: [] };
+      band = { kind: step.kind, steps: [], ports: [], bobbins: [] };
       byStatement.set(step.statement, band);
       bands.push(band);
     }
     band.steps.push(step);
     roots[index].band = bands.indexOf(band);
-    if (bindings[index]) band.hubs.push(bindings[index].box);
+    if (bindings[index]) band.bobbins.push(bindings[index].box);
     for (const p of step.pattern?.parameters || []) band.ports.push(local.get(p.port));
     if (step.kind === 'discard') {
       band.sink = el('span', 'drop-sink', '⊘');
@@ -612,7 +612,7 @@ function doBands(expr, steps, roots, bindings, canvas, local) {
     }
   });
   roots.at(-1).band = bands.length;
-  bands.push({ kind: 'result', steps: [], ports: [], hubs: [] });
+  bands.push({ kind: 'result', steps: [], ports: [], bobbins: [] });
   const labels = { bind: '>>=', discard: '>>', let: 'let', result: '⇒' };
   const titles = {
     bind: 'Bind (>>=): run this effect and name its result for later statements',
@@ -689,9 +689,9 @@ function markUnusedBindings() {
         if (!used[i]) control.title = 'Never used: this bind is kept only for its effect';
       });
       const idle = !used.some(Boolean);
-      for (const hub of band.hubs) {
-        hub.classList.toggle('unused-binding', idle);
-        if (idle) hub.title = band.ports.length ? 'Bound names are never used; only the effect is sequenced'
+      for (const pill of band.bobbins) {
+        pill.classList.toggle('unused-binding', idle);
+        if (idle) pill.title = band.ports.length ? 'Bound names are never used; only the effect is sequenced'
           : 'Wildcard bind: only the effect is sequenced';
       }
     }
@@ -704,7 +704,7 @@ function alternatives(expr, canvas, sources) {
   const header = el('div', 'scope-header');
   const scrutinee = expr.inputs[0];
   const gate = endpoint('', 'condition-gate');
-  const inner = describe(nub('condition-inner'), scrutinee);
+  const inner = describe(eyelet('condition-inner'), scrutinee);
   const keyword = el('span', 'condition-keyword');
   keyword.append(gate.row, el('strong', '', expr.kind), inner);
   header.append(keyword);
@@ -717,7 +717,7 @@ function alternatives(expr, canvas, sources) {
     const socket = field(scrutinee, expr.label, 0, '', sources);
     if (scrutinee.kind === 'reference') {
       gate.row.replaceChildren(socket);
-      gate.mark = socket.querySelector('.nublet');
+      gate.mark = socket.querySelector('.eyelet');
     } else {
       header.append(socket);
     }
@@ -751,10 +751,10 @@ function alternatives(expr, canvas, sources) {
 function slubChain(stages, canvas, sources, input, upstream, returnsFunction, composes = false, result = null) {
   const chain = el('div', 'slub-chain' + (composes ? ' compose' : ''));
   const callee = 'callee-inlet' + (composes ? ' compose-inlet' : '');
-  const entry = describe(nub(), input);
+  const entry = describe(eyelet(), input);
   entry.classList.add('chain-head');
   if (!upstream) entry.classList.add('open-input');
-  const exit = returnsFunction ? functionOutput() : nub();
+  const exit = returnsFunction ? functionOutput() : eyelet();
   if (!returnsFunction) exit.classList.add('chain-tail');
   const children = [];
   chain.append(entry);
@@ -771,8 +771,8 @@ function slubChain(stages, canvas, sources, input, upstream, returnsFunction, co
       pill.append(expressionName(el('span', 'slub-label', step.label), step));
       step.inputs.forEach((arg, i) => {
         if (inline(arg)) return pill.append(field(arg, step.label, i, step.labels?.[i] || '', sources));
-        // An argument too large to sit in the pill keeps its own node and enters through a connector.
-        const inlet = describe(nub('round slub-inlet'), arg);
+        // An argument too large to sit in the pill keeps its own node and enters through an eyelet.
+        const inlet = describe(eyelet('round slub-inlet'), arg);
         if (step.labels?.[i]) inlet.title = step.labels[i];
         pill.append(inlet);
         const child = expression(arg, canvas, sources);
@@ -792,7 +792,7 @@ function slubChain(stages, canvas, sources, input, upstream, returnsFunction, co
   }
   if (result) {
     // A composition's result leaves when it is called, so its tail is open like its head.
-    const tail = describe(nub(), result);
+    const tail = describe(eyelet(), result);
     tail.classList.add('chain-tail', 'open-input');
     chain.append(tail);
   }
@@ -803,7 +803,7 @@ function slubChain(stages, canvas, sources, input, upstream, returnsFunction, co
 }
 
 // A call can sit on a chain as a pill: simple arguments show inline, the rest
-// enter through connectors.
+// enter through eyelets.
 function slubStage(expr) {
   return !pinned(expr) && ['call', 'value'].includes(expr.kind);
 }
@@ -880,17 +880,17 @@ function makeExpression(expr, canvas, sources, forwarded = []) {
         functionName(title, binding.port === callee.parameter ? base.callable : binding.callable);
       });
       socket.classList.add('callee-socket');
-      socket.querySelector('.nublet').classList.add('callee-inlet');
+      socket.querySelector('.eyelet').classList.add('callee-inlet');
       knot.append(socket);
     } else {
       const fn = expression(callee, canvas, sources);
       item.children.push(fn);
-      const inlet = describe(nub('callee-inlet'), callee);
+      const inlet = describe(eyelet('callee-inlet'), callee);
       knot.append(inlet);
       wires.push({ from: fn.out, socket: inlet, recursive: callee.recursive });
     }
   } else if (base.callee_port !== undefined) {
-    const inlet = describe(nub('callee-inlet'), { ty: base.callable.at_site, label });
+    const inlet = describe(eyelet('callee-inlet'), { ty: base.callable.at_site, label });
     knot.append(inlet);
     wires.push({ from: captures => sources(base.callee_port, captures), socket: inlet, recursive: base.recursive, parameter: base.callee_port });
   }
@@ -990,7 +990,7 @@ function movable(item, expr) {
     }
   }, true);
   handle.onpointerdown = e => {
-    if (!e.isPrimary || e.button !== 0 || busy || e.target.closest('input, .socket, .port, .nublet, .capture')) return;
+    if (!e.isPrimary || e.button !== 0 || busy || e.target.closest('input, .socket, .port, .eyelet, .capture')) return;
     suppressClick = false;
     const board = $('board');
     drag = { id: e.pointerId, x: e.clientX, y: e.clientY, at: [...item.at],
@@ -1115,7 +1115,7 @@ function resize() {
     }
   }
   for (const anchor of board.querySelectorAll('.capture'))
-    anchor.hidden = !captures.has(anchor.querySelector('.nublet'));
+    anchor.hidden = !captures.has(anchor.querySelector('.eyelet'));
   const captureSources = new Set([...captures.values()].map(w => w.from.closest('.inputs-boundary')));
   for (const layout of layouts) arrange(layout, captureSources);
   rootItem.auto = [24, 24];
@@ -1202,7 +1202,7 @@ function drawWires(connections) {
     else if (start.classList.contains('capture-triangle')) exit = [x, y + verticalBend];
     const entersCall = wire.socket.classList.contains('callee-inlet');
     const entersBottom = wire.socket.classList.contains('definition-port');
-    // A pill's argument connector sits mid-chain, so its rope arrives vertically from its node's side.
+    // A pill's argument eyelet sits mid-chain, so its rope arrives vertically from its node's side.
     const entersPill = wire.socket.classList.contains('slub-inlet');
     const entry = entersPill ? [u, v + (y < v ? -1 : 1) * Math.max(14, verticalBend)]
       : entersCapture || entersBottom || entersCall ? [u, v - verticalBend] : [u - bend, v];
@@ -1332,7 +1332,7 @@ function editStory(text) {
       }
       sourceView.markers([]);
       showStory(result.graph);
-      storyStatus($('reset-story').hidden ? 'Hover a connector to inspect its type and ropes.'
+      storyStatus($('reset-story').hidden ? 'Hover an eyelet to inspect its type and ropes.'
         : 'Story edited. Reset story or reload to restore the original.');
     } catch (error) {
       if (sequence === storySequence) storyStatus(error.message, true);
@@ -1506,12 +1506,12 @@ $('viewport').addEventListener('lostpointercapture', endPan);
 $('viewport').addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
 $('reload').onclick = () => run(load);
 $('board').addEventListener('pointerover', e => {
-  if (!e.buttons && e.pointerType !== 'touch') inspect(connectorAt(e.target));
+  if (!e.buttons && e.pointerType !== 'touch') inspect(eyeletAt(e.target));
 });
 $('board').addEventListener('pointerout', e => {
   if (!e.relatedTarget || !$('board').contains(e.relatedTarget)) inspect(null);
 });
-$('board').addEventListener('focusin', e => inspect(connectorAt(e.target)));
+$('board').addEventListener('focusin', e => inspect(eyeletAt(e.target)));
 $('board').addEventListener('focusout', () => inspect(null));
 $('board').addEventListener('pointerdown', () => inspect(null));
 $('viewport').addEventListener('scroll', () => inspect(null));

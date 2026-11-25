@@ -127,9 +127,9 @@ async function controlFlow(page) {
   assert.equal(await page.locator('.monadic-context .binding-knot').count(), 3);
   assert.equal(await page.locator('#wires .rope-sequence').count(), 0);
   assert.equal(await page.locator('#wires .rope-bind').count(), 2);
-  assert.equal(await page.locator('.nublet.bind-inlet').count(), 2);
+  assert.equal(await page.locator('.eyelet.bind-inlet').count(), 2);
   assert.equal(await page.locator('#wires .rope-value').count(), 1);
-  await checkHover(page.locator('.binding-knot .left .nublet').first(), /List/, /\[24, 60, 96\]/, 1);
+  await checkHover(page.locator('.binding-knot .left .eyelet').first(), /List/, /\[24, 60, 96\]/, 1);
   const pure = page.locator('article.call').filter({ has: page.getByText('pure', { exact: true }) });
   assert.equal(await pure.locator('.input-rail .rail-end').textContent(), '');
   assert.deepEqual(await attributes('circle', 'cx'), [24, 24, 60, 60, 96, 96]);
@@ -147,7 +147,7 @@ async function controlFlow(page) {
   await checkOutputDots();
   assert.equal(await page.locator('.alternatives.if .branch-arm').count(), 2);
   const conditional = page.locator('.alternatives.if');
-  assert.equal(await conditional.locator(':scope > .scope-header .condition-gate .nublet').count(), 1);
+  assert.equal(await conditional.locator(':scope > .scope-header .condition-gate .eyelet').count(), 1);
   assert.equal(await page.locator('#wires .rope-pattern').count(), 0);
   assert.deepEqual(await conditional.locator('.capture:visible').allTextContents(), ['', '', '']);
   await checkHover(conditional.locator(':scope > .output-dot'), /Node/, /if level > 50/, 3);
@@ -157,7 +157,7 @@ async function controlFlow(page) {
   assert.equal(await crossings.count(), 2);
   assert(await crossings.evaluateAll(paths => paths.every(p =>
     /^M [^A-Z]+ C [^A-Z]+$/.test(p.getAttribute('d')) && getComputedStyle(p).strokeDasharray !== 'none')));
-  const gate = await conditional.locator('.condition-gate .nublet').boundingBox();
+  const gate = await conditional.locator('.condition-gate .eyelet').boundingBox();
   assert(await page.locator('#wires path').evaluateAll((paths, gate) => paths.some(p => {
     const end = p.getPointAtLength(p.getTotalLength()).matrixTransform(p.getScreenCTM());
     return Math.hypot(end.x - gate.x - gate.width / 2, end.y - gate.y - gate.height / 2) < 1 &&
@@ -177,7 +177,7 @@ async function controlFlow(page) {
   }));
   assert.deepEqual(await attributes('circle', 'r'), [7, 14]);
   await page.getByRole('textbox', { name: '>, input 2, number', exact: true }).fill('20');
-  await conditional.locator('.condition-gate .nublet').focus();
+  await conditional.locator('.condition-gate .eyelet').focus();
   assert.equal(await page.getByRole('tooltip').locator('code').innerText(), 'level > 20');
   await page.keyboard.press('Escape');
   assert.equal(await page.getByRole('tooltip').count(), 0);
@@ -192,7 +192,7 @@ async function controlFlow(page) {
   await checkConditionalPair('case', /Stamp/, /^shape$/, 3);
   const disc = page.getByRole('region', { name: 'Disc radius scope' });
   const tile = page.getByRole('region', { name: 'Tile width height scope' });
-  await checkHover(disc.locator('.inputs-boundary .left > .nublet'), /Stamp/, /Disc radius/, 1);
+  await checkHover(disc.locator('.inputs-boundary .left > .eyelet'), /Stamp/, /Disc radius/, 1);
   await disc.getByRole('button', { name: 'Connect parameter radius' }).click();
   await tile.getByRole('button', { name: 'rect, input 3, connected to width' }).click();
   assert.match(await page.locator('#status').textContent(), /outside/);
@@ -244,7 +244,7 @@ local_fn = do
   await lambda.waitFor();
   assert.equal(await page.locator('.monadic-context').count(), 1);
   assert.equal(await page.locator('.binding-knot').count(), 2);
-  assert.equal(await page.locator('.nublet.bind-inlet').count(), 1);
+  assert.equal(await page.locator('.eyelet.bind-inlet').count(), 1);
   assert.equal(await lambda.locator('.capture:visible').getAttribute('aria-label'), 'Captured n');
   const captured = await projected('captured');
   const [ordinary, bind] = captured.scope.body.steps;
@@ -378,7 +378,7 @@ local_fn = do
         const r = knot.querySelector(sel).getBoundingClientRect();
         return r.x + r.width / 2;
       };
-      return Math.abs(at('.input-rail .socket .nublet') - rect.left) < 2 &&
+      return Math.abs(at('.input-rail .socket .eyelet') - rect.left) < 2 &&
         Math.abs(at('.output-dot') - rect.right) < 2;
     }));
     const bounds = async (node) => node.boundingBox();
@@ -744,13 +744,13 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
           assert.equal(await parameter.innerText(), named ? 'n' : '');
           const fn = page.locator('.knot.call');
           const socket = named ? fn.getByRole('button', { name: 'Knit, input 1, connected to n' })
-            : fn.locator('.input-rail .nublet');
+            : fn.locator('.input-rail .eyelet');
           assert.equal(await fn.locator('.output-dot').count(), 1);
           assert.equal(await page.locator('#board > .scope-box > .definition-port').count(), 1);
           assert.equal(await fn.locator('.open-input').count(), 0);
           await socket.focus();
           assert.equal(await page.getByRole('tooltip').locator('strong').innerText(), 'Int');
-          const start = await parameter.locator('.nublet').boundingBox();
+          const start = await parameter.locator('.eyelet').boundingBox();
           assert(await page.locator('path.inspected-wire').evaluate((path, start) => {
             const point = path.getPointAtLength(0).matrixTransform(path.getScreenCTM());
             return Math.hypot(point.x - start.x - start.width / 2, point.y - start.y - start.height / 2) < 1;
@@ -776,7 +776,7 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
         }
       }
       if (definition === 'composed_expression_argument' || definition === 'piped_expression_argument') {
-        // A stage with an expression argument stays a pill; the argument enters through a connector.
+        // A stage with an expression argument stays a pill; the argument enters through an eyelet.
         const chain = page.locator('.slub-chain');
         assert.deepEqual(await chain.locator('.slub').allTextContents(), ['negate', 'max']);
         assert.equal(await chain.locator('.slub .slub-inlet').count(), 1);
@@ -820,7 +820,7 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
         const hub = arm.locator(':scope > .scope-body > .inputs-boundary');
         assert.equal(await hub.locator('.pattern-group .pattern-symbol').innerText(), tuple ? '(,)' : 'Just');
         if (!tuple) {
-          assert.equal(await hub.locator('.pattern-hub > .pattern-heading .port').innerText(), 'all');
+          assert.equal(await hub.locator('.bobbin > .pattern-heading .port').innerText(), 'all');
           assert.equal(await hub.locator('.pattern-group .port').innerText(), 'n');
         }
         for (const name of tuple ? ['x', 'y'] : ['n', 'rest', 'all']) {
@@ -910,7 +910,7 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
       if (definition === 'function_value' || definition === 'partial_application') {
         const fn = page.locator('.knot.call');
         const plus = definition === 'function_value';
-        const inlets = fn.locator('.input-rail > .rail-end .nublet');
+        const inlets = fn.locator('.input-rail > .rail-end .eyelet');
         const ports = page.locator('#board > .scope-box > .scope-body > .inputs-boundary .port');
         assert.deepEqual(await ports.allTextContents(), plus ? ['', ''] : ['']);
         assert.equal(await inlets.count(), plus ? 2 : 1);
@@ -925,7 +925,7 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
         for (const [i, inlet] of (await inlets.all()).entries()) {
           await inlet.focus();
           assert.equal(await tip.locator('strong').innerText(), 'Int');
-          const start = await ports.nth(i).locator('.nublet').boundingBox();
+          const start = await ports.nth(i).locator('.eyelet').boundingBox();
           assert(await page.locator('path.inspected-wire').evaluate((path, start) => {
             const point = path.getPointAtLength(0).matrixTransform(path.getScreenCTM());
             return Math.hypot(point.x - start.x - start.width / 2, point.y - start.y - start.height / 2) < 1;

@@ -263,15 +263,15 @@ aside {
 .inputs-boundary {
   margin-left: -2px;
 }
-.inputs-boundary > .pattern-hub {
+.inputs-boundary > .bobbin {
   left: -10px;
   padding-block: 3px;
   border-radius: 14px;
 }
-.inputs-boundary > .pattern-hub.scalar {
+.inputs-boundary > .bobbin.scalar {
   border-radius: 999px;
 }
-.pattern-hub {
+.bobbin {
   position: relative;
   z-index: 2;
   min-width: 65px;
@@ -280,13 +280,13 @@ aside {
   border-radius: 5px;
   background: #f6f8fa;
 }
-.pattern-hub.scalar {
+.bobbin.scalar {
   display: flex;
   align-items: center;
 }
 .scope-box.collapsed > .scope-body > .scope-contents,
-.scope-box.collapsed > .scope-body > .inputs-boundary .pattern-hub:not(.scalar) .port,
-.scope-box.collapsed > .scope-body > .inputs-boundary .scalar .port .nublet {
+.scope-box.collapsed > .scope-body > .inputs-boundary .bobbin:not(.scalar) .port,
+.scope-box.collapsed > .scope-body > .inputs-boundary .scalar .port .eyelet {
   display: none;
 }
 .scope-box.collapsed .scope-body {
@@ -330,7 +330,7 @@ aside {
 .knot.tuple {
   background: #f0f4ed;
 }
-.nublet {
+.eyelet {
   width: 9px;
   height: 9px;
   position: absolute;
@@ -340,36 +340,36 @@ aside {
   background: #647176;
   border-radius: 50%;
 }
-.nublet.square {
+.eyelet.square {
   border-radius: 1px;
 }
-.nublet::after {
+.eyelet::after {
   content: '';
   position: absolute;
   inset: -3px;
 }
-.nublet.triangle, .nublet.capture-triangle {
+.eyelet.triangle, .eyelet.capture-triangle {
   border: 0;
   border-radius: 0;
   background: transparent;
   color: #647176;
 }
-.nublet.triangle::before, .nublet.capture-triangle::before {
+.eyelet.triangle::before, .eyelet.capture-triangle::before {
   content: '';
   position: absolute;
   inset: 0;
   background: currentColor;
 }
-.nublet.triangle::before {
+.eyelet.triangle::before {
   clip-path: polygon(0 50%, 100% 0, 100% 100%);
 }
-.nublet.capture-triangle {
+.eyelet.capture-triangle {
   color: #929b9d;
 }
-.nublet.capture-triangle::before {
+.eyelet.capture-triangle::before {
   clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
-.nublet.diamond {
+.eyelet.diamond {
   border-radius: 1px;
   transform: translate(-50%, 50%) rotate(45deg);
   background: #36567b;
@@ -400,8 +400,8 @@ aside {
   min-height: 18px;
   padding: 1px 7px 1px 10px;
 }
-.left > .nublet,
-.socket > .nublet,
+.left > .eyelet,
+.socket > .eyelet,
 .chain-head {
   left: -5px;
 }
@@ -415,7 +415,7 @@ aside {
   font: 12px/16px system-ui, sans-serif;
 }
 .output-dot,
-.port > .nublet,
+.port > .eyelet,
 .chain-tail {
   right: -5px;
 }
@@ -447,7 +447,7 @@ aside {
   width: 12px;
   height: 10px;
 }
-.capture .nublet {
+.capture .eyelet {
   top: -4px;
   left: calc(50% - 4.5px);
 }
@@ -508,7 +508,7 @@ aside {
     12px ui-monospace,
     monospace;
 }
-.stage-function > .nublet {
+.stage-function > .eyelet {
   left: 50%;
   top: -5px;
   transform: translate(-50%, -50%);
@@ -593,7 +593,7 @@ footer {
   border-color: #aa9655;
 }
 /* A bind rope is drawn like any other; the inlet dot is badged with >>=. */
-.nublet.bind-inlet::after {
+.eyelet.bind-inlet::after {
   content: '>>=';
   position: absolute;
   inset: 50% auto auto 50%;
@@ -670,11 +670,11 @@ footer {
   background-color: #aa4a0f;
   border-color: #783508;
 }
-.nublet.inspected {
+.eyelet.inspected {
   background-color: #b8530e;
   border-color: #783508;
 }
-.nublet.triangle.inspected, .nublet.capture-triangle.inspected {
+.eyelet.triangle.inspected, .eyelet.capture-triangle.inspected {
   background: transparent;
   color: #b8530e;
 }
@@ -765,12 +765,12 @@ footer {
   background-color: #e6eef6;
 }
 
-.nublet.open-input { background: white; }
+.eyelet.open-input { background: white; }
 .function-name.inspected { text-decoration: underline dotted; text-underline-offset: 3px; }
 #port-tip small { display: block; margin-top: 3px; color: #c4d3be; }
 
-.pattern-hub:not(.scalar) { min-height: 20px; }
-.pattern-hub:not(.scalar) > .left {
+.bobbin:not(.scalar) { min-height: 20px; }
+.bobbin:not(.scalar) > .left {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
