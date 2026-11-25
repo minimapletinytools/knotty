@@ -32,7 +32,9 @@ const KnotSource = (() => {
     const coalesce = performance.now() - lastSave < BURST_MS;
     saving = text;
     try {
-      const response = await drawingRequest("/api/source", {
+      // Static Pages has a worker transport; the native app serves HTTP.
+      const request = typeof drawingRequest === "function" ? drawingRequest : fetch;
+      const response = await request("/api/source", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ snapshot: state.snapshot, source: text, coalesce }),
       });
