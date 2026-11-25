@@ -371,8 +371,13 @@ async function checkLanternWaddle(page) {
     await page.setViewportSize({ width: 1440, height: 960 });
     const asideWidth = () => page.locator("aside").evaluate(a => a.getBoundingClientRect().width);
     const asideBefore = await asideWidth();
+    // The divider follows the pane once the wider layout settles.
+    const aligned = () => page.waitForFunction(() => {
+      const handle = document.querySelector("#aside-handle").getBoundingClientRect();
+      return handle.width && Math.abs(handle.left + handle.width / 2 - document.querySelector("aside").getBoundingClientRect().left) < 2;
+    });
+    await aligned();
     const divider = await page.locator("#aside-handle").boundingBox();
-    assert(Math.abs(divider.x + divider.width / 2 - (await page.locator("aside").boundingBox()).x) < 2);
     await page.mouse.move(divider.x + 4, divider.y + 300);
     await page.mouse.down();
     await page.mouse.move(divider.x + 4 - 150, divider.y + 300, { steps: 5 });
@@ -381,8 +386,7 @@ async function checkLanternWaddle(page) {
     await page.reload();
     await page.locator("aside #source .view-lines").waitFor();
     assert(Math.abs(await asideWidth() - asideBefore - 150) < 3);
-    const moved = await page.locator("#aside-handle").boundingBox();
-    assert(Math.abs(moved.x + moved.width / 2 - (await page.locator("aside").boundingBox()).x) < 2);
+    await aligned();
     await page.locator("#aside-handle").dblclick();
     assert(Math.abs(await asideWidth() - asideBefore) < 3);
     assert.deepEqual(errors, []);
