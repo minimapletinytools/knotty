@@ -806,6 +806,47 @@ footer {
   background: #f7fafb;
   padding-block: 3px;
 }
+/* `pattern as name`: the name's small bobbin hangs under the pattern, tacked on by an `as` dot. */
+.bobbin.aliased { border: 0; background: none; padding: 0; }
+.bobbin-core {
+  position: relative;
+  min-height: 20px;
+  padding: 6px 0;
+  border: 1px solid #818d9e;
+  border-radius: 5px;
+  background: #f6f8fa;
+}
+.inputs-boundary > .bobbin.aliased .bobbin-core { padding-block: 3px; border-radius: 14px; }
+.bobbin-core > .left { position: absolute; top: 50%; transform: translateY(-50%); }
+.pattern-as {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  margin-top: -1px;
+}
+.as-bobbin {
+  min-width: 48px;
+  padding: 2px 0;
+  border: 1px solid #818d9e;
+  border-radius: 0 0 10px 10px;
+  background: #eef2f6;
+  text-align: right;
+}
+.pattern-group + .pattern-as > .as-bobbin, .pattern-part + .pattern-as > .as-bobbin { border-color: #b1bec9; }
+.as-dot {
+  z-index: 1;
+  margin: -7px -7px 0 0;
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #657468;
+  border-radius: 50%;
+  background: #fbfcf8;
+  color: #334b3b;
+  font: bold 8px/1 ui-monospace, monospace;
+}
+.collapsed > .scope-body > .inputs-boundary .pattern-as,
 .collapsed > .scope-body > .inputs-boundary .pattern-parts,
 .collapsed > .scope-body > .inputs-boundary .pattern-heading {
   display: none;

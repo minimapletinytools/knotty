@@ -166,6 +166,10 @@ aliased_pattern xs = case xs of
     _ -> []
 
 @story("Branches and patterns")
+nested_alias_pattern :: (Maybe Int, Int) -> List (Maybe Int) -> Int
+nested_alias_pattern (((Just n) as inner, m) as pair) ((first as head) : rest) = n + m
+
+@story("Branches and patterns")
 nested_tuple_pattern :: Maybe (Int, Int) -> Int
 nested_tuple_pattern pair = case pair of
     Just (x, y) -> x + y

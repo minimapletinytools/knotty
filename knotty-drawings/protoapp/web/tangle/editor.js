@@ -321,28 +321,39 @@ function bobbin(input, local, inArm = false) {
   }
   const byName = new Map(input.parameters.map(p => [p.name, p]));
   // `a : b : rest` reads as one list, so its spine is one column of rows and
-  // not a box per `:`. A tail with its own name keeps its group.
+  // not a box per `:`. A tail with its own `as` name keeps its group.
   function spine(shape) {
     const items = [];
     let tail = shape;
-    while (tail.label === ':' && tail.children.length === 2 && (tail === shape || !tail.bindings.length)) {
+    while (tail.label === ':' && tail.children.length === 2 && (tail === shape || !tail.aliases)) {
       items.push(tail.children[0]);
       tail = tail.children[1];
     }
     return [...items, tail];
   }
+  // `pattern as name` tacks a small bobbin for the name beneath the pattern it
+  // names, joined by an `as` dot. The name is the whole value, so it has one
+  // round eyelet and nothing to break down.
+  function named(shape, box) {
+    if (!shape.aliases) return box;
+    const wrap = el('div', 'pattern-named');
+    wrap.append(box);
+    for (const name of shape.aliases) {
+      const tab = el('div', 'pattern-as');
+      const mini = el('div', 'as-bobbin');
+      mini.append(port(byName.get(name), true));
+      tab.append(el('span', 'as-dot', 'as'), mini);
+      wrap.append(tab);
+    }
+    return wrap;
+  }
   function part(child) {
     const box = el('div', child.children.length ? 'pattern-group' : 'pattern-part');
     draw(child, box);
-    return box;
+    return named(child, box);
   }
   function draw(shape, group) {
     if (shape.label === ':' && shape.children.length === 2) {
-      if (shape.bindings.length) {
-        const heading = el('div', 'pattern-heading');
-        for (const name of shape.bindings) heading.append(port(byName.get(name), true));
-        group.append(heading);
-      }
       const rows = el('div', 'pattern-parts pattern-chain');
       const items = spine(shape);
       items.forEach((child, i) => {
@@ -355,7 +366,7 @@ function bobbin(input, local, inArm = false) {
     }
     const heading = el('div', 'pattern-heading');
     if (shape.label) heading.append(el('span', 'pattern-symbol', shape.label));
-    for (const name of shape.bindings) heading.append(port(byName.get(name), shape.children.length > 0));
+    for (const name of shape.bindings) heading.append(port(byName.get(name)));
     group.append(heading);
     if (!shape.children.length) return;
     const list = el('div', 'pattern-parts');
@@ -363,7 +374,14 @@ function bobbin(input, local, inArm = false) {
     group.append(list);
   }
   if (scalar) pill.append(port(input.parameters[0]));
-  else if (!inArm || input.parameters.length) draw(input.shape, pill);
+  else if (input.shape.aliases) {
+    // The pattern keeps the bobbin's outline and its left eyelet; the names hang below it.
+    const core = el('div', 'bobbin-core');
+    core.append(trunk.row);
+    draw(input.shape, core);
+    pill.classList.add('aliased');
+    pill.append(named(input.shape, core));
+  } else if (!inArm || input.parameters.length) draw(input.shape, pill);
   return { box: pill, inlet: trunk.mark };
 }
 

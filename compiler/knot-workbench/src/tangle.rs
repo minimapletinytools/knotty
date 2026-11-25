@@ -98,6 +98,9 @@ struct BoundaryInput {
 struct PatternShape {
     label: String,
     bindings: Vec<String>,
+    /// `as` names for the whole of this pattern, outermost last.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    aliases: Vec<String>,
     children: Vec<PatternShape>,
 }
 
@@ -116,7 +119,7 @@ fn pattern_shape(p: &TypedPattern, source: &str) -> PatternShape {
         TPattern::Var(name) => leaf(name),
         TPattern::As(inner, name) => {
             let mut inner = child(inner);
-            inner.bindings.push(name.clone());
+            inner.aliases.push(name.clone());
             inner
         }
         TPattern::Ctor(r, parts) => shape(

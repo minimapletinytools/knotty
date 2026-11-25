@@ -827,7 +827,11 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
         const hub = arm.locator(':scope > .scope-body > .inputs-boundary');
         assert.equal(await hub.locator('.pattern-group .pattern-symbol').innerText(), tuple ? '(,)' : 'Just');
         if (!tuple) {
-          assert.equal(await hub.locator('.bobbin > .pattern-heading .port').innerText(), 'all');
+          // The `as` name hangs under the pattern's bobbin, which keeps the only left eyelet.
+          assert.equal(await hub.locator('.bobbin.aliased > .pattern-named > .pattern-as .as-bobbin .port').innerText(), 'all');
+          assert.equal(await hub.locator('.bobbin.aliased .as-dot').innerText(), 'as');
+          assert.equal(await hub.locator('.bobbin.aliased .bobbin-core > .left > .eyelet').count(), 1);
+          assert.equal(await hub.locator('.pattern-as .left').count(), 0);
           assert.equal(await hub.locator('.pattern-group .port').innerText(), 'n');
         }
         for (const name of tuple ? ['x', 'y'] : ['n', 'rest', 'all']) {
@@ -906,6 +910,14 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
         assert((await arm.boundingBox()).height < open.height);
         await expand.press('Enter');
         assert.equal(await toggle.textContent(), '▴');
+      }
+      if (definition === 'nested_alias_pattern') {
+        // Names at any depth hang under the part they name: round eyelets for wholes, square for parts.
+        assert.deepEqual(await page.locator('.as-bobbin .port').allTextContents(), ['inner', 'pair', 'head']);
+        assert.equal(await page.locator('.pattern-group + .pattern-as').count(), 1);
+        assert.equal(await page.locator('.pattern-part + .pattern-as').count(), 1);
+        assert.equal(await page.locator('.as-bobbin .eyelet.round').count(), 3);
+        assert.equal(await page.locator('.pattern-heading .port .eyelet.square').count(), 4);
       }
       if (definition === 'aliased_pattern') {
         assert(await page.getByRole('region', { name: '(1 : _) as ones scope', exact: true }).isVisible());
