@@ -1260,6 +1260,54 @@ $("select-curve").addEventListener("click", () => {
   if (curve) select(curve.key);
 });
 
+// Source/Tangle divider -----------------------------------------------------------------
+// Dragging sets the panel width shared by the split view and the toolbar grid.
+
+function setupSplitHandle() {
+  const handle = $("split-handle"), split = document.querySelector(".split-view");
+  const MIN_PANEL = 260, MIN_DRAWING = 320;
+  const apply = width => {
+    if (width === null) { document.documentElement.style.removeProperty("--inspector-columns"); return null; }
+    const max = Math.max(MIN_PANEL, split.clientWidth - MIN_DRAWING);
+    width = Math.round(Math.min(Math.max(width, MIN_PANEL), max));
+    document.documentElement.style.setProperty("--inspector-columns", `minmax(0, 1fr) ${width}px`);
+    handle.setAttribute("aria-valuenow", String(width));
+    return width;
+  };
+  let width = apply(storage.get("panel.sourceWidth", null)), drag = null;
+  const save = () => storage.set("panel.sourceWidth", width);
+  const current = () => $("source-panel").getBoundingClientRect().width;
+  handle.addEventListener("pointerdown", event => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    // Capture keeps the drag when the pointer crosses the Tangle iframe.
+    handle.setPointerCapture(event.pointerId);
+    handle.classList.add("dragging");
+    drag = { x: event.clientX, width: current() };
+  });
+  handle.addEventListener("pointermove", event => {
+    if (drag) width = apply(drag.width + drag.x - event.clientX);
+  });
+  const end = () => {
+    if (!drag) return;
+    drag = null;
+    handle.classList.remove("dragging");
+    save();
+  };
+  handle.addEventListener("pointerup", end);
+  handle.addEventListener("lostpointercapture", end);
+  handle.addEventListener("dblclick", () => { width = apply(null); save(); });
+  handle.addEventListener("keydown", event => {
+    const step = event.shiftKey ? 80 : 20;
+    const delta = { ArrowLeft: step, ArrowRight: -step }[event.key];
+    if (delta === undefined) return;
+    event.preventDefault();
+    width = apply(current() + delta);
+    save();
+  });
+  addEventListener("resize", () => { if (width !== null) width = apply(width); });
+}
+
 // Copy for AI -----------------------------------------------------------------------
 // Right-click an element in Layers or on the canvas to copy a reference an agent
 // can act on: the file, the element's place in the scene and its source lines.
@@ -1385,6 +1433,7 @@ window.drawingGraphHost = {
 setupControls();
 setupCanvas();
 setupContextMenu();
+setupSplitHandle();
 if (document.body.dataset.demo) {
   load().catch(error => { showError(error.message); $("file-status").textContent = "Could not load demo"; });
 } else {

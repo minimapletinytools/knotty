@@ -814,3 +814,5 @@ footer {
 .embedded .toolbar { padding: 6px 8px; gap: 6px; }
 .embedded select { min-width: 0; max-width: 65%; padding: 4px; font: inherit; }
 .embedded footer { min-height: 30px; padding: 4px 8px; }
+
+#viewport.panning { cursor: grabbing; }

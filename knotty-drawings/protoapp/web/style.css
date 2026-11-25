@@ -441,3 +441,8 @@ button, select, input { font: inherit; color: inherit; }
 .context-menu button:hover, .context-menu button:focus-visible { background: var(--accent-soft); outline: none; }
 .copy-toast { position: fixed; z-index: 20; left: 50%; bottom: 20px; transform: translateX(-50%); margin: 0; padding: 7px 14px; border-radius: 6px; background: #1f2a24; color: white; font-size: 13px; box-shadow: 0 4px 14px rgb(0 0 0 / 0.2); }
 .copy-toast.error { background: var(--accent); }
+
+.source-panel { position: relative; }
+.split-handle { position: absolute; z-index: 4; top: 0; bottom: 0; left: -4px; width: 8px; cursor: col-resize; touch-action: none; }
+.split-handle:hover, .split-handle:focus-visible, .split-handle.dragging { background: linear-gradient(to right, transparent 3px, var(--accent) 3px 5px, transparent 5px); outline: none; }
+@media (max-width: 900px) { .split-handle { display: none; } }

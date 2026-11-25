@@ -157,6 +157,25 @@ async function checkLanternWaddle(page) {
       await page.locator("#source-editor .monaco-editor").waitFor();
       assert.match(await page.locator("#file-status").textContent(), /Up to date/);
     }
+    // The source panel divider drags, remembers its width and resets on double-click.
+    const panelWidth = () => page.locator("#source-panel").evaluate(e => e.getBoundingClientRect().width);
+    const before = await panelWidth();
+    const grip = await page.locator("#split-handle").boundingBox();
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + 200);
+    await page.mouse.down();
+    await page.mouse.move(grip.x + grip.width / 2 - 120, grip.y + 200, { steps: 4 });
+    await page.mouse.up();
+    assert(Math.abs(await panelWidth() - before - 120) < 3, `${before} → ${await panelWidth()}`);
+    const toolbarSplit = () => page.locator(".toolbar").evaluate(e => getComputedStyle(e).gridTemplateColumns);
+    assert.match(await toolbarSplit(), new RegExp(`${Math.round(before + 120)}px$`));
+    await page.reload();
+    await page.locator("#stage svg").first().waitFor();
+    assert(Math.abs(await panelWidth() - before - 120) < 3);
+    await page.locator("#split-handle").focus();
+    await page.keyboard.press("ArrowRight");
+    assert(Math.abs(await panelWidth() - before - 100) < 3);
+    await page.locator("#split-handle").dblclick();
+    assert(Math.abs(await panelWidth() - before) < 3);
     await page.goto(base + "drawings/lantern-waddle/");
     await checkLanternWaddle(page);
     await page.goto(base + "drawings/bezier/");
@@ -290,6 +309,34 @@ async function checkLanternWaddle(page) {
     assert.equal(await stories.count(), 64);
     await stories.filter({ hasText: "unreachable case" }).click();
     await page.getByText("⚠ Unreachable arm").waitFor();
+    // Wheel zooms about the cursor; the middle button pans.
+    const viewport = page.locator("#viewport");
+    const box = await viewport.boundingBox();
+    const scale = () => page.locator("#board").evaluate(b => b.getBoundingClientRect().width / b.offsetWidth);
+    const at = { x: box.x + box.width * 0.4, y: box.y + box.height * 0.4 };
+    const under = () => page.evaluate(({ x, y }) => {
+      const b = document.querySelector("#board"), r = b.getBoundingClientRect(), s = r.width / b.offsetWidth;
+      return [(x - r.left) / s, (y - r.top) / s];
+    }, at);
+    const anchor = await under(), zoomBefore = await scale();
+    await page.mouse.move(at.x, at.y);
+    await page.mouse.wheel(0, -400);
+    await page.waitForFunction(s => {
+      const b = document.querySelector("#board");
+      return b.getBoundingClientRect().width / b.offsetWidth > s * 1.5;
+    }, zoomBefore);
+    const anchored = await under();
+    assert(Math.hypot(anchored[0] - anchor[0], anchored[1] - anchor[1]) < 2, `${anchor} → ${anchored}`);
+    assert.equal(await page.locator("#fit").textContent(), "Fit graph");
+    const scrolled = () => viewport.evaluate(v => [v.scrollLeft, v.scrollTop]);
+    const [left, top] = await scrolled();
+    await page.mouse.down({ button: "middle" });
+    await page.mouse.move(at.x - 60, at.y - 40, { steps: 3 });
+    await page.mouse.up({ button: "middle" });
+    const [panLeft, panTop] = await scrolled();
+    assert(Math.abs(panLeft - left - 60) < 2 && Math.abs(panTop - top - 40) < 2, `${left},${top} → ${panLeft},${panTop}`);
+    await page.locator("#fit").click();
+    assert(await scale() <= 1);
     // Saved source is read-only Monaco and follows the chosen story.
     const saved = page.locator("aside #source .monaco-editor");
     await saved.locator(".view-lines").waitFor();

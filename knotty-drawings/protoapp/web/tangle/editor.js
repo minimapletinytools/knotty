@@ -979,12 +979,32 @@ function resize() {
   connections = [...captures.values(), ...ordinary];
   const w = board.offsetWidth,
     h = board.offsetHeight;
-  const scale = fitted
+  const scale = zoom ?? (fitted
     ? Math.min(1, $('viewport').clientWidth / w, $('viewport').clientHeight / h)
-    : 1;
+    : 1);
   sizeViewport(scale);
-  $('fit').textContent = fitted ? 'Actual size' : 'Fit graph';
+  $('fit').textContent = fitted && zoom === null ? 'Actual size' : 'Fit graph';
   drawWires(connections);
+}
+
+// Wheel zoom keeps the board point under the cursor fixed; it overrides Fit until
+// Fit graph is chosen again. The middle button drags the view.
+let zoom = null, panning = null;
+function zoomAt(factor, clientX, clientY) {
+  const board = $('board'), viewport = $('viewport');
+  if (!board.offsetWidth) return;
+  const before = board.getBoundingClientRect().width / board.offsetWidth;
+  const next = Math.min(4, Math.max(0.1, before * factor));
+  if (next === before) return;
+  const box = viewport.getBoundingClientRect();
+  const x = clientX - box.left, y = clientY - box.top;
+  const pointX = (viewport.scrollLeft + x) / before, pointY = (viewport.scrollTop + y) / before;
+  zoom = next;
+  sizeViewport(next);
+  viewport.scrollLeft = pointX * next - x;
+  viewport.scrollTop = pointY * next - y;
+  $('fit').textContent = 'Fit graph';
+  inspect(null);
 }
 
 function sizeViewport(scale) {
@@ -1135,6 +1155,7 @@ async function load() {
   if (host) query.set('embed', '1');
   if (definition) query.set('definition', definition);
   const result = storyMode ? await loadStory() : await request('/api/tangle' + (query.size ? '?' + query : ''));
+  if (graph?.definition !== result.graph.definition) zoom = null;
   graph = result.graph;
   if (host) {
     definition = graph.definition;
@@ -1234,9 +1255,34 @@ $('undo').onclick = () =>
     status('Edit undone.');
   });
 $('fit').onclick = () => {
-  fitted = !fitted;
+  fitted = zoom === null ? !fitted : true;
+  zoom = null;
   resize();
 };
+$('viewport').addEventListener('wheel', e => {
+  e.preventDefault();
+  // Trackpad pinches arrive as ctrl+wheel with small deltas.
+  const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+  zoomAt(Math.exp(-delta * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX, e.clientY);
+}, { passive: false });
+$('viewport').addEventListener('pointerdown', e => {
+  if (e.button !== 1) return;
+  e.preventDefault();
+  const viewport = $('viewport');
+  viewport.setPointerCapture(e.pointerId);
+  viewport.classList.add('panning');
+  panning = { id: e.pointerId, x: e.clientX, y: e.clientY, left: viewport.scrollLeft, top: viewport.scrollTop };
+});
+$('viewport').addEventListener('pointermove', e => {
+  if (panning?.id !== e.pointerId) return;
+  $('viewport').scrollLeft = panning.left - (e.clientX - panning.x);
+  $('viewport').scrollTop = panning.top - (e.clientY - panning.y);
+});
+const endPan = () => { panning = null; $('viewport').classList.remove('panning'); };
+$('viewport').addEventListener('pointerup', e => { if (panning?.id === e.pointerId) endPan(); });
+$('viewport').addEventListener('lostpointercapture', endPan);
+// Keep the middle button from starting the browser's autoscroll.
+$('viewport').addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
 $('reload').onclick = () => run(load);
 $('board').addEventListener('pointerover', e => {
   if (!e.buttons && e.pointerType !== 'touch') inspect(connectorAt(e.target));
