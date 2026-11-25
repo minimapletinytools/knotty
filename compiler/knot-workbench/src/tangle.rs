@@ -221,6 +221,9 @@ pub struct Expr {
     labels: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     visible: Vec<usize>,
+    /// A prefix operator written in the source, such as the minus in `-n`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prefix: Option<&'static str>,
     span: Span,
 }
 
@@ -711,6 +714,7 @@ impl Projection<'_> {
             ty,
             inputs,
             parameter,
+            prefix: matches!(e.node, TExpr::Negate(..)).then_some("-"),
             span: e.span,
             scope,
             arms,

@@ -712,14 +712,24 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
       }
       if (definition === 'case_arms') assert.equal(await page.locator('.match-warning').count(), 0);
       if (definition === 'unary_minus_and_unit') {
-        const call = page.locator('.call');
-        assert.equal(await call.locator('.knot-label').innerText(), 'negate');
-        await call.locator('.knot-label').focus();
+        // A unary operator is a single slub on its operand's rope.
+        const chain = page.locator('.slub-chain.unary');
+        assert.deepEqual(await chain.locator('.slub').allTextContents(), ['-']);
+        assert.equal(await page.locator('.knot.call').count(), 0);
+        await chain.locator('.slub-label').focus();
         assert.match(await page.getByRole('tooltip').innerText(), /Num a => a -> a/);
-        await call.locator('.socket').focus();
+        await chain.locator('.chain-head').focus();
         assert.equal(await page.locator('path.inspected-wire').count(), 1);
         assert.equal(await page.locator('.tuple .inline-value').innerText(), '()');
       }
+      if (definition === 'operators') {
+        // Symbolic binary operators are capsules: no header row, two operands in, one result out.
+        const capsules = page.locator('.knot.operator.capsule');
+        assert.equal(await capsules.count(), 2);
+        assert.equal(await capsules.first().locator('.knot-label').evaluate(e => getComputedStyle(e).borderBottomWidth), '0px');
+        assert.equal(await capsules.first().locator('.input-rail > *').count(), 2);
+      }
+      if (definition === 'infix_callback') assert.equal(await page.locator('.knot.capsule').count(), 0);
       if (definition === 'grouped_reference') {
         const mark = page.getByRole('button', { name: '+, input 2, connected to offset' });
         await mark.focus();

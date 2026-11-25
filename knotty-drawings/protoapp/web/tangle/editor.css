@@ -326,6 +326,26 @@ aside {
   border-color: #ba8884;
   color: #713d3b;
 }
+/* Two rows of operands on the left, the symbol beside them, the result on the right. */
+.knot.capsule {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border-radius: 16px;
+}
+.knot.capsule > .knot-label {
+  order: 2;
+  border-bottom: 0;
+  padding: 2px 12px 2px 2px;
+  font-size: 15px;
+  cursor: grab;
+}
+.knot.capsule > .knot-body {
+  order: 1;
+  position: static;
+  padding: 3px 4px 3px 0;
+}
+.knot.capsule .input-rail { gap: 1px; }
 .knot.list,
 .knot.tuple {
   background: #f0f4ed;

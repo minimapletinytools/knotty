@@ -848,7 +848,7 @@ function slubChain(stages, canvas, sources, input, upstream, returnsFunction, co
     chain.append(tail);
   }
   chain.append(exit);
-  if (upstream) wires.push({ from: upstream, socket: entry });
+  if (upstream) wires.push({ from: upstream, socket: entry, parameter: upstream.parameter });
   canvas.append(chain);
   return { box: chain, out: exit, children, definition: returnsFunction };
 }
@@ -894,6 +894,19 @@ function makeExpression(expr, canvas, sources, forwarded = []) {
     canvas.append(item.box);
     return item;
   }
+  if (expr.prefix && !expr.open_inputs) {
+    // A unary operator is one function on its operand's rope: a single slub.
+    const [operand] = expr.inputs;
+    const stage = { ...expr, kind: 'call', label: expr.prefix, inputs: [], position: undefined, computed_position: undefined };
+    // A plain parameter ropes straight into the slub; anything else keeps its own node.
+    const direct = inline(operand) && operand.kind === 'reference' && operand.parameter !== undefined;
+    const upstream = direct ? null : expression(operand, canvas, sources);
+    const from = direct ? Object.assign(captures => sources(operand.parameter, captures), { parameter: operand.parameter }) : upstream.out;
+    const chain = slubChain([stage], canvas, sources, operand, from, false);
+    chain.box.classList.add('unary');
+    if (upstream) chain.children.unshift(upstream);
+    return chain;
+  }
   const stages = [];
   let base = expr;
   while (base.kind === 'pipe' && (base === expr || !pinned(base))) {
@@ -909,6 +922,8 @@ function makeExpression(expr, canvas, sources, forwarded = []) {
     return chain;
   }
   const knot = el('article', 'knot ' + base.kind);
+  // A symbolic binary operator is a capsule: two operands in, one result out, no header row.
+  if (base.kind === 'operator' && base.callee_port === undefined && !/[\w.]/.test(base.label)) knot.classList.add('capsule');
   markRecursive(knot, base.recursive);
   const item = { box: knot, children: [] };
   canvas.append(knot);
