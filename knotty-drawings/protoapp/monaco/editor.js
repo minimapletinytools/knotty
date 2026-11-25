@@ -14,14 +14,22 @@ monaco.languages.setMonarchTokensProvider("knot", {
 });
 
 // `onEdit` hears only the user's typing; `set` applies published source as a
-// minimal edit so the cursor and scroll position survive.
-export function create(host, source, onEdit) {
+// minimal edit so the cursor and scroll position survive. `fit` grows the
+// editor to its content so a scrolling page, not the editor, scrolls.
+export function create(host, source, onEdit, { readOnly = false, fit = false } = {}) {
   const editor = monaco.editor.create(host, { value: source, language: "knot",
     ariaLabel: "Knot source", automaticLayout: true, minimap: { enabled: false },
-    scrollBeyondLastLine: false, fontSize: 12, lineNumbersMinChars: 3 });
+    scrollBeyondLastLine: false, fontSize: 12, lineNumbersMinChars: 3,
+    readOnly, domReadOnly: readOnly, ...(readOnly && { renderLineHighlight: "none" }),
+    ...(fit && { wordWrap: "on", scrollbar: { vertical: "hidden", alwaysConsumeMouseWheel: false } }) });
   const model = editor.getModel();
+  if (fit) {
+    const resize = () => { host.style.height = editor.getContentHeight() + "px"; };
+    editor.onDidContentSizeChange(resize);
+    resize();
+  }
   let applying = false;
-  model.onDidChangeContent(() => { if (!applying) onEdit(model.getValue()); });
+  model.onDidChangeContent(() => { if (!applying) onEdit?.(model.getValue()); });
   return {
     value: () => model.getValue(),
     set(next) {

@@ -1112,6 +1112,24 @@ async function loadStory() {
   return story;
 }
 
+// Saved source in Monaco, read-only; plain text until it loads or if it is unavailable.
+let sourceView, sourceLoading, shownSource = '';
+function showSource(text) {
+  shownSource = text;
+  if (sourceView) return sourceView.set(text);
+  $('source-text').textContent = text;
+  if (host || sourceLoading) return;
+  const url = new URL('editor.js', new URL(document.documentElement.dataset.monaco || '/source-editor/', location.href));
+  const css = document.createElement('link');
+  css.rel = 'stylesheet';
+  css.href = new URL('editor.css', url);
+  document.head.append(css);
+  sourceLoading = import(url.href).then(({ create }) => {
+    $('source-text').remove();
+    sourceView = create($('source'), shownSource, null, { readOnly: true, fit: true });
+  }).catch(() => {});
+}
+
 async function load() {
   const query = new URLSearchParams();
   if (host) query.set('embed', '1');
@@ -1129,7 +1147,7 @@ async function load() {
   changes.clear();
   $('module').textContent = storyMode ? 'Syntax storybook' : graph.module;
   $('definition').textContent = graph.definition;
-  $('source').textContent = graph.source;
+  showSource(graph.source);
   const old = previewUrl;
   const image = $('preview');
   image.hidden = !result.preview;

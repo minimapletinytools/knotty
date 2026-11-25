@@ -131,7 +131,8 @@ aside {
   border-radius: 6px;
   margin-bottom: 25px;
 }
-#source {
+#source-text {
+  margin: 0;
   font:
     12px/1.65 ui-monospace,
     monospace;

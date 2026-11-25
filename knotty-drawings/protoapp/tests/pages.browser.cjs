@@ -281,6 +281,13 @@ async function checkLanternWaddle(page) {
     assert.equal(await stories.count(), 64);
     await stories.filter({ hasText: "unreachable case" }).click();
     await page.getByText("⚠ Unreachable arm").waitFor();
+    // Saved source is read-only Monaco and follows the chosen story.
+    const saved = page.locator("aside #source .monaco-editor");
+    await saved.locator(".view-lines").waitFor();
+    await page.waitForFunction(() => /unreachable_case/.test(document.querySelector("aside #source .view-lines")?.innerText));
+    assert((await saved.boundingBox()).height > 40);
+    await stories.filter({ hasText: "incomplete case" }).click();
+    await page.waitForFunction(() => /incomplete_case/.test(document.querySelector("aside #source .view-lines")?.innerText));
     assert.deepEqual(errors, []);
     console.log("Static drawing, live Monaco, preview/cancel/accept/undo, mobile and storybook checks passed.");
   } finally { await browser.close(); }

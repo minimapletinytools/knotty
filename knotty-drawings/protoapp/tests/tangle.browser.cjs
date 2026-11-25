@@ -9,6 +9,9 @@ const app = path.resolve(__dirname, '..'),
   library = path.dirname(app);
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'tangle-roundtrip-'));
 const processes = [];
+// The saved-source pane is Monaco, which renders only visible, wrapped lines.
+const savedSource = (page) =>
+  page.waitForFunction(() => sourceView?.value()).then((value) => value.jsonValue());
 async function open(source, directory, filename = 'MakersFair.knot') {
   const folder = path.join(temp, directory);
   fs.mkdirSync(folder);
@@ -341,7 +344,7 @@ local_fn = do
       const a = await graph(url),
         b = await graph(oracle.url);
       assert.deepEqual({ ...a, snapshot: null }, { ...b, snapshot: null });
-      assert.equal(await page.locator('#source').textContent(), a.source);
+      assert.equal(await savedSource(page), a.source);
     }
     await page.goto(url);
     await page.getByRole('button', { name: 'Tangle', exact: true }).click();
@@ -658,7 +661,7 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
       const definition = name.replaceAll(' ', '_');
       await page.waitForFunction(name => document.querySelector('#definition').textContent === name, definition);
       assert.equal(await navigation.locator('[aria-current="page"]').innerText(), name);
-      assert((await page.locator('#source').textContent()).includes(definition));
+      assert((await savedSource(page)).includes(definition));
       assert(await page.locator('#board > .scope-box').isVisible());
       assert.equal(await page.locator('.knot.source').count(), 0);
       assert(await page.locator('#save').isHidden());
