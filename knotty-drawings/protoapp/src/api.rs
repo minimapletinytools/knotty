@@ -88,6 +88,10 @@ pub(super) fn dispatch(
                 Err(e) => json!({"ok":false,"reason":format!("bad preview request: {e}")}),
             }
         }
+        ("POST", "/api/source") => match serde_json::from_str::<edit::SourceText>(body) {
+            Ok(edit) => editor.save_text(drawing, edit),
+            Err(e) => json!({"ok":false,"reason":format!("bad source request: {e}")}),
+        },
         ("POST", "/api/undo") => match serde_json::from_str::<serde_json::Value>(body) {
             Ok(value) => match value["snapshot"].as_str() {
                 Some(snapshot) => editor.undo(drawing, snapshot),

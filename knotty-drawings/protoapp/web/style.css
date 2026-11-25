@@ -379,6 +379,9 @@ button, select, input { font: inherit; color: inherit; }
 .source-panel:not([hidden]) { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; background: white; border-left: 1px solid var(--line); }
 #source-editor { position: relative; min-height: 0; overflow: hidden; }
 #source-text { height: 100%; margin: 0; padding: 10px; overflow: auto; }
+#source-heading:not([hidden]) { display: flex; align-items: baseline; gap: 8px; }
+.source-status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-weight: 400; font-size: 12px; }
+.source-status.error { color: var(--accent); }
 .split-view:has(.source-panel:not([hidden])) .workspace:not(.no-tree) { --tree-width: clamp(110px, 12vw, 200px); }
 .split-view:has(.source-panel:not([hidden])) .workspace:not(.no-properties) { --properties-width: clamp(155px, 15vw, 250px); }
 @media (max-width: 900px) {

@@ -897,3 +897,60 @@ program = svg 80 80 [other, group [curve, anonymous], curve]
     assert_eq!(keys(&f, 1), ["0"]);
     assert_eq!(f.editor.apply_whip(&mut f.drawing, &edit)["ok"], false);
 }
+
+fn save_text(fixture: &mut Fixture, source: &str, coalesce: bool) -> Value {
+    let edit = serde_json::from_value(json!({
+        "snapshot": fixture.snapshot(), "source": source, "coalesce": coalesce,
+    }))
+    .unwrap();
+    fixture.editor.save_text(&mut fixture.drawing, edit)
+}
+
+#[test]
+fn source_text_publishes_valid_source_and_rejects_invalid_source_unwritten() {
+    let mut f = Fixture::new("svg 200 100 [circle 20 30 12]");
+    let grown = f.original.replace("circle 20 30 12", "circle 20 30 16");
+    assert_eq!(save_text(&mut f, &grown, false)["ok"], true);
+    assert_eq!(f.value("0", "r"), json!(16.0));
+    assert_eq!(std::fs::read_to_string(f.drawing.path()).unwrap(), grown);
+    for broken in [grown.replace("16]", "16"), grown.replace("16", "\"x\"")] {
+        let result = save_text(&mut f, &broken, true);
+        assert_eq!(result["ok"], false, "{broken}");
+        assert!(result["reason"].as_str().unwrap().contains(':'), "{result}");
+        assert_eq!(std::fs::read_to_string(f.drawing.path()).unwrap(), grown);
+        assert_eq!(f.value("0", "r"), json!(16.0));
+    }
+    let stale = serde_json::from_value(json!({"snapshot": "stale", "source": f.original})).unwrap();
+    assert_eq!(f.editor.save_text(&mut f.drawing, stale)["ok"], false);
+}
+
+#[test]
+fn source_text_bursts_undo_together_and_other_edits_start_new_steps() {
+    let mut f = Fixture::new("svg 200 100 [circle 20 30 12]");
+    let at = |r: &str| {
+        f.original
+            .replace("circle 20 30 12", &format!("circle 20 30 {r}"))
+    };
+    let (one, two) = (at("1"), at("15"));
+    assert_eq!(save_text(&mut f, &one, false)["ok"], true);
+    assert_eq!(save_text(&mut f, &two, true)["ok"], true);
+    assert_eq!(f.apply("0", "cx", json!(40.0))["ok"], true);
+    let edited = std::fs::read_to_string(f.drawing.path()).unwrap();
+    assert_eq!(
+        save_text(&mut f, &edited.replace("15", "18"), true)["ok"],
+        true
+    );
+    // The coalesce flag cannot merge across the property edit.
+    let snapshot = f.snapshot();
+    assert_eq!(f.editor.undo(&mut f.drawing, &snapshot)["ok"], true);
+    assert_eq!(std::fs::read_to_string(f.drawing.path()).unwrap(), edited);
+    let snapshot = f.snapshot();
+    assert_eq!(f.editor.undo(&mut f.drawing, &snapshot)["ok"], true);
+    assert_eq!(std::fs::read_to_string(f.drawing.path()).unwrap(), two);
+    let snapshot = f.snapshot();
+    assert_eq!(f.editor.undo(&mut f.drawing, &snapshot)["ok"], true);
+    assert_eq!(
+        std::fs::read_to_string(f.drawing.path()).unwrap(),
+        f.original
+    );
+}

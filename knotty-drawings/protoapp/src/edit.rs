@@ -8,6 +8,8 @@ pub use graph::GraphEdit;
 mod geometry;
 mod preview;
 mod properties;
+mod source;
+pub use source::SourceText;
 use crate::drawing::Drawing;
 #[cfg(not(target_os = "wasi"))]
 pub use geometry::GeometryCheck;
@@ -39,6 +41,8 @@ pub struct Editor {
     compact_previews: bool,
     engine: Option<SourceEditor>,
     undo: Vec<(u64, String)>,
+    /// Revision published by the latest source-pane save, while it is still current.
+    text_revision: Option<u64>,
     active_preview: Option<preview::PropertyPreview>,
 }
 
@@ -118,6 +122,7 @@ impl Editor {
                 && std::env::var("KNOTTY_PATH_QUERY_REUSE").as_deref() != Ok("0"),
             engine: None,
             undo: vec![],
+            text_revision: None,
             active_preview: None,
         }
     }

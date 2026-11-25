@@ -225,6 +225,33 @@ async function checkLanternWaddle(page) {
       await page.waitForFunction(() => Number(document.querySelector("#stage svg circle").getAttribute("r")) === 24);
       await page.waitForFunction(({ lines, expected }) => lines.innerText === expected, { lines: sourceLines, expected: original });
     }
+    // Typed source applies live; invalid source is marked and not applied; a
+    // drawing edit replaces the invalid buffer; Undo steps back through both.
+    const radius = () => page.evaluate(() => Number(document.querySelector("#stage svg circle").getAttribute("r")));
+    // Double-click the number token and type over it, as a person would.
+    const retype = async (word, text) => {
+      await page.locator("#source-editor .view-line span span", { hasText: new RegExp(`^${word}$`) }).first().dblclick();
+      await page.keyboard.type(text);
+    };
+    await retype("24", "30");
+    await page.waitForFunction(() => Number(document.querySelector("#stage svg circle").getAttribute("r")) === 30);
+    await page.locator("#source-status", { hasText: "Applied" }).waitFor();
+    await retype("30", "(");
+    await page.locator("#source-status", { hasText: /Error on line \d+/ }).waitFor();
+    await page.locator("#source-editor .squiggly-error").first().waitFor();
+    assert.equal(await radius(), 30);
+    assert.match(await page.locator("#file-status").textContent(), /Up to date/);
+    await page.locator("#field-r").click();
+    await page.locator("dialog input").fill("35");
+    await page.locator("dialog [data-action=ok]").click();
+    await page.locator("dialog").waitFor({ state: "detached" });
+    await page.waitForFunction(lines => /radius = \(35/.test(lines.innerText.replaceAll(" ", " ")), sourceLines);
+    await page.locator("#source-editor .squiggly-error").waitFor({ state: "detached" });
+    await page.locator("#undo-edit").click();
+    await page.waitForFunction(() => Number(document.querySelector("#stage svg circle").getAttribute("r")) === 30);
+    await page.locator("#undo-edit").click();
+    await page.waitForFunction(() => Number(document.querySelector("#stage svg circle").getAttribute("r")) === 24);
+    await page.waitForFunction(({ lines, expected }) => lines.innerText === expected, { lines: sourceLines, expected: original });
     await page.locator("#stage svg").first().click({position: { x: 4, y: 4 }});
     await page.locator("#add-circle").click();
     await page.waitForFunction(() => shapeTool?.ready);
