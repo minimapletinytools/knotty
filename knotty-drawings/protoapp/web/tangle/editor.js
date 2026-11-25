@@ -454,13 +454,12 @@ function arrange(frame, captureSources) {
     const inputWidth = Math.max(0, ...values.map(b => b.width));
     const w = item.box.offsetWidth, h = item.box.offsetHeight;
     let x = values.length ? inputWidth + gapX : 0;
-    // Inputs marked offRow sit beneath the consumer, leaving its row clear for the rope that enters it.
+    // Inputs marked offRow sit below the consumer's row, clear of its definition port's rope.
     const lead = values[0] && !values[0].item.offRow;
-    if (values.length && !lead) x = 0;
     const mid = Math.max(h / 2, lead ? values[0].mid : 0);
     let bottom = lead ? 0 : mid + h / 2;
     for (const [i, branch] of values.entries()) {
-      branch.x = lead ? inputWidth - branch.width : 0;
+      branch.x = inputWidth - branch.width;
       branch.y = i === 0 && lead ? mid - branch.mid : bottom + gapY;
       bottom = branch.y + branch.height;
     }
@@ -487,7 +486,7 @@ function arrange(frame, captureSources) {
       rowWidth = last.x + last.width;
     }
     return { item, branches, nodeX: x, nodeY: above + mid - h / 2, mid: above + mid,
-      width: Math.max(rowWidth, x + w, lead ? 0 : inputWidth), height: above + Math.max(mid + h / 2, bottom) };
+      width: Math.max(rowWidth, x + w), height: above + Math.max(mid + h / 2, bottom) };
   }
 
   const nodes = [];
@@ -746,14 +745,15 @@ function alternatives(expr, canvas, sources) {
   return item;
 }
 
-// A pipeline supplies a value now. A composition supplies it later through
-// the inner port of a function box. Both use the same chain of stages.
+// A pipeline supplies a value now. A composition has no value yet: its chain
+// is itself the function node, with an open head and a definition port below.
 // A composition chain composes its stages (∘) instead of applying them ($).
 function slubChain(stages, canvas, sources, input, upstream, returnsFunction, composes = false) {
   const chain = el('div', 'slub-chain' + (composes ? ' compose' : ''));
   const callee = 'callee-inlet' + (composes ? ' compose-inlet' : '');
   const entry = describe(nub(), input);
   entry.classList.add('chain-head');
+  if (!upstream) entry.classList.add('open-input');
   const exit = returnsFunction ? functionOutput() : nub();
   if (!returnsFunction) exit.classList.add('chain-tail');
   const children = [];
@@ -791,7 +791,7 @@ function slubChain(stages, canvas, sources, input, upstream, returnsFunction, co
     chain.append(pill);
   }
   chain.append(exit);
-  wires.push({ from: upstream, socket: entry });
+  if (upstream) wires.push({ from: upstream, socket: entry });
   canvas.append(chain);
   return { box: chain, out: exit, children, definition: returnsFunction };
 }
@@ -817,19 +817,8 @@ function compositionStages(expr) {
 const breaksSlub = (stage) => pinned(stage) && ['reference', 'call', 'value'].includes(stage.kind);
 
 function composition(expr, canvas, sources) {
-  const stages = compositionStages(expr);
   const input = { implicit: true, label: 'Composition input', ty: expr.open_inputs[0] };
-  const result = { label: 'Composition result', ty: expr.composition_result };
-  const item = boxed({ inputs: [input], body: result }, '|>>', sources, null, false,
-    (inner, source, [argument]) => {
-      const chain = slubChain(stages, inner, source, input, argument.out, false, true);
-      describe(chain.out, result);
-      return chain;
-    });
-  item.box.classList.add('composition');
-  functionName(item.box.querySelector('.box-toggle'), expr.callable);
-  canvas.append(item.box);
-  return item;
+  return slubChain(compositionStages(expr), canvas, sources, input, null, true, true);
 }
 
 function makeExpression(expr, canvas, sources, forwarded = []) {

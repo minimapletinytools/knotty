@@ -519,10 +519,10 @@ aside {
 .chain-head + .slub {
   border-radius: 24px 0 0 24px;
 }
-.slub:has(+ .chain-tail) {
+.slub:has(+ :is(.chain-tail, .definition-port)) {
   border-radius: 0 24px 24px 0;
 }
-.chain-head + .slub:has(+ .chain-tail) {
+.chain-head + .slub:has(+ :is(.chain-tail, .definition-port)) {
   border-radius: 24px;
 }
 .chain-head,

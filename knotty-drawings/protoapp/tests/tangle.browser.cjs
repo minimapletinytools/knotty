@@ -794,21 +794,22 @@ two_callbacks x = compose_two (\a -> a + 1) (\b -> b + 2) x
         assert.deepEqual(await page.locator('.knot > .knot-label').allTextContents(), ['>>']);
       }
       if (definition === 'composed_functions' || definition === 'composed_callbacks') {
-        const box = page.getByRole('region', { name: '|>> scope', exact: true });
+        // The composition chain is itself the function node: dotted pills, an open
+        // head, a definition port below, and no surrounding box.
+        const chain = page.locator('.slub-chain.compose');
         const named = definition === 'composed_functions';
-        assert.deepEqual(await box.locator('.slub').allTextContents(),
+        assert.equal(await page.getByRole('region', { name: '|>> scope', exact: true }).count(), 0);
+        assert.deepEqual(await chain.locator('.slub').allTextContents(),
           named ? ['String.length', 'max'] : ['f', 'g', 'λ']);
-        // Composition stages are dotted and compose (∘); the box is then called through an <inline> site.
-        assert.equal(await box.locator('.slub-chain.compose > .slub').first().evaluate(e => getComputedStyle(e).borderTopStyle), 'dotted');
-        assert.equal(await box.locator('.compose-inlet').count(), named ? 0 : 3);
+        assert.equal(await chain.locator(':scope > .slub').first().evaluate(e => getComputedStyle(e).borderTopStyle), 'dotted');
+        assert.equal(await chain.locator('.compose-inlet').count(), named ? 0 : 3);
+        assert.equal(await chain.locator(':scope > .chain-head.open-input').count(), 1);
+        assert.equal(await chain.locator(':scope > .definition-port').count(), 1);
         assert.equal(await page.locator('.knot.callsite > .knot-label').textContent(), '<inline>');
-        assert.equal(await box.locator(':scope > .definition-port').count(), 1);
-        assert.equal(await box.locator('.capture:visible').count(), named ? 0 : 2);
-        for (const [mark, ty] of [['.chain-head', named ? 'String' : 'Int'], ['.chain-tail', 'Int']]) {
-          await box.locator(mark).focus();
-          assert.equal(await page.getByRole('tooltip').locator('strong').innerText(), ty);
-          assert.equal(await page.locator('path.inspected-wire').count(), 1);
-        }
+        await chain.locator('.chain-head').focus();
+        assert.equal(await page.getByRole('tooltip').locator('strong').innerText(), named ? 'String' : 'Int');
+        await chain.locator(':scope > .definition-port').focus();
+        assert.equal(await page.locator('path.inspected-wire').count(), 1);
       }
       if (definition === 'nested_tuple_pattern' || definition === 'nested_list_pattern') {
         const tuple = definition === 'nested_tuple_pattern';
