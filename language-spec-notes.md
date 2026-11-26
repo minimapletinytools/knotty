@@ -3,6 +3,7 @@
 Knot is a lazy, pure functional language for Tangle's editable node graphs.
 Twine evaluates it. This document records the language rules and marks future
 work explicitly; [knot_v0.md](knot_v0.md) tracks implementation scope.
+Naming conventions for library code are in the [style guide](style-guide.md).
 “Matches Haskell/Elm” applies to the named feature, with Knot's exceptions below.
 
 ## 1. Design Principles
