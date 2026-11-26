@@ -103,7 +103,7 @@ mod unicode_tests {
     use crate::span::Cursor;
     #[test]
     fn scalar_columns_agree_with_layout_while_spans_remain_bytes() {
-        let source = "🧶FloatAdd x = x\n  👩🏽‍💻 x = x\n";
+        let source = "🧶plusFloat x = x\n  👩🏽‍💻 x = x\n";
         let index = LineIndex::new(source);
         let mut cursor = Cursor::start();
         for (i, byte) in source.bytes().enumerate() {

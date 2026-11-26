@@ -66,7 +66,7 @@ error :: String -> a
 undefined :: a
 undefined = error "Prelude.undefined"
 
-@unravel(🧶Not)
+@unravel(🧶not)
 not :: Bool -> Bool
 not b =
   case b of
@@ -97,13 +97,13 @@ either f g r =
     Err e -> f e
     Ok a -> g a
 
-@unravel(🧶First)
+@unravel(🧶fst)
 fst :: (a, b) -> a
 fst p =
   case p of
     (a, _) -> a
 
-@unravel(🧶Second)
+@unravel(🧶snd)
 snd :: (a, b) -> b
 snd p =
   case p of
@@ -120,11 +120,11 @@ uncurry f p =
 
 -- Functions ------------------------------------------------------------------
 
-@unravel(🧶Identity)
+@unravel(🧶id)
 id :: a -> a
 id x = x
 
-@unravel(🧶Const)
+@unravel(🧶const)
 const :: a -> b -> a
 const x _ = x
 
@@ -549,17 +549,17 @@ instance Show Int where
     in if precedence > 6 && n < 0 then "(" <> text <> ")" else text
 
 instance Num Int where
-  @unravel(🧶IntegralAdd)
+  @unravel(🧶plusIntegral)
   (+) = primIntAdd
-  @unravel(🧶IntegralSubtract)
+  @unravel(🧶minusIntegral)
   (-) = primIntSub
-  @unravel(🧶IntegralMultiply)
+  @unravel(🧶timesIntegral)
   (*) = primIntMul
   abs n = if n < 0 then negate n else n
   signum n = if n < 0 then negate 1 else if n == 0 then 0 else 1
-  @unravel(🧶IntegerToInt)
+  @unravel(🧶integerToInt)
   fromInteger = primIntegerToInt
-  @unravel(🧶Negate)
+  @unravel(🧶negate)
   negate x = 0 - x
 
 instance Real Int where
@@ -571,7 +571,7 @@ instance Enum Int where
 
 instance Integral Int where
   quotRem n d = (primIntQuot n d, primIntRem n d)
-  @unravel(🧶IntToInteger)
+  @unravel(🧶intToInteger)
   toInteger = primIntToInteger
 
 instance Eq Integer where
@@ -586,17 +586,17 @@ instance Show Integer where
     in if precedence > 6 && n < 0 then "(" <> text <> ")" else text
 
 instance Num Integer where
-  @unravel(🧶IntegralAdd)
+  @unravel(🧶plusIntegral)
   (+) = primIntegerAdd
-  @unravel(🧶IntegralSubtract)
+  @unravel(🧶minusIntegral)
   (-) = primIntegerSub
-  @unravel(🧶IntegralMultiply)
+  @unravel(🧶timesIntegral)
   (*) = primIntegerMul
   abs n = if n < 0 then negate n else n
   signum n = if n < 0 then negate 1 else if n == 0 then 0 else 1
-  @unravel(🧶Identity)
+  @unravel(🧶id)
   fromInteger n = n
-  @unravel(🧶Negate)
+  @unravel(🧶negate)
   negate x = 0 - x
 
 instance Real Integer where
@@ -635,24 +635,24 @@ instance Show Float where
     in if precedence > 6 && primStringTake 1 text == "-" then "(" <> text <> ")" else text
 
 instance Num Float where
-  @unravel(🧶FloatAdd)
+  @unravel(🧶plusFloat)
   (+) = primFloatAdd
-  @unravel(🧶FloatSubtract)
+  @unravel(🧶minusFloat)
   (-) = primFloatSub
-  @unravel(🧶FloatMultiply)
+  @unravel(🧶timesFloat)
   (*) = primFloatMul
-  @unravel(🧶FloatNegate)
+  @unravel(🧶negateFloat)
   negate = primFloatNegate
   abs = primFloatAbs
   signum = primFloatSignum
-  @unravel(🧶IntegralToFloat)
+  @unravel(🧶integralToFloat)
   fromInteger = primIntegerToFloat
 
 instance Real Float where
   toRational = primFloatToRational
 
 instance Fractional Float where
-  @unravel(🧶FloatDivide)
+  @unravel(🧶divideFloat)
   (/) = primFloatDiv
   fromRational = primRationalToFloat
 
@@ -697,7 +697,7 @@ instance Show String where
   show = primStringShow
 
 instance Semigroup String where
-  @unravel(🧶StringAppend)
+  @unravel(🧶appendString)
   (<>) = primStringAppend
 
 instance Monoid String where
@@ -871,14 +871,14 @@ instance Show a => Show (List a) where
       "[" <> join (map show xs) <> "]"
 
 instance Semigroup (List a) where
-  @unravel(🧶ListAppend)
+  @unravel(🧶appendList)
   (<>) xs ys = foldr (:) ys xs
 
 instance Monoid (List a) where
   empty = []
 
 instance Functor List where
-  @unravel(listMapCompanionBack)
+  @unravel(🧶mapList)
   map f xs = foldr (\x acc -> f x : acc) [] xs
 
 instance Applicative List where
@@ -938,7 +938,7 @@ reverse xs = foldl (flip (:)) [] xs
 concat :: Foldable t => t (List a) -> List a
 concat xss = foldr (<>) [] xss
 
-@unravel(listConcatMapCompanionBack)
+@unravel(🧶concatMap)
 concatMap :: Foldable t => (a -> List b) -> t a -> List b
 concatMap f xs = foldr (\x acc -> f x <> acc) [] xs
 
@@ -1101,7 +1101,7 @@ intRange from step to =
 (^^) :: (Fractional a, Integral b) => a -> b -> a
 (^^) x n = if n >= 0 then x ^ n else recip (x ^ negate n)
 
-@unravel(🧶FromIntegral)
+@unravel(🧶fromIntegral)
 fromIntegral :: (Integral a, Num b) => a -> b
 fromIntegral x = fromInteger (toInteger x)
 
@@ -1219,22 +1219,22 @@ pinAllows input request = case input.pinned of
 
 -- Used by identity and by supported literal/constructor materializers. This
 -- translates a constraint; it does not print source or synthesize a candidate.
-🧶Identity :: Constriction s a => { value : a, pinned : Maybe a } -> s -> Maybe s
-🧶Identity input request =
+🧶id :: Constriction s a => { value : a, pinned : Maybe a } -> s -> Maybe s
+🧶id input request =
   if pinAllows input request then Just request else Nothing
 
-🧶First :: (Constriction s a, Eq b) => { value : (a, b), pinned : Maybe (a, b) } -> s -> Maybe (s, Maybe b)
-🧶First input request = case input.pinned of
+🧶fst :: (Constriction s a, Eq b) => { value : (a, b), pinned : Maybe (a, b) } -> s -> Maybe (s, Maybe b)
+🧶fst input request = case input.pinned of
   Just (a, _) -> if fits request a then Just (request, Nothing) else Nothing
   Nothing -> Just (request, Nothing)
 
-🧶Second :: (Eq a, Constriction s b) => { value : (a, b), pinned : Maybe (a, b) } -> s -> Maybe (Maybe a, s)
-🧶Second input request = case input.pinned of
+🧶snd :: (Eq a, Constriction s b) => { value : (a, b), pinned : Maybe (a, b) } -> s -> Maybe (Maybe a, s)
+🧶snd input request = case input.pinned of
   Just (_, b) -> if fits request b then Just (Nothing, request) else Nothing
   Nothing -> Just (Nothing, request)
 
-🧶Const :: (Constriction s a, Eq b) => ({ value : a, pinned : Maybe a }, { value : b, pinned : Maybe b }) -> s -> Maybe (s, Maybe b)
-🧶Const (input, _) request =
+🧶const :: (Constriction s a, Eq b) => ({ value : a, pinned : Maybe a }, { value : b, pinned : Maybe b }) -> s -> Maybe (s, Maybe b)
+🧶const (input, _) request =
   if pinAllows input request then Just (request, Nothing) else Nothing
 
 unravelUnary :: (Eq a, Eq b) => (a -> b) -> (b -> Maybe a) -> { value : a, pinned : Maybe a } -> Maybe b -> Maybe (Maybe a)
@@ -1273,19 +1273,19 @@ unravelBinary forward solveLeft solveRight valid (left, right) request = case re
 isFinite :: Float -> Bool
 isFinite x = not (isNaN x || isInfinite x)
 
-🧶FloatAdd :: ({ value : Float, pinned : Maybe Float }, { value : Float, pinned : Maybe Float }) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
-🧶FloatAdd = unravelBinary (+) (\_ target other -> Just (target - other)) (\_ target other -> Just (target - other)) isFinite
+🧶plusFloat :: ({ value : Float, pinned : Maybe Float }, { value : Float, pinned : Maybe Float }) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
+🧶plusFloat = unravelBinary (+) (\_ target other -> Just (target - other)) (\_ target other -> Just (target - other)) isFinite
 
-🧶FloatSubtract :: ({ value : Float, pinned : Maybe Float }, { value : Float, pinned : Maybe Float }) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
-🧶FloatSubtract = unravelBinary (-) (\_ target other -> Just (target + other)) (\_ target other -> Just (other - target)) isFinite
+🧶minusFloat :: ({ value : Float, pinned : Maybe Float }, { value : Float, pinned : Maybe Float }) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
+🧶minusFloat = unravelBinary (-) (\_ target other -> Just (target + other)) (\_ target other -> Just (other - target)) isFinite
 
 solveFloatProductInput :: Float -> Float -> Float -> Maybe Float
 solveFloatProductInput old target other =
   if other == 0.0 then if target == 0.0 then Just old else Nothing
   else Just (target / other)
 
-🧶FloatMultiply :: ({ value : Float, pinned : Maybe Float }, { value : Float, pinned : Maybe Float }) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
-🧶FloatMultiply = unravelBinary (*) solveFloatProductInput solveFloatProductInput isFinite
+🧶timesFloat :: ({ value : Float, pinned : Maybe Float }, { value : Float, pinned : Maybe Float }) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
+🧶timesFloat = unravelBinary (*) solveFloatProductInput solveFloatProductInput isFinite
 
 solveFloatNumerator :: Float -> Float -> Float -> Maybe Float
 solveFloatNumerator _ target denominator =
@@ -1298,14 +1298,14 @@ solveFloatDenominator old target numerator =
   else let candidate = numerator / target
        in if candidate == 0.0 then Nothing else Just candidate
 
-🧶FloatDivide :: ({ value : Float, pinned : Maybe Float }, { value : Float, pinned : Maybe Float }) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
-🧶FloatDivide = unravelBinary (/) solveFloatNumerator solveFloatDenominator isFinite
+🧶divideFloat :: ({ value : Float, pinned : Maybe Float }, { value : Float, pinned : Maybe Float }) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
+🧶divideFloat = unravelBinary (/) solveFloatNumerator solveFloatDenominator isFinite
 
-🧶IntegralAdd :: Integral a => ({ value : a, pinned : Maybe a }, { value : a, pinned : Maybe a }) -> Maybe a -> Maybe (Maybe a, Maybe a)
-🧶IntegralAdd = unravelBinary (+) (\_ target other -> Just (target - other)) (\_ target other -> Just (target - other)) (\_ -> True)
+🧶plusIntegral :: Integral a => ({ value : a, pinned : Maybe a }, { value : a, pinned : Maybe a }) -> Maybe a -> Maybe (Maybe a, Maybe a)
+🧶plusIntegral = unravelBinary (+) (\_ target other -> Just (target - other)) (\_ target other -> Just (target - other)) (\_ -> True)
 
-🧶IntegralSubtract :: Integral a => ({ value : a, pinned : Maybe a }, { value : a, pinned : Maybe a }) -> Maybe a -> Maybe (Maybe a, Maybe a)
-🧶IntegralSubtract = unravelBinary (-) (\_ target other -> Just (target + other)) (\_ target other -> Just (other - target)) (\_ -> True)
+🧶minusIntegral :: Integral a => ({ value : a, pinned : Maybe a }, { value : a, pinned : Maybe a }) -> Maybe a -> Maybe (Maybe a, Maybe a)
+🧶minusIntegral = unravelBinary (-) (\_ target other -> Just (target + other)) (\_ target other -> Just (other - target)) (\_ -> True)
 
 -- Multiplication chooses an ordinary exact integer quotient, not modular search.
 -- Calculate it as Integer to avoid Int minBound / -1 overflow.
@@ -1318,16 +1318,16 @@ solveIntegralProductInput old target other =
            candidate = fromInteger q
        in if rem n d == 0 && toInteger candidate == q then Just candidate else Nothing
 
-🧶IntegralMultiply :: Integral a => ({ value : a, pinned : Maybe a }, { value : a, pinned : Maybe a }) -> Maybe a -> Maybe (Maybe a, Maybe a)
-🧶IntegralMultiply = unravelBinary (*) solveIntegralProductInput solveIntegralProductInput (\_ -> True)
+🧶timesIntegral :: Integral a => ({ value : a, pinned : Maybe a }, { value : a, pinned : Maybe a }) -> Maybe a -> Maybe (Maybe a, Maybe a)
+🧶timesIntegral = unravelBinary (*) solveIntegralProductInput solveIntegralProductInput (\_ -> True)
 
-🧶Negate :: (Num a, Eq a) => { value : a, pinned : Maybe a } -> Maybe a -> Maybe (Maybe a)
-🧶Negate = unravelUnary negate (\target -> Just (negate target))
+🧶negate :: (Num a, Eq a) => { value : a, pinned : Maybe a } -> Maybe a -> Maybe (Maybe a)
+🧶negate = unravelUnary negate (\target -> Just (negate target))
 
-🧶FloatNegate :: { value : Float, pinned : Maybe Float } -> Maybe Float -> Maybe (Maybe Float)
-🧶FloatNegate input request = case request of
+🧶negateFloat :: { value : Float, pinned : Maybe Float } -> Maybe Float -> Maybe (Maybe Float)
+🧶negateFloat input request = case request of
   Nothing -> Just Nothing
-  Just target -> if isFinite target then 🧶Negate input request else Nothing
+  Just target -> if isFinite target then 🧶negate input request else Nothing
 
 -- Restrict conversion inverses to integral targets. Roundtrip guards reject
 -- overflow/wrapping and floating rounding rather than silently approximating.
@@ -1338,23 +1338,23 @@ integralCandidate target =
       candidate = fromInteger n
   in if denominator ratio == 1 && toInteger candidate == n then Just candidate else Nothing
 
-🧶FromIntegral :: (Integral a, Real b) => { value : a, pinned : Maybe a } -> Maybe b -> Maybe (Maybe a)
-🧶FromIntegral input request = case request of
+🧶fromIntegral :: (Integral a, Real b) => { value : a, pinned : Maybe a } -> Maybe b -> Maybe (Maybe a)
+🧶fromIntegral input request = case request of
   Nothing -> Just Nothing
   Just target ->
     if target - target == 0 then unravelUnary fromIntegral integralCandidate input request
     else Nothing
 
-🧶IntegralToFloat :: Integral a => { value : a, pinned : Maybe a } -> Maybe Float -> Maybe (Maybe a)
-🧶IntegralToFloat input request = case request of
+🧶integralToFloat :: Integral a => { value : a, pinned : Maybe a } -> Maybe Float -> Maybe (Maybe a)
+🧶integralToFloat input request = case request of
   Nothing -> Just Nothing
-  Just target -> if isFinite target then 🧶FromIntegral input request else Nothing
+  Just target -> if isFinite target then 🧶fromIntegral input request else Nothing
 
-🧶IntegerToInt :: { value : Integer, pinned : Maybe Integer } -> Maybe Int -> Maybe (Maybe Integer)
-🧶IntegerToInt = unravelUnary fromInteger (\target -> Just (toInteger target))
+🧶integerToInt :: { value : Integer, pinned : Maybe Integer } -> Maybe Int -> Maybe (Maybe Integer)
+🧶integerToInt = unravelUnary fromInteger (\target -> Just (toInteger target))
 
-🧶IntToInteger :: { value : Int, pinned : Maybe Int } -> Maybe Integer -> Maybe (Maybe Int)
-🧶IntToInteger = 🧶FromIntegral
+🧶intToInteger :: { value : Int, pinned : Maybe Int } -> Maybe Integer -> Maybe (Maybe Int)
+🧶intToInteger = 🧶fromIntegral
 
 -- Split only the demanded prefix. ExactEnd cannot delete an existing cell;
 -- shape-changing materialization is a separate operation. A wildcard never
@@ -1381,15 +1381,15 @@ matchesListShape values request = case request of
     [] -> False
     _ : rest -> matchesListShape rest more
 
-🧶ListAppend :: Constriction s a => ({ value : List a, pinned : Maybe (List a) }, { value : List a, pinned : Maybe (List a) }) -> ListConstraint s -> Maybe (ListConstraint s, ListConstraint s)
-🧶ListAppend (left, right) request = do
+🧶appendList :: Constriction s a => ({ value : List a, pinned : Maybe (List a) }, { value : List a, pinned : Maybe (List a) }) -> ListConstraint s -> Maybe (ListConstraint s, ListConstraint s)
+🧶appendList (left, right) request = do
   (l, r) <- splitListRequest (effectiveFeed left) request
   if matchesListShape (effectiveFeed right) r
      && pinAllows left l && pinAllows right r
   then Just (l, r) else Nothing
 
-🧶Cons :: Eq a => ({ value : a, pinned : Maybe a }, { value : List a, pinned : Maybe (List a) }) -> ListConstraint (Maybe a) -> Maybe (Maybe a, ListConstraint (Maybe a))
-🧶Cons (head, tail) request = case request of
+🧶cons :: Eq a => ({ value : a, pinned : Maybe a }, { value : List a, pinned : Maybe (List a) }) -> ListConstraint (Maybe a) -> Maybe (Maybe a, ListConstraint (Maybe a))
+🧶cons (head, tail) request = case request of
   AnyRemainder -> Just (Nothing, AnyRemainder)
   ExactEnd -> Nothing
   Prepend h t ->
@@ -1408,14 +1408,14 @@ solveStringRight _ target prefix =
   then Just (primStringDrop (primStringLength prefix) target)
   else Nothing
 
-🧶StringAppend :: ({ value : String, pinned : Maybe String }, { value : String, pinned : Maybe String }) -> Maybe String -> Maybe (Maybe String, Maybe String)
-🧶StringAppend = unravelBinary (<>) solveStringLeft solveStringRight (\_ -> True)
+🧶appendString :: ({ value : String, pinned : Maybe String }, { value : String, pinned : Maybe String }) -> Maybe String -> Maybe (Maybe String, Maybe String)
+🧶appendString = unravelBinary (<>) solveStringLeft solveStringRight (\_ -> True)
 
 -- Higher-order defaults receive an explicitly selected companion. Automatic
 -- companion attachment is separate from these executable translation functions.
--- 🧶Map also works on prepared growth drafts; it never creates fresh values.
-🧶Map :: (a -> sOut -> Maybe sIn) -> List a -> ListConstraint sOut -> Maybe (ListConstraint sIn)
-🧶Map backF values request = case request of
+-- 🧶mapWith also works on prepared growth drafts; it never creates fresh values.
+🧶mapWith :: (a -> sOut -> Maybe sIn) -> List a -> ListConstraint sOut -> Maybe (ListConstraint sIn)
+🧶mapWith backF values request = case request of
   AnyRemainder -> Just AnyRemainder
   ExactEnd -> case values of
     [] -> Just ExactEnd
@@ -1424,11 +1424,11 @@ solveStringRight _ target prefix =
     [] -> Nothing
     x : xs -> do
       inputRequest <- backF x r
-      tailRequest <- 🧶Map backF xs more
+      tailRequest <- 🧶mapWith backF xs more
       pure (Prepend inputRequest tailRequest)
 
-🧶ListMap :: Constriction sIn a => ({ value : a, pinned : Maybe a } -> sOut -> Maybe sIn) -> { value : List a, pinned : Maybe (List a) } -> ListConstraint sOut -> Maybe (ListConstraint sIn)
-🧶ListMap backF input request =
+🧶mapListWith :: Constriction sIn a => ({ value : a, pinned : Maybe a } -> sOut -> Maybe sIn) -> { value : List a, pinned : Maybe (List a) } -> ListConstraint sOut -> Maybe (ListConstraint sIn)
+🧶mapListWith backF input request =
   let back x r =
         let state = { value = x, pinned = case input.pinned of
                       Nothing -> Nothing
@@ -1436,10 +1436,10 @@ solveStringRight _ target prefix =
         in do
           proposed <- backF state r
           if pinAllows state proposed then Just proposed else Nothing
-  in 🧶Map back (effectiveFeed input) request
+  in 🧶mapWith back (effectiveFeed input) request
 
-🧶ConcatMap :: (a -> List b) -> (a -> ListConstraint sOut -> Maybe sIn) -> List a -> ListConstraint sOut -> Maybe (ListConstraint sIn)
-🧶ConcatMap forward backF values request = case request of
+🧶concatMapWith :: (a -> List b) -> (a -> ListConstraint sOut -> Maybe sIn) -> List a -> ListConstraint sOut -> Maybe (ListConstraint sIn)
+🧶concatMapWith forward backF values request = case request of
   AnyRemainder -> Just AnyRemainder
   _ -> case values of
     [] -> case request of
@@ -1448,11 +1448,11 @@ solveStringRight _ target prefix =
     x : xs -> do
       (chunk, rest) <- splitListRequest (forward x) request
       inputRequest <- backF x chunk
-      tailRequest <- 🧶ConcatMap forward backF xs rest
+      tailRequest <- 🧶concatMapWith forward backF xs rest
       pure (Prepend inputRequest tailRequest)
 
-🧶ListConcatMap :: Constriction sIn a => (a -> List b) -> ({ value : a, pinned : Maybe a } -> ListConstraint sOut -> Maybe sIn) -> { value : List a, pinned : Maybe (List a) } -> ListConstraint sOut -> Maybe (ListConstraint sIn)
-🧶ListConcatMap forward backF input request =
+🧶concatMapListWith :: Constriction sIn a => (a -> List b) -> ({ value : a, pinned : Maybe a } -> ListConstraint sOut -> Maybe sIn) -> { value : List a, pinned : Maybe (List a) } -> ListConstraint sOut -> Maybe (ListConstraint sIn)
+🧶concatMapListWith forward backF input request =
   let back x r =
         let state = { value = x, pinned = case input.pinned of
                       Nothing -> Nothing
@@ -1460,7 +1460,7 @@ solveStringRight _ target prefix =
         in do
           proposed <- backF state r
           if pinAllows state proposed then Just proposed else Nothing
-  in 🧶ConcatMap forward back (effectiveFeed input) request
+  in 🧶concatMapWith forward back (effectiveFeed input) request
 
 -- Candidate selection for exact requests at editable leaves/reference sites.
 -- Printing constructors, escaping strings and choosing a writable span remain
@@ -1484,8 +1484,8 @@ applyListRequest update values request = case request of
       ys <- applyListRequest update xs tail
       pure (y : ys)
 
-🧶Not :: { value : Bool, pinned : Maybe Bool } -> Maybe Bool -> Maybe (Maybe Bool)
-🧶Not = unravelUnary not (\target -> Just (not target))
+🧶not :: { value : Bool, pinned : Maybe Bool } -> Maybe Bool -> Maybe (Maybe Bool)
+🧶not = unravelUnary not (\target -> Just (not target))
 
 -- Ordinary cons rule; the engine supplies separate head and tail feeds.
 unravelListCons :: Constriction s a => ({ value : a, pinned : Maybe a }, { value : List a, pinned : Maybe (List a) }) -> ListConstraint s -> Maybe (FieldRequest s, FieldRequest (ListConstraint s))
@@ -1495,19 +1495,19 @@ unravelListCons _ request = case request of
   Prepend head tail -> Just (RequestField head, RequestField tail)
 
 -- Companion contracts are inferred from these generic rule signatures.
-listMapCompanionBack :: Constriction sIn a => { forward : a -> b, unravel : { value : a, pinned : Maybe a } -> sOut -> Maybe sIn } -> { value : List a, pinned : Maybe (List a) } -> ListConstraint sOut -> Maybe (ListConstraint sIn)
-listMapCompanionBack unraveler = 🧶ListMap unraveler.unravel
+🧶mapList :: Constriction sIn a => { forward : a -> b, unravel : { value : a, pinned : Maybe a } -> sOut -> Maybe sIn } -> { value : List a, pinned : Maybe (List a) } -> ListConstraint sOut -> Maybe (ListConstraint sIn)
+🧶mapList unraveler = 🧶mapListWith unraveler.unravel
 
 -- Check each proposed input's chunk before returning its ordinary constraint.
 -- Changed custom input constraints need an instance-owned candidate.
-listConcatMapCompanionBack :: Constriction sIn a => { forward : a -> List b, unravel : { value : a, pinned : Maybe a } -> ListConstraint sOut -> Maybe sIn } -> { value : List a, pinned : Maybe (List a) } -> ListConstraint sOut -> Maybe (ListConstraint sIn)
-listConcatMapCompanionBack unraveler =
+🧶concatMap :: Constriction sIn a => { forward : a -> List b, unravel : { value : a, pinned : Maybe a } -> ListConstraint sOut -> Maybe sIn } -> { value : List a, pinned : Maybe (List a) } -> ListConstraint sOut -> Maybe (ListConstraint sIn)
+🧶concatMap unraveler =
   let back input request = do
         proposed <- unraveler.unravel input request
         candidate <- if fits proposed input.value then Just input.value else materialize proposed
         if fits proposed candidate && length (unraveler.forward candidate) == length (unraveler.forward input.value)
         then Just proposed else Nothing
-  in 🧶ListConcatMap unraveler.forward back
+  in 🧶concatMapListWith unraveler.forward back
 
 -- A fresh seed and its materializer share one original throughout an attempt.
 -- Authors choose both the factory and unravel policy; no implicit factory search.
@@ -1524,15 +1524,15 @@ materializationDraft factory unravel =
 -- A new element has no current value to adjust, so its callback is reversed
 -- against the element type's default, and the result is handed to the input
 -- list to create. Existing elements are reversed through the callback as usual.
-@unravel(growMapBack)
+@unravel(🧶growMap)
 growMap :: (a -> b) -> List a -> List b
 growMap f values = map f values
 
 -- unraveler: the callback, as its forward function and its reverse rule.
 -- input: the current list and its pin. request: the wanted output list.
 -- Returns the wanted input list, with an exact value for each new element.
-growMapBack :: (Eq a, Default a) => { forward : a -> b, unravel : { value : a, pinned : Maybe a } -> s -> Maybe (Maybe a) } -> { value : List a, pinned : Maybe (List a) } -> ListConstraint s -> Maybe (ListConstraint (Maybe a))
-growMapBack unraveler input request =
+🧶growMap :: (Eq a, Default a) => { forward : a -> b, unravel : { value : a, pinned : Maybe a } -> s -> Maybe (Maybe a) } -> { value : List a, pinned : Maybe (List a) } -> ListConstraint s -> Maybe (ListConstraint (Maybe a))
+🧶growMap unraveler input request =
   let walk values wanted = case wanted of
         AnyRemainder -> Just AnyRemainder
         ExactEnd -> Just ExactEnd

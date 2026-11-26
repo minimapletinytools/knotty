@@ -144,7 +144,7 @@ gradientPaint node =
         ShapeNode _ (Polyline s) -> paint s.fill.paint s.stroke.paint
         _ -> Nothing
 
-@unravel(🧶Gradient)
+@unravel(🧶gradient)
 gradient :: Tint -> List Node -> List Node
 gradient tint nodes =
     let
@@ -158,8 +158,8 @@ gradient tint nodes =
                 in if fill then set_fill color node else set_stroke color node
     in if tint == (0, 0, 0) then nodes else map recolor nodes
 
-🧶Gradient :: (DrawingBack.Feed Tint, DrawingBack.Feed (List Node)) -> ListConstraint Requests.NodeRequest -> Maybe (Maybe Tint, ListConstraint Requests.NodeRequest)
-🧶Gradient (tint, nodes) request =
+🧶gradient :: (DrawingBack.Feed Tint, DrawingBack.Feed (List Node)) -> ListConstraint Requests.NodeRequest -> Maybe (Maybe Tint, ListConstraint Requests.NodeRequest)
+🧶gradient (tint, nodes) request =
     let
         walk values wanted = case (wanted, values) of
             (AnyRemainder, _) -> Just (Nothing, AnyRemainder)

@@ -18,7 +18,7 @@ type DrawingWhip
 
 -- Opt in to adding new shapes separately from the generated part of a drawing.
 -- The unravel routes new slots to additions; existing shapes keep their routes.
-@unravel(DrawingBack.🧶EditableShapes)
+@unravel(DrawingBack.🧶editableShapes)
 editableShapes :: List Node -> List Node -> List Node
 editableShapes generated additions = generated <> additions
 
@@ -112,57 +112,57 @@ point x y = { x = x, y = y }
 shape :: Shape -> Node
 shape geometry = ShapeNode defaultCommon geometry
 
-@unravel(DrawingBack.🧶Rect)
+@unravel(DrawingBack.🧶rect)
 rect :: Float -> Float -> Float -> Float -> Node
 rect x y width height =
     shape (Rect { x = x, y = y, width = width, height = height, rx = 0, ry = 0, fill = defaultFill, stroke = defaultStroke })
 
-@unravel(DrawingBack.🧶RoundedRect)
+@unravel(DrawingBack.🧶rounded_rect)
 rounded_rect :: Float -> Float -> Float -> Float -> Float -> Node
 rounded_rect x y width height cornerRadius =
     shape (Rect { x = x, y = y, width = width, height = height, rx = cornerRadius, ry = cornerRadius, fill = defaultFill, stroke = defaultStroke })
 
-@unravel(DrawingBack.🧶Circle)
+@unravel(DrawingBack.🧶circle)
 circle :: Float -> Float -> Float -> Node
 circle centerX centerY radius =
     shape (Circle { cx = centerX, cy = centerY, r = radius, fill = defaultFill, stroke = defaultStroke })
 
-@unravel(DrawingBack.🧶Ellipse)
+@unravel(DrawingBack.🧶ellipse)
 ellipse :: Float -> Float -> Float -> Float -> Node
 ellipse centerX centerY radiusX radiusY =
     shape (Ellipse { cx = centerX, cy = centerY, rx = radiusX, ry = radiusY, fill = defaultFill, stroke = defaultStroke })
 
-@unravel(DrawingBack.🧶Line)
+@unravel(DrawingBack.🧶line)
 line :: Float -> Float -> Float -> Float -> Node
 line startX startY endX endY =
     shape (Line { x1 = startX, y1 = startY, x2 = endX, y2 = endY, stroke = defaultStroke })
 
-@unravel(DrawingBack.🧶Polyline)
+@unravel(DrawingBack.🧶polyline)
 polyline :: List Point -> Node
 polyline points =
     shape (Polyline { points = points, closed = False, fill = defaultFill, stroke = defaultStroke })
 
 -- A closed polyline; exported as <polygon>.
-@unravel(DrawingBack.🧶Polygon)
+@unravel(DrawingBack.🧶polygon)
 polygon :: List Point -> Node
 polygon points =
     shape (Polyline { points = points, closed = True, fill = defaultFill, stroke = defaultStroke })
 
-@unravel(DrawingBack.🧶Path)
+@unravel(DrawingBack.🧶path)
 path :: List PathCommand -> Node
 path commands = shape (Path { commands = commands, fill = defaultFill, stroke = defaultStroke })
 
-@unravel(DrawingBack.🧶Text)
+@unravel(DrawingBack.🧶text)
 text :: Float -> Float -> String -> Node
 text x y content =
     shape (Text { x = x, y = y, content = content, font = defaultFont, fill = defaultFill, stroke = defaultStroke })
 
-@unravel(DrawingBack.🧶Group)
+@unravel(DrawingBack.🧶group)
 group :: List Node -> Node
 group children = ContainerNode { kind = Group, common = defaultCommon, children = children }
 
 -- The program's output: a single <svg> container.
-@unravel(DrawingBack.🧶Svg)
+@unravel(DrawingBack.🧶svg)
 svg :: Float -> Float -> List Node -> Container
 svg width height children =
     { kind = Viewport { width = width, height = height, viewBox = Nothing }
@@ -171,11 +171,11 @@ svg width height children =
     }
 
 -- An <svg> nested inside another container.
-@unravel(DrawingBack.🧶NestedSvg)
+@unravel(DrawingBack.🧶nested_svg)
 nested_svg :: Float -> Float -> List Node -> Node
 nested_svg width height children = ContainerNode (svg width height children)
 
-@unravel(DrawingBack.🧶ViewBox)
+@unravel(DrawingBack.🧶set_view_box)
 set_view_box :: Float -> Float -> Float -> Float -> Container -> Container
 set_view_box minX minY width height document =
     case document.kind of
@@ -184,7 +184,7 @@ set_view_box minX minY width height document =
         Group -> document
 
 -- Use an optional value when the view box must also be removable.
-@unravel(DrawingBack.🧶OptionalViewBox)
+@unravel(DrawingBack.🧶set_optional_view_box)
 set_optional_view_box :: Maybe ViewBox -> Container -> Container
 set_optional_view_box box document = case document.kind of
     Viewport viewport -> { document | kind = Viewport { viewport | viewBox = box } }
@@ -308,109 +308,109 @@ map_text update =
 
 -- Style setters (reach every shape that has the property) ---------------------
 
-@unravel(DrawingBack.🧶Fill)
+@unravel(DrawingBack.🧶set_fill)
 set_fill :: Color -> Node -> Node
 set_fill color = map_fill (\fill -> { fill | paint = Solid color })
 
-@unravel(DrawingBack.🧶FillPaint)
+@unravel(DrawingBack.🧶set_fill_paint)
 set_fill_paint :: Paint -> Node -> Node
 set_fill_paint paint = map_fill (\fill -> { fill | paint = paint })
 
-@unravel(DrawingBack.🧶NoFill)
+@unravel(DrawingBack.🧶set_no_fill)
 set_no_fill :: Node -> Node
 set_no_fill = map_fill (\fill -> { fill | paint = NoPaint })
 
-@unravel(DrawingBack.🧶FillOpacity)
+@unravel(DrawingBack.🧶set_fill_opacity)
 set_fill_opacity :: Float -> Node -> Node
 set_fill_opacity opacity = map_fill (\fill -> { fill | opacity = opacity })
 
-@unravel(DrawingBack.🧶FillRule)
+@unravel(DrawingBack.🧶set_fill_rule)
 set_fill_rule :: FillRule -> Node -> Node
 set_fill_rule rule = map_fill (\fill -> { fill | rule = rule })
 
-@unravel(DrawingBack.🧶Stroke)
+@unravel(DrawingBack.🧶set_stroke)
 set_stroke :: Color -> Node -> Node
 set_stroke color = map_stroke (\stroke -> { stroke | paint = Solid color })
 
-@unravel(DrawingBack.🧶StrokePaint)
+@unravel(DrawingBack.🧶set_stroke_paint)
 set_stroke_paint :: Paint -> Node -> Node
 set_stroke_paint paint = map_stroke (\stroke -> { stroke | paint = paint })
 
-@unravel(DrawingBack.🧶NoStroke)
+@unravel(DrawingBack.🧶set_no_stroke)
 set_no_stroke :: Node -> Node
 set_no_stroke = map_stroke (\stroke -> { stroke | paint = NoPaint })
 
-@unravel(DrawingBack.🧶StrokeOpacity)
+@unravel(DrawingBack.🧶set_stroke_opacity)
 set_stroke_opacity :: Float -> Node -> Node
 set_stroke_opacity opacity = map_stroke (\stroke -> { stroke | opacity = opacity })
 
-@unravel(DrawingBack.🧶StrokeWidth)
+@unravel(DrawingBack.🧶set_stroke_width)
 set_stroke_width :: Float -> Node -> Node
 set_stroke_width width = map_stroke (\stroke -> { stroke | width = width })
 
-@unravel(DrawingBack.🧶StrokeCap)
+@unravel(DrawingBack.🧶set_stroke_linecap)
 set_stroke_linecap :: LineCap -> Node -> Node
 set_stroke_linecap cap = map_stroke (\stroke -> { stroke | cap = cap })
 
-@unravel(DrawingBack.🧶StrokeJoin)
+@unravel(DrawingBack.🧶set_stroke_linejoin)
 set_stroke_linejoin :: LineJoin -> Node -> Node
 set_stroke_linejoin join = map_stroke (\stroke -> { stroke | join = join })
 
-@unravel(DrawingBack.🧶StrokeDashes)
+@unravel(DrawingBack.🧶set_stroke_dasharray)
 set_stroke_dasharray :: List Float -> Node -> Node
 set_stroke_dasharray dashes = map_stroke (\stroke -> { stroke | dashes = dashes })
 
-@unravel(DrawingBack.🧶StrokeDashOffset)
+@unravel(DrawingBack.🧶set_stroke_dashoffset)
 set_stroke_dashoffset :: Float -> Node -> Node
 set_stroke_dashoffset offset = map_stroke (\stroke -> { stroke | dashOffset = offset })
 
-@unravel(DrawingBack.🧶StrokeMiterLimit)
+@unravel(DrawingBack.🧶set_stroke_miterlimit)
 set_stroke_miterlimit :: Float -> Node -> Node
 set_stroke_miterlimit limit = map_stroke (\stroke -> { stroke | miterLimit = limit })
 
-@unravel(DrawingBack.🧶FontFamily)
+@unravel(DrawingBack.🧶set_font_family)
 set_font_family :: String -> Node -> Node
 set_font_family family = map_font (\font -> { font | family = family })
 
-@unravel(DrawingBack.🧶FontSize)
+@unravel(DrawingBack.🧶set_font_size)
 set_font_size :: Float -> Node -> Node
 set_font_size size = map_font (\font -> { font | size = size })
 
-@unravel(DrawingBack.🧶FontAnchor)
+@unravel(DrawingBack.🧶set_text_anchor)
 set_text_anchor :: TextAnchor -> Node -> Node
 set_text_anchor anchor = map_font (\font -> { font | anchor = anchor })
 
-@unravel(DrawingBack.🧶FontBaseline)
+@unravel(DrawingBack.🧶set_dominant_baseline)
 set_dominant_baseline :: DominantBaseline -> Node -> Node
 set_dominant_baseline baseline = map_font (\font -> { font | baseline = baseline })
 
-@unravel(DrawingBack.🧶Closed)
+@unravel(DrawingBack.🧶set_closed)
 set_closed :: Bool -> Node -> Node
 set_closed closed = map_polyline (\p -> { p | closed = closed })
 
 -- Node setters (affect only the node itself) -----------------------------------
 
-@unravel(DrawingBack.🧶OptionalId)
+@unravel(DrawingBack.🧶set_optional_id)
 set_optional_id :: Maybe Id -> Node -> Node
 set_optional_id nodeId = map_common (\common -> { common | id = nodeId })
 
-@unravel(DrawingBack.🧶Id)
+@unravel(DrawingBack.🧶set_id)
 set_id :: Id -> Node -> Node
 set_id nodeId = map_common (\common -> { common | id = Just nodeId })
 
-@unravel(DrawingBack.🧶Transform)
+@unravel(DrawingBack.🧶set_transform)
 set_transform :: Transform -> Node -> Node
 set_transform transform = map_common (\common -> { common | transform = transform })
 
-@unravel(DrawingBack.🧶AddTransform)
+@unravel(DrawingBack.🧶add_transform)
 add_transform :: TransformOp -> Node -> Node
 add_transform operation = map_common (\common -> { common | transform = operation : common.transform })
 
-@unravel(DrawingBack.🧶Opacity)
+@unravel(DrawingBack.🧶set_opacity)
 set_opacity :: Float -> Node -> Node
 set_opacity opacity = map_common (\common -> { common | opacity = opacity })
 
-@unravel(DrawingBack.🧶Visible)
+@unravel(DrawingBack.🧶set_visible)
 set_visible :: Bool -> Node -> Node
 set_visible visible = map_common (\common -> { common | visible = visible })
 

@@ -127,7 +127,7 @@ impl<'a> ParseState<'a> {
         ))
     }
 
-    /// A value identifier: `x`, `myVar2`, `🧶FloatAdd`. Errors if it's a reserved word.
+    /// A value identifier: `x`, `myVar2`, `🧶plusFloat`. Errors if it's a reserved word.
     pub fn lower_ident(&mut self) -> Result<Spanned<String>, ParseError> {
         let start = self.pos;
         if !self.starts_value_ident() {
@@ -355,7 +355,7 @@ mod emoji_tests {
     #[test]
     fn emoji_names_are_maximal_value_identifiers_with_byte_spans() {
         for name in [
-            "🧶FloatAdd",
+            "🧶plusFloat",
             "🍅",
             "paint🧶2'",
             "👩🏽‍💻Edit",

@@ -84,7 +84,7 @@ Knot always treats `--` as a comment start, including inside a symbol run.
 
 Identifiers use ASCII letters, digits, `_`, `'` and Unicode `Other_Symbol`
 characters (including emoji). Lowercase or emoji starts values, fields and type
-variables: `🧶FloatAdd` is an ordinary function name. Uppercase ASCII starts types,
+variables: `🧶plusFloat` is an ordinary function name. Uppercase ASCII starts types,
 constructors and modules. Emoji sequences may include variation selectors, skin
 tones and joined symbols. Names are matched exactly, without normalization.
 `_` / `_name` are separate hole/discard syntax (§17). Spans count UTF-8 bytes;

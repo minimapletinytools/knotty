@@ -208,8 +208,9 @@ async function checkLanternWaddle(page) {
     const picker = graph.getByRole("combobox", { name: "Drawing definition" });
     await graph.getByRole("region", { name: "program scope", exact: true }).waitFor();
     await picker.selectOption("shapeCount");
+    // The program graph, with its many literals, stays up until the picked definition loads.
+    await page.waitForFunction(() => document.querySelector("#drawing-graph").contentDocument.querySelectorAll("input.literal").length === 1);
     const number = graph.locator("input.literal");
-    await number.waitFor();
     assert.equal(await number.inputValue(), "63");
     await number.fill("31");
     assert(await graph.locator("header").isHidden());

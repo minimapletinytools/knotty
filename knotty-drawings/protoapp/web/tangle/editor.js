@@ -1437,7 +1437,10 @@ async function load() {
   const query = new URLSearchParams();
   if (host) query.set('embed', '1');
   if (definition) query.set('definition', definition);
+  const asked = definition;
   const result = storyMode ? await loadStory() : await request('/api/tangle' + (query.size ? '?' + query : ''));
+  // A definition picked while this was in flight wins; this answer is for the old one.
+  if (definition !== asked) return load();
   if (storyMode) {
     storyOriginal = result;
     $('source-heading').textContent = 'Story source';

@@ -18,12 +18,12 @@ gusts = 4
 strays :: Int
 strays = 4
 
-@unravel(snowfallBack)
+@unravel(🧶snowfall)
 snowfall :: Int -> Int -> Int
 snowfall groups singles = groups * 6 + singles
 
-snowfallBack :: (Feed Int, Feed Int) -> Maybe Int -> Maybe (Maybe Int, Maybe Int)
-snowfallBack _ wanted = case wanted of
+🧶snowfall :: (Feed Int, Feed Int) -> Maybe Int -> Maybe (Maybe Int, Maybe Int)
+🧶snowfall _ wanted = case wanted of
     Nothing -> Just (Nothing, Nothing)
     Just total -> if total < 0 then Nothing else Just (Just (div total 6), Just (mod total 6))
 
@@ -42,23 +42,23 @@ flame = 8.0
 negative :: Color -> Color
 negative (Rgb r g b) = Rgb (255 - r) (255 - g) (255 - b)
 
-@unravel(dyeBack)
+@unravel(🧶dye)
 dye :: Bool -> Color -> Color
 dye contrast color = if contrast then negative color else color
 
-dyeBack :: (Feed Bool, Feed Color) -> Maybe Color -> Maybe (Maybe Bool, Maybe Color)
-dyeBack (contrast, _) wanted = case wanted of
+🧶dye :: (Feed Bool, Feed Color) -> Maybe Color -> Maybe (Maybe Bool, Maybe Color)
+🧶dye (contrast, _) wanted = case wanted of
     Nothing -> Just (Nothing, Nothing)
     Just color -> Just (Nothing, Just (dye contrast.value color))
 
 -- Either the glass or its halo can drive the shared flame. Keep the five-unit
 -- halo and the housing sizes fixed; reject a radius below the unlit minimum.
-@unravel(wickBack)
+@unravel(🧶wick)
 wick :: Float -> Float -> Float -> Float
 wick housing halo light = 2 + halo + housing * light
 
-wickBack :: (Feed Float, Feed Float, Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float, Maybe Float)
-wickBack (housing, halo, _) wanted = case wanted of
+🧶wick :: (Feed Float, Feed Float, Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float, Maybe Float)
+🧶wick (housing, halo, _) wanted = case wanted of
     Nothing -> Just (Nothing, Nothing, Nothing)
     Just radius ->
         if radius < 2 + halo.value || housing.value <= 0 then Nothing
