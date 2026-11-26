@@ -6,7 +6,7 @@ use knot_workbench::operation::ValueType;
 use std::sync::Arc;
 use twine::{Session, ValueView};
 
-#[derive(serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 pub struct Slider {
     /// "slider" edits an Int in the panel; "scale" multiplies a Float from a canvas handle.
     pub kind: &'static str,
@@ -31,6 +31,45 @@ pub struct WhipEdit {
     pub index: usize,
     pub key: Option<String>,
     pub value: f64,
+}
+
+impl Slider {
+    /// A selected-object control only answers to the objects it is anchored to.
+    pub fn owned_by(&self, key: Option<&String>) -> Result<(), String> {
+        match &self.keys {
+            Some(keys) if !key.is_some_and(|key| keys.contains(key)) => {
+                Err("Select the object that owns this control.".into())
+            }
+            _ => Ok(()),
+        }
+    }
+    /// The request that sets this control's binding to `value`. A whip writes
+    /// its binding directly; nothing is reversed through the drawing.
+    pub fn request(&self, value: f64) -> Result<knot_workbench::traversal::Request, String> {
+        use knot_workbench::traversal::Request;
+        if self.kind == "scale" {
+            if self.value.is_none() || !value.is_finite() || value <= 0.0 {
+                return Err(format!("{} requires a positive number.", self.label));
+            }
+            return Ok(Request {
+                expression: format!("Just ({value:?})"),
+                type_name: "Maybe Float".into(),
+            });
+        }
+        if self.value.is_none()
+            || value.fract() != 0.0
+            || !(f64::from(self.min)..=f64::from(self.max)).contains(&value)
+        {
+            return Err(format!(
+                "{} requires a value from {} to {}.",
+                self.label, self.min, self.max
+            ));
+        }
+        Ok(Request {
+            expression: format!("Just ({})", value as i64),
+            type_name: "Maybe Int".into(),
+        })
+    }
 }
 
 fn bound(e: &CExpr) -> Option<i32> {

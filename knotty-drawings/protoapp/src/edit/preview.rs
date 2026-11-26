@@ -18,6 +18,13 @@ pub enum PreviewRequest {
         snapshot: String,
         key: String,
     },
+    /// A drawing control. `index` picks the whip; `key` is the selected object, if any.
+    BeginWhip {
+        session: String,
+        snapshot: String,
+        index: usize,
+        key: Option<String>,
+    },
     Update {
         session: String,
         snapshot: String,
@@ -48,6 +55,8 @@ pub(super) struct PropertyPreview {
 enum PreviewTarget {
     Property(String),
     Geometry,
+    /// Sets the control's own binding; the request never passes through `program`.
+    Whip(crate::whips::Slider),
 }
 
 impl Editor {
@@ -100,6 +109,12 @@ impl Editor {
                 PreviewTarget::Geometry,
                 path,
             ),
+            PreviewRequest::BeginWhip {
+                session,
+                snapshot,
+                index,
+                key,
+            } => self.preview_begin_whip(drawing, session, snapshot, index, key),
             PreviewRequest::Update {
                 session,
                 snapshot,
@@ -160,6 +175,50 @@ impl Editor {
         } else {
             vec![]
         };
+        self.preview_open(drawing, session, snapshot, key, target, transform, frames, kind, path, started)
+    }
+    fn preview_begin_whip(
+        &mut self,
+        drawing: &Drawing,
+        session: String,
+        snapshot: String,
+        index: usize,
+        key: Option<String>,
+    ) -> Result<Value, String> {
+        let started = Instant::now();
+        if self.preview {
+            return Err("Preview mode: source edits are disabled.".into());
+        }
+        if self.active_preview.is_some() {
+            return Err("Another property editor is already open.".into());
+        }
+        if session.is_empty() || session.len() > 128 {
+            return Err("Invalid picker session.".into());
+        }
+        let render = drawing.check_snapshot(&snapshot)?;
+        let whip = render.whips.get(index).ok_or("Unknown drawing control.")?;
+        whip.owned_by(key.as_ref())?;
+        if whip.value.is_none() {
+            return Err(format!("{} cannot be edited right now.", whip.label));
+        }
+        let target = PreviewTarget::Whip(whip.clone());
+        self.preview_open(drawing, session, snapshot, vec![], target, Value::Null, vec![], String::new(), None, started)
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn preview_open(
+        &mut self,
+        drawing: &Drawing,
+        session: String,
+        snapshot: String,
+        key: Vec<usize>,
+        target: PreviewTarget,
+        transform: Value,
+        frames: Vec<Value>,
+        kind: String,
+        path: Option<knot_workbench::traversal::PreparedContext>,
+        started: Instant,
+    ) -> Result<Value, String> {
+        let render = drawing.check_snapshot(&snapshot)?;
         // Keep the checked render exports in the editing contract so the final
         // candidate can be rendered directly after validation.
         let baseline = render.snapshot.clone();
@@ -211,7 +270,16 @@ impl Editor {
         }
         let render = drawing.check_snapshot(snapshot)?;
         let current = render.snapshot.sources()[render.snapshot.entry_path()].clone();
+        // A whip's request is addressed to its own binding; the rest go through the drawing.
+        let head = match &preview.target {
+            PreviewTarget::Whip(whip) => whip.binding.clone(),
+            _ => "program".into(),
+        };
         let (request, argument) = match &preview.target {
+            PreviewTarget::Whip(whip) => (
+                whip.request(value.as_f64().ok_or("This control needs a number.")?)?,
+                None,
+            ),
             PreviewTarget::Property(field) => (
                 property_request(
                     &preview.key,
@@ -302,7 +370,7 @@ impl Editor {
             Some(input) => engine.prepare_call_in(
                 &preview.baseline,
                 context,
-                "program",
+                &head,
                 &request,
                 &input,
                 drawing.roots(),
@@ -311,7 +379,7 @@ impl Editor {
             None => engine.prepare_in(
                 &preview.baseline,
                 context,
-                "program",
+                &head,
                 &request,
                 drawing.roots(),
                 EditLimits::default(),

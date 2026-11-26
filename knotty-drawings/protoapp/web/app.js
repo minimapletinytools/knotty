@@ -585,11 +585,38 @@ function renderGeometryWidget() {
 }
 
 // Scale whips -----------------------------------------------------------------------
-// A scale handle sets its Float binding directly: nothing is reversed through the
-// drawing. The dashed box is what the drag asks for. The drawing is only evaluated
-// on release, and what it produces may differ, so afterwards the asked-for box
-// stays up beside the real one when they disagree.
-let scaleDrag = null, scaleAsked = null;
+// A whip sets its own binding directly: nothing is reversed through the drawing.
+// Every whip previews live through the same session the property editors use.
+// For a scale handle the dashed box is what the drag asks for and the selection
+// box is what the program produced, so the two can be seen to disagree.
+let scaleDrag = null, scaleAsked = null, whipPreview = null;
+function openWhipPreview(index, key, label) {
+  const session = crypto.randomUUID(), preview = { label, error: null };
+  preview.controller = new PaintSession({
+    request: paintRequest, session, snapshot: state.snapshot, key, beginAction: "begin_whip", begin: { index },
+    drawing(data) { ++state.loadSequence; return displayScene(data); },
+    status(message, error) { preview.error = error ? message : null; if (error) { $("edit-status").textContent = message; $("edit-status").classList.add("error"); } },
+    profile(timing) { window.knotPaintProfile.push(timing); if (window.knotPaintProfile.length > 200) window.knotPaintProfile.shift(); },
+  });
+  paintPicker = { controller: preview.controller, session, whip: true };
+  try { sessionStorage.setItem("knotty.paintSession", session); } catch {}
+  return whipPreview = preview;
+}
+// Returns an error message, or null when the preview closed as asked.
+async function closeWhipPreview(keep) {
+  const preview = whipPreview;
+  if (!preview) return null;
+  let finished = await preview.controller.finish(keep), failed = null;
+  if (!finished && keep) {
+    failed = preview.error || "The change could not be applied.";
+    finished = await preview.controller.finish(false); // don't leave a partial preview applied
+  }
+  failed = preview.controller.finishError || failed;
+  try { sessionStorage.removeItem("knotty.paintSession"); } catch {}
+  if (whipPreview === preview) { whipPreview = null; paintPicker = null; }
+  await load();
+  return failed;
+}
 function scaleWhip(key) {
   const index = key === null ? -1 : state.whips.findIndex(w => w.kind === "scale" && w.keys?.includes(key));
   return index < 0 ? null : { index, whip: state.whips[index] };
@@ -598,31 +625,22 @@ function scaleFactor(drag, event) {
   const distance = Math.hypot(event.clientX - drag.centerX, event.clientY - drag.centerY);
   return Math.max(0.05, distance / drag.grip);
 }
-async function applyScaleWhip(index, key, value) {
-  const status = $("edit-status");
-  try {
-    const response = await drawingRequest("/api/whip", {method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({snapshot: state.snapshot, index, key, value})});
-    const result = await response.json();
-    if (!result.ok) throw Error(result.reason);
-    status.textContent = `${state.whips[index].label}: ${formatNumber(value)}.`;
-    status.classList.remove("error");
-    return true;
-  } catch (error) {
-    status.textContent = error.message;
-    status.classList.add("error");
-    return false;
-  } finally {
-    await load();
-  }
+// One value, applied at once: open, pick, accept.
+async function applyWhip(index, key, value, label) {
+  openWhipPreview(index, key, label).controller.pick(value);
+  const failed = await closeWhipPreview(true), status = $("edit-status");
+  status.textContent = failed || `${label}: ${formatNumber(value)}.`;
+  status.classList.toggle("error", Boolean(failed));
+  return !failed;
 }
 function renderScaleWhip() {
   const overlay = $("whip-overlay");
   overlay.replaceChildren();
   const key = state.selected, found = scaleWhip(key), element = found && elementFor(key);
-  if (!element || state.error || paintPicker || geometryDrag || shapeTool) return;
-  const canvas = $("canvas").getBoundingClientRect(), rect = element.getBoundingClientRect();
-  const cx = rect.left + rect.width / 2 - canvas.left, cy = rect.top + rect.height / 2 - canvas.top;
+  if (!element || state.error || (paintPicker && !scaleDrag) || geometryDrag || shapeTool) return;
+  // During a drag the shape itself is live, so the asked-for box keeps the size it started with.
+  const canvas = $("canvas").getBoundingClientRect(), live = element.getBoundingClientRect(), rect = scaleDrag?.rect ?? live;
+  const cx = live.left + live.width / 2 - canvas.left, cy = live.top + live.height / 2 - canvas.top;
   const box = (width, height, cls) => svgPart("rect", {x: cx - width / 2, y: cy - height / 2, width, height, class: cls});
   const asked = scaleAsked?.key === key ? scaleAsked : null;
   if (asked) overlay.append(box(asked.width, asked.height, "whip-asked"));
@@ -645,8 +663,10 @@ function renderScaleWhip() {
     event.preventDefault(); event.stopPropagation();
     const centerX = rect.left + rect.width / 2, centerY = rect.top + rect.height / 2;
     scaleDrag = {key, index: found.index, value: found.whip.value, label: found.whip.label, pointerId: event.pointerId,
+      rect: {width: rect.width, height: rect.height},
       centerX, centerY, grip: Math.max(1, Math.hypot(event.clientX - centerX, event.clientY - centerY)), factor: 1};
     scaleAsked = null;
+    openWhipPreview(found.index, key, found.whip.label);
     $("canvas").setPointerCapture(event.pointerId);
     $("canvas").classList.add("geometry-dragging");
   });
@@ -654,6 +674,7 @@ function renderScaleWhip() {
 function moveScaleDrag(event) {
   if (!scaleDrag || event.pointerId !== scaleDrag.pointerId) return;
   scaleDrag.factor = scaleFactor(scaleDrag, event);
+  whipPreview?.controller.pick(scaleDrag.value * scaleDrag.factor);
   $("edit-status").textContent = `${scaleDrag.label}: ${formatNumber(scaleDrag.value)} → ${formatNumber(scaleDrag.value * scaleDrag.factor)}. Release to apply, Escape to cancel.`;
   $("edit-status").classList.remove("error");
   renderScaleWhip();
@@ -664,13 +685,15 @@ async function finishScaleDrag(keep) {
   scaleDrag = null; suppressCanvasClick = true;
   $("canvas").classList.remove("geometry-dragging");
   if ($("canvas").hasPointerCapture(drag.pointerId)) $("canvas").releasePointerCapture(drag.pointerId);
-  if (!keep || Math.abs(drag.factor - 1) < 0.005) { $("edit-status").textContent = keep ? "" : "Scale cancelled."; renderScaleWhip(); return; }
-  const before = elementFor(drag.key)?.getBoundingClientRect();
-  const applied = await applyScaleWhip(drag.index, drag.key, drag.value * drag.factor);
+  const moved = keep && Math.abs(drag.factor - 1) >= 0.005, value = drag.value * drag.factor;
+  if (moved) whipPreview?.controller.pick(value); // make sure the final position is the one kept
+  const failed = await closeWhipPreview(moved), status = $("edit-status");
+  status.textContent = failed || (moved ? `${drag.label}: ${formatNumber(value)}.` : keep ? "" : "Scale cancelled.");
+  status.classList.toggle("error", Boolean(failed));
   const after = elementFor(drag.key)?.getBoundingClientRect();
-  if (!applied || !before || !after) return;
+  if (failed || !moved || !after) { renderScaleWhip(); return; }
   // Keep the asked-for box only when the drawing settled somewhere else.
-  const width = before.width * drag.factor, height = before.height * drag.factor;
+  const width = drag.rect.width * drag.factor, height = drag.rect.height * drag.factor;
   const off = Math.max(Math.abs(after.width - width) / Math.max(width, 1), Math.abs(after.height - height) / Math.max(height, 1));
   if (off > 0.03) {
     const asked = scaleAsked = {key: drag.key, width, height};
@@ -863,6 +886,8 @@ function nodeGroups(node) {
 }
 
 let savingWhip = false;
+// The slider being dragged. Redrawing the panel would replace it mid-drag.
+let sliding = null;
 
 function drawingControls(controls, title) {
   const section = document.createElement("section");
@@ -888,7 +913,7 @@ function drawingControls(controls, title) {
       input.addEventListener("change", async () => {
         if (savingWhip || !(input.valueAsNumber > 0)) { input.value = whip.value ?? ""; return; }
         savingWhip = true;
-        try { await applyScaleWhip(index, key, input.valueAsNumber); } finally { savingWhip = false; renderProperties(); }
+        try { await applyWhip(index, key, input.valueAsNumber, whip.label); } finally { savingWhip = false; renderProperties(); }
       });
       row.append(label, input);
       section.append(row);
@@ -907,29 +932,25 @@ function drawingControls(controls, title) {
     label.textContent = whip.label;
     count.htmlFor.add(range.id);
     count.value = whip.value ?? "Unavailable";
-    range.addEventListener("input", () => { count.value = range.value; });
+    // Each step previews live; letting go keeps it as one undo step.
+    range.addEventListener("input", () => {
+      count.value = range.value;
+      if (!whipPreview) { openWhipPreview(index, key, whip.label); sliding = { index, id: range.id }; }
+      whipPreview.controller.pick(range.valueAsNumber);
+    });
     range.addEventListener("change", async () => {
-      if (savingWhip) return;
-      const refocus = document.activeElement === range;
+      if (savingWhip || !whipPreview) return;
+      const refocus = document.activeElement === range, value = range.valueAsNumber;
       savingWhip = true;
-      range.disabled = true;
-      const status = $("edit-status");
-      try {
-        const response = await drawingRequest("/api/whip", {method: "POST", headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({snapshot, index, key, value: range.valueAsNumber})});
-        const result = await response.json();
-        if (!result.ok) throw Error(result.reason);
-        status.textContent = "";
-        status.classList.remove("error");
-      } catch (error) {
-        status.textContent = error.message;
-        status.classList.add("error");
-      } finally {
-        savingWhip = false;
-        await load();
-        if (refocus && document.activeElement === document.body && state.whips[index]?.label === whip.label) {
-          $(range.id)?.focus({preventScroll: true});
-        }
+      range.disabled = true; // a key pressed while this saves would otherwise be lost silently
+      whipPreview.controller.pick(value);
+      const failed = await closeWhipPreview(true), status = $("edit-status");
+      sliding = null; savingWhip = false;
+      status.textContent = failed || "";
+      status.classList.toggle("error", Boolean(failed));
+      renderProperties();
+      if (refocus && document.activeElement === document.body && state.whips[index]?.label === whip.label) {
+        $(range.id)?.focus({preventScroll: true});
       }
     });
     row.append(label, count, range);
@@ -939,6 +960,7 @@ function drawingControls(controls, title) {
 }
 
 function renderProperties() {
+  if (sliding && $(sliding.id)) return;
   const container = $("properties");
   const node = state.selected === null ? null : findNode(state.selected);
   container.replaceChildren();

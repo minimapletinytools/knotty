@@ -181,41 +181,8 @@ impl Editor {
                 .whips
                 .get(edit.index)
                 .ok_or("Unknown drawing control.")?;
-            if let Some(keys) = &whip.keys {
-                if !edit.key.as_ref().is_some_and(|key| keys.contains(key)) {
-                    return Err("Select the object that owns this control.".into());
-                }
-            }
-            if whip.kind == "scale" {
-                // A scale handle sets its Float directly; nothing is reversed through the drawing.
-                if whip.value.is_none() || !edit.value.is_finite() || edit.value <= 0.0 {
-                    return Err(format!("{} requires a positive number.", whip.label));
-                }
-                return Ok((
-                    whip.binding.clone(),
-                    Request {
-                        expression: format!("Just ({:?})", edit.value),
-                        type_name: "Maybe Float".into(),
-                    },
-                ));
-            }
-            let whole = edit.value.fract() == 0.0;
-            if whip.value.is_none()
-                || !whole
-                || !(f64::from(whip.min)..=f64::from(whip.max)).contains(&edit.value)
-            {
-                return Err(format!(
-                    "{} requires a value from {} to {}.",
-                    whip.label, whip.min, whip.max
-                ));
-            }
-            Ok((
-                whip.binding.clone(),
-                Request {
-                    expression: format!("Just ({})", edit.value as i64),
-                    type_name: "Maybe Int".into(),
-                },
-            ))
+            whip.owned_by(edit.key.as_ref())?;
+            Ok((whip.binding.clone(), whip.request(edit.value)?))
         });
         match result {
             Ok(()) => json!({"ok":true}),

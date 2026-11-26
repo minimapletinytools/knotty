@@ -954,6 +954,69 @@ program = svg 200 200 ([rect 0 0 200 200] <> dots)
     assert_eq!(std::fs::read_to_string(f.drawing.path()).unwrap(), f.original);
 }
 
+#[test]
+fn whips_preview_like_any_other_edit_and_keep_one_undo_entry() {
+    let mut f = Fixture::source(
+        r#"module Drawing exposing (..)
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+@whip(OnNodes dots (ScaleHandle "Dot scale"))
+scale :: Float
+scale = 1.0
+@whip(IntSlider "Count" 1 8)
+count :: Int
+count = 3
+dotAt :: Int -> Node
+dotAt i = circle (fromIntegral i * 30 + 20) 50 (scale * (4 + fromIntegral i))
+dots :: List Node
+dots = map dotAt (intRange 0 1 (count - 1))
+program = svg 200 200 dots
+"#
+        .into(),
+    );
+    use crate::edit::preview::PreviewRequest;
+    let begin = |f: &mut Fixture, index, key: Option<&str>| {
+        let snapshot = f.snapshot();
+        f.editor.preview(
+            &mut f.drawing,
+            PreviewRequest::BeginWhip { session: "whip".into(), snapshot, index, key: key.map(Into::into) },
+        )
+    };
+    let update = |f: &mut Fixture, value: Value| {
+        let snapshot = f.snapshot();
+        f.editor.preview(&mut f.drawing, PreviewRequest::Update { session: "whip".into(), snapshot, value })
+    };
+    // An anchored control still needs its object; an unanchored one needs none.
+    assert_eq!(begin(&mut f, 0, None)["ok"], false);
+    let opened = begin(&mut f, 0, Some("1"));
+    assert_eq!(opened["ok"], true, "{opened}");
+    for (value, r) in [(1.5, 7.5), (2.0, 10.0)] {
+        let result = update(&mut f, json!(value));
+        assert_eq!(result["ok"], true, "{result}");
+        assert_eq!(f.value("1", "r"), json!(r));
+    }
+    // A rejected value leaves the last good preview showing.
+    assert_eq!(update(&mut f, json!(-1.0))["ok"], false);
+    assert_eq!(f.value("1", "r"), json!(10.0));
+    let cancel = f.editor.preview(&mut f.drawing, PreviewRequest::Cancel { session: "whip".into() });
+    assert_eq!(cancel["ok"], true, "{cancel}");
+    assert_eq!(std::fs::read_to_string(f.drawing.path()).unwrap(), f.original);
+
+    // The slider previews through the same session and accepts as one undo step.
+    assert_eq!(begin(&mut f, 1, None)["ok"], true);
+    for count in [5, 2] {
+        assert_eq!(update(&mut f, json!(count))["ok"], true);
+        assert_eq!(f.drawing.last_good().unwrap().scene["children"].as_array().unwrap().len(), count);
+    }
+    assert_eq!(update(&mut f, json!(2.5))["ok"], false);
+    let accept = f.editor.preview(&mut f.drawing, PreviewRequest::Accept { session: "whip".into() });
+    assert_eq!(accept["ok"], true, "{accept}");
+    assert!(std::fs::read_to_string(f.drawing.path()).unwrap().contains("count = (2)"));
+    let snapshot = f.snapshot();
+    assert_eq!(f.editor.undo(&mut f.drawing, &snapshot)["ok"], true);
+    assert_eq!(std::fs::read_to_string(f.drawing.path()).unwrap(), f.original);
+}
+
 fn save_text(fixture: &mut Fixture, source: &str, coalesce: bool) -> Value {
     let edit = serde_json::from_value(json!({
         "snapshot": fixture.snapshot(), "source": source, "coalesce": coalesce,

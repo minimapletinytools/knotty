@@ -3,13 +3,14 @@
 // One request in flight, with only the latest unsent pointer position retained.
 // Finish waits for that request; Cancel drops unsent picks, OK flushes them.
 class PaintSession {
-  constructor({ request, session, snapshot, key, field, drawing, status, profile, beginAction = "begin" }) {
+  // `begin` adds fields to the opening request, such as a drawing control's index.
+  constructor({ request, session, snapshot, key, field, drawing, status, profile, beginAction = "begin", begin = {} }) {
     Object.assign(this, { request, session, snapshot, drawing, status, profile });
     this.pending = null;
     this.running = null;
     this.finishing = false;
     this.failed = false;
-    this.ready = request({ action: beginAction, session, snapshot, key, field }).then(result => {
+    this.ready = request({ action: beginAction, session, snapshot, key, field, ...begin }).then(result => {
       if (!result.ok) throw new Error(result.reason);
       this.snapshot = result.drawing.snapshot;
       this.began = true;
