@@ -1186,8 +1186,8 @@ mod tests {
         for name in [
             "Types.knot",
             "KnottyDrawings.knot",
-            "DrawingBack.knot",
-            "Requests.knot",
+            "DrawingUnravel.knot",
+            "Constrictions.knot",
         ] {
             std::fs::copy(library().join(name), dir.join(name)).unwrap();
         }
@@ -1253,8 +1253,8 @@ mod tests {
         for name in [
             "Types.knot",
             "KnottyDrawings.knot",
-            "DrawingBack.knot",
-            "Requests.knot",
+            "DrawingUnravel.knot",
+            "Constrictions.knot",
         ] {
             std::fs::copy(library().join(name), dir.join(name)).unwrap();
         }

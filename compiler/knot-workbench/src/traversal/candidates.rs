@@ -109,7 +109,7 @@ pub(super) fn rule_type(values: impl IntoIterator<Item = Ty>, request: &Ty, outp
 // distinction when converting their input request into an exact candidate.
 fn value_policy(value: &Ty, request: &Ty) -> String {
     if let (Ty::Named(v, elements), Ty::Named(r, requests)) = (value, request) {
-        if v == "List" && r == "ListConstraint" && elements.len() == 1 && requests.len() == 1 {
+        if v == "List" && r == "ListConstriction" && elements.len() == 1 && requests.len() == 1 {
             let child = value_policy(&elements[0], &requests[0]);
             return format!("(\\input request -> Prelude.applyListRequest (\\value constraint -> if fits constraint value then Just value else ({child}) {{ value = value, pinned = Nothing }} constraint) input.value request)");
         }

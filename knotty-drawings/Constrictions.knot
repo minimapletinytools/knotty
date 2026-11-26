@@ -1,18 +1,18 @@
-module Requests exposing (..)
+module Constrictions exposing (..)
 
--- Drawing-specific constraints; the engine knows neither field names nor SVG.
+-- Drawing-specific constrictions; the engine knows neither field names nor SVG.
 import Types exposing (..)
 
-type alias FillRequest =
+type alias FillConstriction =
     { paint : Maybe (Paint)
     , opacity : Maybe (Float)
     , rule : Maybe (FillRule)
     }
 
-anyFill :: FillRequest
+anyFill :: FillConstriction
 anyFill = { paint = Nothing, opacity = Nothing, rule = Nothing }
 
-type alias StrokeRequest =
+type alias StrokeConstriction =
     { paint : Maybe (Paint)
     , width : Maybe (Float)
     , opacity : Maybe (Float)
@@ -23,128 +23,128 @@ type alias StrokeRequest =
     , dashOffset : Maybe (Float)
     }
 
-anyStroke :: StrokeRequest
+anyStroke :: StrokeConstriction
 anyStroke = { paint = Nothing, width = Nothing, opacity = Nothing, cap = Nothing, join = Nothing, miterLimit = Nothing, dashes = Nothing, dashOffset = Nothing }
 
-type alias FontRequest =
+type alias FontConstriction =
     { family : Maybe (String)
     , size : Maybe (Float)
     , anchor : Maybe (TextAnchor)
     , baseline : Maybe (DominantBaseline)
     }
 
-anyFont :: FontRequest
+anyFont :: FontConstriction
 anyFont = { family = Nothing, size = Nothing, anchor = Nothing, baseline = Nothing }
 
-type alias CommonRequest =
+type alias CommonConstriction =
     { id : Maybe (Maybe Id)
     , transform : Maybe (Transform)
     , opacity : Maybe (Float)
     , visible : Maybe (Bool)
     }
 
-anyCommon :: CommonRequest
+anyCommon :: CommonConstriction
 anyCommon = { id = Nothing, transform = Nothing, opacity = Nothing, visible = Nothing }
 
-type alias RectRequest =
+type alias RectConstriction =
     { x : Maybe (Float)
     , y : Maybe (Float)
     , width : Maybe (Float)
     , height : Maybe (Float)
     , rx : Maybe (Float)
     , ry : Maybe (Float)
-    , fill : FillRequest
-    , stroke : StrokeRequest
+    , fill : FillConstriction
+    , stroke : StrokeConstriction
     }
 
-anyRect :: RectRequest
+anyRect :: RectConstriction
 anyRect = { x = Nothing, y = Nothing, width = Nothing, height = Nothing, rx = Nothing, ry = Nothing, fill = anyFill, stroke = anyStroke }
 
-type alias CircleRequest =
+type alias CircleConstriction =
     { cx : Maybe (Float)
     , cy : Maybe (Float)
     , r : Maybe (Float)
-    , fill : FillRequest
-    , stroke : StrokeRequest
+    , fill : FillConstriction
+    , stroke : StrokeConstriction
     }
 
-anyCircle :: CircleRequest
+anyCircle :: CircleConstriction
 anyCircle = { cx = Nothing, cy = Nothing, r = Nothing, fill = anyFill, stroke = anyStroke }
 
-type alias EllipseRequest =
+type alias EllipseConstriction =
     { cx : Maybe (Float)
     , cy : Maybe (Float)
     , rx : Maybe (Float)
     , ry : Maybe (Float)
-    , fill : FillRequest
-    , stroke : StrokeRequest
+    , fill : FillConstriction
+    , stroke : StrokeConstriction
     }
 
-anyEllipse :: EllipseRequest
+anyEllipse :: EllipseConstriction
 anyEllipse = { cx = Nothing, cy = Nothing, rx = Nothing, ry = Nothing, fill = anyFill, stroke = anyStroke }
 
-type alias LineRequest =
+type alias LineConstriction =
     { x1 : Maybe (Float)
     , y1 : Maybe (Float)
     , x2 : Maybe (Float)
     , y2 : Maybe (Float)
-    , stroke : StrokeRequest
+    , stroke : StrokeConstriction
     }
 
-anyLine :: LineRequest
+anyLine :: LineConstriction
 anyLine = { x1 = Nothing, y1 = Nothing, x2 = Nothing, y2 = Nothing, stroke = anyStroke }
 
-type alias PolylineRequest =
+type alias PolylineConstriction =
     { points : Maybe (List Point)
     , closed : Maybe (Bool)
-    , fill : FillRequest
-    , stroke : StrokeRequest
+    , fill : FillConstriction
+    , stroke : StrokeConstriction
     }
 
-anyPolyline :: PolylineRequest
+anyPolyline :: PolylineConstriction
 anyPolyline = { points = Nothing, closed = Nothing, fill = anyFill, stroke = anyStroke }
 
-type alias PathRequest =
+type alias PathConstriction =
     { commands : Maybe (List PathCommand)
-    , fill : FillRequest
-    , stroke : StrokeRequest
+    , fill : FillConstriction
+    , stroke : StrokeConstriction
     }
 
-anyPath :: PathRequest
+anyPath :: PathConstriction
 anyPath = { commands = Nothing, fill = anyFill, stroke = anyStroke }
 
-type alias TextRequest =
+type alias TextConstriction =
     { x : Maybe (Float)
     , y : Maybe (Float)
     , content : Maybe (String)
-    , font : FontRequest
-    , fill : FillRequest
-    , stroke : StrokeRequest
+    , font : FontConstriction
+    , fill : FillConstriction
+    , stroke : StrokeConstriction
     }
 
-anyText :: TextRequest
+anyText :: TextConstriction
 anyText = { x = Nothing, y = Nothing, content = Nothing, font = anyFont, fill = anyFill, stroke = anyStroke }
 
-type alias ViewportRequest =
+type alias ViewportConstriction =
     { width : Maybe (Float)
     , height : Maybe (Float)
     , viewBox : Maybe (Maybe ViewBox)
     }
 
-anyViewport :: ViewportRequest
+anyViewport :: ViewportConstriction
 anyViewport = { width = Nothing, height = Nothing, viewBox = Nothing }
 
-type ShapeRequest
+type ShapeConstriction
     = AnyShape
-    | RequestRect RectRequest
-    | RequestCircle CircleRequest
-    | RequestEllipse EllipseRequest
-    | RequestLine LineRequest
-    | RequestPolyline PolylineRequest
-    | RequestPath PathRequest
-    | RequestText TextRequest
+    | RequestRect RectConstriction
+    | RequestCircle CircleConstriction
+    | RequestEllipse EllipseConstriction
+    | RequestLine LineConstriction
+    | RequestPolyline PolylineConstriction
+    | RequestPath PathConstriction
+    | RequestText TextConstriction
 
-instance Constriction ShapeRequest Shape where
+instance Constriction ShapeConstriction Shape where
   fits request actual = case request of
     AnyShape -> True
     RequestRect r -> case actual of
@@ -169,9 +169,9 @@ instance Constriction ShapeRequest Shape where
       Text v -> fits r v
       _ -> False
 
-type KindRequest = AnyKind | GroupKind | ViewportKind ViewportRequest
+type KindConstriction = AnyKind | GroupKind | ViewportKind ViewportConstriction
 
-instance Constriction KindRequest ContainerKind where
+instance Constriction KindConstriction ContainerKind where
   fits request actual = case request of
     AnyKind -> True
     GroupKind -> case actual of
@@ -181,18 +181,18 @@ instance Constriction KindRequest ContainerKind where
       Viewport v -> fits r v
       _ -> False
 
-type alias ContainerRequest =
-    { kind : KindRequest
-    , common : CommonRequest
-    , children : ListConstraint NodeRequest
+type alias ContainerConstriction =
+    { kind : KindConstriction
+    , common : CommonConstriction
+    , children : ListConstriction NodeConstriction
     }
 
-type NodeRequest
+type NodeConstriction
     = AnyNode
-    | ShapeNodeRequest CommonRequest ShapeRequest
-    | ContainerNodeRequest ContainerRequest
+    | ShapeNodeRequest CommonConstriction ShapeConstriction
+    | ContainerNodeRequest ContainerConstriction
 
-instance Constriction NodeRequest Node where
+instance Constriction NodeConstriction Node where
   fits request actual = case request of
     AnyNode -> True
     ShapeNodeRequest common geometry -> case actual of
@@ -202,12 +202,12 @@ instance Constriction NodeRequest Node where
       ContainerNode c -> fits r c
       _ -> False
 
-anyContainer :: ContainerRequest
+anyContainer :: ContainerConstriction
 anyContainer = { kind = AnyKind, common = anyCommon, children = AnyRemainder }
 
 -- Positions are revision-local. An out-of-range request fails validation;
--- negative indices are rejected before building a constraint.
-nodeAt :: List Int -> NodeRequest -> Maybe ContainerRequest
+-- negative indices are rejected before building a constriction.
+nodeAt :: List Int -> NodeConstriction -> Maybe ContainerConstriction
 nodeAt path request = case path of
   [] -> Nothing
   index : rest ->
@@ -218,7 +218,7 @@ nodeAt path request = case path of
           Nothing -> Nothing
           Just child -> Just { anyContainer | children = slot index (ContainerNodeRequest child) }
 
-slot :: Int -> NodeRequest -> ListConstraint NodeRequest
+slot :: Int -> NodeConstriction -> ListConstriction NodeConstriction
 slot index request =
   if index <= 0 then Prepend request AnyRemainder
   else Prepend AnyNode (slot (index - 1) request)

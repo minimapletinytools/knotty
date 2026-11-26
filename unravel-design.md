@@ -188,7 +188,7 @@ For example, the default `map` unravel has the following signature
 ```knot
 unravel_map :: Constriction sIn a =>
   Unraveler a b sIn sOut -> Feed (List a) ->
-  ListConstraint sOut -> Maybe (ListConstraint sIn)
+  ListConstriction sOut -> Maybe (ListConstriction sIn)
 ```
 
 Multiple arguments are supported.
@@ -224,7 +224,7 @@ other constriction types. Its expansion is:
 ```text
 Sensitivity { f : T, ... } = { f : Sensitivity T, ... }
 Sensitivity (T1, ..., Tn)  = (Sensitivity T1, ..., Sensitivity Tn)
-Sensitivity (List T)      = ListConstraint (Sensitivity T)
+Sensitivity (List T)      = ListConstriction (Sensitivity T)
 Sensitivity primitive    = Maybe primitive
 ```
 
@@ -280,8 +280,8 @@ instance Eq t => Constriction (Maybe t) t
 instance Eq t => Constriction (List t) t
 
 -- see below
-type ListConstraint s = AnyRemainder | ExactEnd | Prepend s (ListConstraint s)
-instance Constriction s t => Constriction (ListConstraint s) (List t)
+type ListConstriction s = AnyRemainder | ExactEnd | Prepend s (ListConstriction s)
+instance Constriction s t => Constriction (ListConstriction s) (List t)
 
 ```
 

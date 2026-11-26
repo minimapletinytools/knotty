@@ -2,8 +2,8 @@ module ExampleDrawing exposing (..)
 
 import KnottyDrawings exposing (..)
 import Types exposing (..)
-import DrawingBack
-import Requests
+import DrawingUnravel
+import Constrictions
 
 pageWidth :: Float
 pageWidth = 210
@@ -158,7 +158,7 @@ gradient tint nodes =
                 in if fill then set_fill color node else set_stroke color node
     in if tint == (0, 0, 0) then nodes else map recolor nodes
 
-🧶gradient :: (DrawingBack.Feed Tint, DrawingBack.Feed (List Node)) -> ListConstraint Requests.NodeRequest -> Maybe (Maybe Tint, ListConstraint Requests.NodeRequest)
+🧶gradient :: (DrawingUnravel.Feed Tint, DrawingUnravel.Feed (List Node)) -> ListConstriction Constrictions.NodeConstriction -> Maybe (Maybe Tint, ListConstriction Constrictions.NodeConstriction)
 🧶gradient (tint, nodes) request =
     let
         walk values wanted = case (wanted, values) of
@@ -167,22 +167,22 @@ gradient tint nodes =
             (Prepend head tail, node : rest) -> do
                 (next, residual) <- gradientRequest tint.value node head
                 (others, more) <- walk rest tail
-                shared <- DrawingBack.merge next others
+                shared <- DrawingUnravel.merge next others
                 pure (shared, Prepend residual more)
             _ -> Nothing
     in walk nodes.value request
 
-gradientRequest :: Tint -> Node -> Requests.NodeRequest -> Maybe (Maybe Tint, Requests.NodeRequest)
+gradientRequest :: Tint -> Node -> Constrictions.NodeConstriction -> Maybe (Maybe Tint, Constrictions.NodeConstriction)
 gradientRequest (dh, ds, _) node request = case (request, gradientPaint node) of
-    (Requests.ShapeNodeRequest common shape, Just (fill, original)) ->
-        let (paint, rest) = if fill then DrawingBack.fillPaint shape else DrawingBack.strokePaint shape
+    (Constrictions.ShapeNodeRequest common shape, Just (fill, original)) ->
+        let (paint, rest) = if fill then DrawingUnravel.fillPaint shape else DrawingUnravel.strokePaint shape
         in case paint of
             Just (Solid target) ->
                 let (h, s, l) = colorHsl original
                     (th, ts, tl) = colorHsl target
                     hue = if ts == 0 then dh else th - h
                     sat = if tl == 0 || tl == 1 then ds else ts - s
-                in Just (Just (hue, sat, tl - l), Requests.ShapeNodeRequest common rest)
+                in Just (Just (hue, sat, tl - l), Constrictions.ShapeNodeRequest common rest)
             _ -> Just (Nothing, request)
     _ -> Just (Nothing, request)
 

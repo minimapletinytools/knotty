@@ -68,7 +68,7 @@ impl ShapeGeometry {
             .map(|(name, value)| format!("{name} = Just ({})", FieldValue::Float(*value).source()))
             .collect::<Vec<_>>()
             .join(", ");
-        Ok(format!("Requests.ShapeNodeRequest Requests.anyCommon (Requests.Request{constructor} (let c = Requests.any{constructor} in {{ c | {fields} }}))"))
+        Ok(format!("Constrictions.ShapeNodeRequest Constrictions.anyCommon (Constrictions.Request{constructor} (let c = Constrictions.any{constructor} in {{ c | {fields} }}))"))
     }
 }
 
@@ -134,7 +134,7 @@ impl Editor {
             let mut bindings = format!("tail0 = Prepend ({shape}) ExactEnd\n");
             for i in 0..count {
                 bindings.push_str(&format!(
-                    "tail{} = Prepend Requests.AnyNode tail{i}\n",
+                    "tail{} = Prepend Constrictions.AnyNode tail{i}\n",
                     i + 1
                 ));
             }
@@ -143,7 +143,7 @@ impl Editor {
             for (depth, index) in key.iter().enumerate().rev() {
                 container = container_request(
                     &frames[depth],
-                    &format!("Requests.slot {index} (Requests.ContainerNodeRequest ({container}))"),
+                    &format!("Constrictions.slot {index} (Constrictions.ContainerNodeRequest ({container}))"),
                 )?;
             }
             let request = Request {
@@ -154,7 +154,7 @@ impl Editor {
                         .map(|l| format!("  {l}\n"))
                         .collect::<String>()
                 ),
-                type_name: "Requests.ContainerRequest".into(),
+                type_name: "Constrictions.ContainerConstriction".into(),
             };
             if self.engine.is_none() {
                 self.engine = Some(new_engine().map_err(|e| e.to_string())?);
@@ -203,7 +203,7 @@ fn container_request(node: &Value, children: &str) -> Result<String, String> {
     let mut fields = vec![
         format!("children = ({children})"),
         format!(
-            "common = (let c = Requests.anyCommon in {{ c | transform = Just ({transform}) }})"
+            "common = (let c = Constrictions.anyCommon in {{ c | transform = Just ({transform}) }})"
         ),
     ];
     if node["kind"] == "svg" {
@@ -217,12 +217,12 @@ fn container_request(node: &Value, children: &str) -> Result<String, String> {
             })
             .collect::<Result<Vec<_>, String>>()?;
         fields.push(format!(
-            "kind = Requests.ViewportKind (let v = Requests.anyViewport in {{ v | {} }})",
+            "kind = Constrictions.ViewportKind (let v = Constrictions.anyViewport in {{ v | {} }})",
             viewport.join(", ")
         ));
     }
     Ok(format!(
-        "let c = Requests.anyContainer in {{ c | {} }}",
+        "let c = Constrictions.anyContainer in {{ c | {} }}",
         fields.join(", ")
     ))
 }

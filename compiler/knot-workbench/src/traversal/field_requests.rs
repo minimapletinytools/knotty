@@ -4,7 +4,7 @@ use super::*;
 
 pub(super) fn payload(ty: &Ty) -> Option<&Ty> {
     match ty {
-        Ty::Named(name, args) if name == "FieldRequest" && args.len() == 1 => Some(&args[0]),
+        Ty::Named(name, args) if name == "FieldConstriction" && args.len() == 1 => Some(&args[0]),
         _ => None,
     }
 }

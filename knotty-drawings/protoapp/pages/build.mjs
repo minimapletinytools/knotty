@@ -24,7 +24,7 @@ await build({ entryPoints: ["pages/runtime.worker.js"], bundle: true, format: "e
   outfile: path.join(assets, "runtime.worker.js") });
 execFileSync("cargo", ["build", "--locked", "--release", "--lib", "--target", "wasm32-wasip1"], { stdio: "inherit" });
 await cp("target/wasm32-wasip1/release/knottydrawings.wasm", path.join(assets, "drawing.wasm"));
-const names = ["KnottyDrawings", "DrawingBack", "Requests", "Scene", "Types"];
+const names = ["KnottyDrawings", "DrawingUnravel", "Constrictions", "Scene", "Types"];
 const libs = await Promise.all(names.map(async name => [name + ".knot", await text("../" + name + ".knot")]));
 await writeFile(path.join(assets, "libraries.json"), JSON.stringify(Object.fromEntries(libs)));
 const drawingHtml = await text("web/index.html");

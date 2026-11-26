@@ -2,7 +2,7 @@ module LanternWaddle exposing (..)
 
 import KnottyDrawings exposing (..)
 import Types exposing (..)
-import DrawingBack exposing (Feed)
+import DrawingUnravel exposing (Feed)
 
 -- Clear the selection to invite chicks, or select the moon to change the snow.
 -- Edit a scarf's fill or a lantern's radius in Properties to change the whole family.

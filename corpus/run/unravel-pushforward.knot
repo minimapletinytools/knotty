@@ -48,8 +48,8 @@ pushforward2 f left right =
       _ -> Nothing
   }
 
-plusBack :: (Feed Float, Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
-plusBack (left, right) target = case target of
+🧶plus :: (Feed Float, Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
+🧶plus (left, right) target = case target of
   Nothing -> Just (Nothing, Nothing)
   Just wanted -> case (left.pinned, right.pinned) of
     (Nothing, _) ->
@@ -59,8 +59,8 @@ plusBack (left, right) target = case target of
     (Just a, Just b) ->
       if a + b == wanted then Just (Just a, Just b) else Nothing
 
-timesBack :: (Feed Float, Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
-timesBack (left, right) target = case target of
+🧶times :: (Feed Float, Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
+🧶times (left, right) target = case target of
   Nothing -> Just (Nothing, Nothing)
   Just wanted -> case (left.pinned, right.pinned) of
     (Nothing, _) ->
@@ -98,16 +98,16 @@ solvePair f back left right target = do
 -- result = scaled + offset; doubled = scaled * 2
 -- Requests: doubled = 44 first, then result = 40.
 meetingPoint = do
-  (wantedScaled, doubledFactor) <- solvePair (*) timesBack
+  (wantedScaled, doubledFactor) <- solvePair (*) 🧶times
     (freeState 20.0 20.0) (freeState 2.0 2.0) (Just 44.0)
-  (newBase, scaledFactor) <- solvePair (*) timesBack
+  (newBase, scaledFactor) <- solvePair (*) 🧶times
     (freeState 10.0 10.0) (freeState 2.0 2.0) (Just wantedScaled)
   let baseState = fixedState 10.0 newBase
       multiplierState = fixedState 2.0 scaledFactor
       scaledState = pushforward2 (*) baseState multiplierState
       offsetState = pushforward2 (+) baseState (freeState 5.0 5.0)
-  (keptScaled, wantedOffset) <- solvePair (+) plusBack scaledState offsetState (Just 40.0)
-  (keptBase, newConstant) <- solvePair (+) plusBack
+  (keptScaled, wantedOffset) <- solvePair (+) 🧶plus scaledState offsetState (Just 40.0)
+  (keptBase, newConstant) <- solvePair (+) 🧶plus
     baseState (freeState 5.0 5.0) (Just wantedOffset)
   let scaled = keptBase * scaledFactor
       offset = keptBase + newConstant

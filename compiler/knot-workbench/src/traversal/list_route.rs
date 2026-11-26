@@ -47,7 +47,7 @@ impl Walker<'_> {
             return Ok(false);
         };
         if list != "List"
-            || constraint != "ListConstraint"
+            || constraint != "ListConstriction"
             || field_requests::payload(head).is_some()
         {
             return Ok(false);

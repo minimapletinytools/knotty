@@ -76,7 +76,7 @@ pub fn new_engine() -> Result<SourceEditor, EditError> {
     Ok(SourceEditor::new()?.with_constructor_rules(vec![
         ConstructorRule {
             constructor: knot_core::prelude(":"),
-            expression: "DrawingBack.unravelShapeAdditions".into(),
+            expression: "DrawingUnravel.unravelShapeAdditions".into(),
         },
         ConstructorRule {
             constructor: knot_core::prelude(":"),
@@ -87,28 +87,28 @@ pub fn new_engine() -> Result<SourceEditor, EditError> {
                 module: vec!["Types".into()],
                 name: "ShapeNode".into(),
             },
-            expression: "DrawingBack.unravelShapeNode".into(),
+            expression: "DrawingUnravel.unravelShapeNode".into(),
         },
         ConstructorRule {
             constructor: knot_core::GlobalName {
                 module: vec!["Types".into()],
                 name: "Circle".into(),
             },
-            expression: "DrawingBack.unravelCircleShape".into(),
+            expression: "DrawingUnravel.unravelCircleShape".into(),
         },
         ConstructorRule {
             constructor: knot_core::GlobalName {
                 module: vec!["Types".into()],
                 name: "Rect".into(),
             },
-            expression: "DrawingBack.unravelRectShape".into(),
+            expression: "DrawingUnravel.unravelRectShape".into(),
         },
         ConstructorRule {
             constructor: knot_core::GlobalName {
                 module: vec!["Types".into()],
                 name: "Ellipse".into(),
             },
-            expression: "DrawingBack.unravelEllipseShape".into(),
+            expression: "DrawingUnravel.unravelEllipseShape".into(),
         },
     ]))
 }

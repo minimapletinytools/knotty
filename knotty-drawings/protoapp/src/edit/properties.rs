@@ -96,12 +96,12 @@ pub(super) fn request_in_frame(
         geometry.push(format!("{group} = ({})", updated(default, &fields)));
     }
     let common = updated("Common", &common);
-    let mut container = format!("let c = Requests.anyContainer in {{ c | common = ({common}) }}");
+    let mut container = format!("let c = Constrictions.anyContainer in {{ c | common = ({common}) }}");
     let mut node = if matches!(kind, "svg" | "group") {
         if !geometry.is_empty() {
-            container = format!("let c = Requests.anyContainer in {{ c | common = ({common}), kind = Requests.ViewportKind ({}) }}", updated("Viewport", &geometry));
+            container = format!("let c = Constrictions.anyContainer in {{ c | common = ({common}), kind = Constrictions.ViewportKind ({}) }}", updated("Viewport", &geometry));
         }
-        format!("Requests.ContainerNodeRequest ({container})")
+        format!("Constrictions.ContainerNodeRequest ({container})")
     } else {
         let shape = match kind {
             "rect" => "Rect",
@@ -114,11 +114,11 @@ pub(super) fn request_in_frame(
             _ => unreachable!(),
         };
         let geometry = if geometry.is_empty() {
-            "Requests.AnyShape".into()
+            "Constrictions.AnyShape".into()
         } else {
-            format!("Requests.Request{shape} ({})", updated(shape, &geometry))
+            format!("Constrictions.Request{shape} ({})", updated(shape, &geometry))
         };
-        format!("Requests.ShapeNodeRequest ({common}) ({geometry})")
+        format!("Constrictions.ShapeNodeRequest ({common}) ({geometry})")
     };
     if key.is_empty() && !matches!(kind, "svg" | "group") {
         return Err("The drawing root must be a container.".into());
@@ -126,7 +126,7 @@ pub(super) fn request_in_frame(
     for (depth, index) in key.iter().enumerate().rev() {
         let mut children = format!("Prepend ({node}) AnyRemainder");
         for _ in 0..*index {
-            children = format!("Prepend Requests.AnyNode ({children})");
+            children = format!("Prepend Constrictions.AnyNode ({children})");
         }
         let mut frame_fields = vec![format!("children = {children}")];
         if let Some(frame) = frames.get(depth) {
@@ -147,29 +147,29 @@ pub(super) fn request_in_frame(
                     ));
                 }
                 frame_fields.push(format!(
-                    "kind = Requests.ViewportKind ({})",
+                    "kind = Constrictions.ViewportKind ({})",
                     updated("Viewport", &viewport)
                 ));
             }
         }
         container = format!(
-            "let c = Requests.anyContainer in {{ c | {} }}",
+            "let c = Constrictions.anyContainer in {{ c | {} }}",
             frame_fields.join(", ")
         );
-        node = format!("Requests.ContainerNodeRequest ({container})");
+        node = format!("Constrictions.ContainerNodeRequest ({container})");
     }
     Ok(Request {
         expression: container,
-        type_name: "Requests.ContainerRequest".into(),
+        type_name: "Constrictions.ContainerConstriction".into(),
     })
 }
 
 fn updated(default: &str, fields: &[String]) -> String {
     if fields.is_empty() {
-        format!("Requests.any{default}")
+        format!("Constrictions.any{default}")
     } else {
         format!(
-            "let r = Requests.any{default} in {{ r | {} }}",
+            "let r = Constrictions.any{default} in {{ r | {} }}",
             fields.join(", ")
         )
     }

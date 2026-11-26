@@ -406,7 +406,7 @@ interface Constriction s t where
 Builtins: `Eq t => Constriction t t` (exact), `Constriction (Maybe t) t`
 (optional exact), and `Constriction (List t) t` (alternatives); the latter two also
 require `Eq t`. Authors can add relations such as
-`Constriction s t => Constriction (ListConstraint s) (List t)`.
+`Constriction s t => Constriction (ListConstriction s) (List t)`.
 
 The compiler also supplies fieldwise `Constriction` for equal-arity tuples and closed
 records with exactly matching field names, recursively using component relations.

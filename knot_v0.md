@@ -66,7 +66,7 @@ cover reverse editing. The compiler loads the [bundled Prelude](compiler/knot-ca
   Prelude `map` preserves length and `growMap` opts into growth from the element type's `Default`. Editing
   already-supplied callback arguments and callbacks that themselves accept functions are deferred.
 - The design specifies `Maybe T` as the default sensitivity for primitives and
-  `ListConstraint` for lists. The bundled Prelude still declares `Sensitivity`
+  `ListConstriction` for lists. The bundled Prelude still declares `Sensitivity`
   as opaque. Automatic derivation and `ToSensitivity` / `FromSensitivity` dispatch
   remain pending. The source editor supports explicit one-step request adapters.
 - The [drawing app](README.md#run-locally) implements `@whip` sliders

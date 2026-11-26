@@ -13,7 +13,7 @@ For example, a constructor `Pair :: a -> b -> Pair a b` has a rule shaped like:
 
 ```knot
 -- Schematic: request types are chosen by the rule author.
-pairBack :: (Feed a, Feed b) -> sOut -> Maybe (sA, sB)
+🧶pair :: (Feed a, Feed b) -> sOut -> Maybe (sA, sB)
 ```
 
 Its input requests require the corresponding `Constriction` relations. Constructor
@@ -30,10 +30,10 @@ use `ProductRule` with per-field feeds (alphabetical for records); the drawing
 app uses `ConstructorRule`. Exact nominal defaults share rule checking/execution,
 with variant changes handed to the engine replacement boundary.
 
-## Keep FieldRequest, make it general
+## Keep FieldConstriction, make it general
 
 ```knot
-type FieldRequest s = NoRequest | RequestField s
+type FieldConstriction s = NoRequest | RequestField s
 ```
 
 This remains useful when a constraint has no unconstrained case of its own:
@@ -41,7 +41,7 @@ This remains useful when a constraint has no unconstrained case of its own:
 It must work through the unified unravel framework, not a separate decomposer-only
 result convention. Ordinary requests remain valid without this wrapper.
 
-Implemented: `Constriction s a => Constriction (FieldRequest s) a`.
+Implemented: `Constriction s a => Constriction (FieldConstriction s) a`.
 `NoRequest` accepts any value; `RequestField s` checks `fits s`. Materialization
 returns `Nothing` for `NoRequest`, otherwise delegates to the inner request.
 Ordinary rules, product fields, output requests and generated callbacks unwrap it.
@@ -52,7 +52,7 @@ or final output validation. Custom instances overriding this wrapper now conflic
 
 Provide engine-generated default unravel rules for record construction/fields and
 tuples, using the same checked contract, dispatch and validation as author rules.
-Their requests may contain `FieldRequest` per field; this is not a second framework.
+Their requests may contain `FieldConstriction` per field; this is not a second framework.
 
 Concrete record request types can already be written in Knot. What Knot cannot
 currently express is a generic transformation over an arbitrary record's fields
@@ -68,12 +68,12 @@ unravelers use `Eq a` and ordinary `Maybe a` input constraints:
 
 ```knot
 -- Default generated callback contract:
-callbackBack :: Eq a => Feed a -> sOut -> Maybe (Maybe a)
+🧶callback :: Eq a => Feed a -> sOut -> Maybe (Maybe a)
 
 -- Generic map rule remains parameterized by the callback's constraint types:
-mapBack :: Constriction sIn a =>
+🧶map :: Constriction sIn a =>
   Unraveler a b sIn sOut -> Feed (List a) ->
-  ListConstraint sOut -> Maybe (ListConstraint sIn)
+  ListConstriction sOut -> Maybe (ListConstriction sIn)
 ```
 
 For the generated default, `sIn = Maybe a`: outer `Nothing` means failure,
@@ -108,7 +108,7 @@ and selectors are removed from code, examples and current implementation docs.
   engine protocol. Keep source locations and reconstruction
   in the engine. Decide standard list/product materialization policies explicitly.
 - Generate recursive `Sensitivity` request types and validators for records,
-  arbitrary tuples and ADTs; use `ListConstraint` for lists. Specify generated
+  arbitrary tuples and ADTs; use `ListConstriction` for lists. Specify generated
   constructor names, recursive derivation, opaque leaves and instance coherence.
 - Add fallible sensitivity adapters only after direct rule matching fails. Enforce
   the converted-request-implies-original law on actual candidates by validating
@@ -159,9 +159,9 @@ their selected dictionaries and captures. Function values need no `Eq` or
 The default Prelude `map` rule stays generic:
 
 ```knot
-mapBack :: Constriction sIn a =>
+🧶map :: Constriction sIn a =>
   Unraveler a b sIn sOut -> Feed (List a) ->
-  ListConstraint sOut -> Maybe (ListConstraint sIn)
+  ListConstriction sOut -> Maybe (ListConstriction sIn)
 ```
 
 Generated unary callback unravelers use `sIn = Maybe a` and require `Eq a`.
@@ -189,10 +189,10 @@ both requests and pins, and validate the actual forward result.
 For example, a binary callback can be passed to `zipWith`:
 
 ```knot
-zipWithBack :: (Constriction sA a, Constriction sB b) =>
+🧶zipWith :: (Constriction sA a, Constriction sB b) =>
   Unraveler2 a b c sA sB sOut ->
   (Feed (List a), Feed (List b)) ->
-  ListConstraint sOut -> Maybe (ListConstraint sA, ListConstraint sB)
+  ListConstriction sOut -> Maybe (ListConstriction sA, ListConstriction sB)
 ```
 
 The rule can invoke `callback.unravel (leftFeed, rightFeed) elementRequest` and
@@ -223,7 +223,7 @@ Generated multiargument companions return a tuple of optional exact requests:
 
 ```knot
 -- Generated default for a -> b -> c:
-callbackBack :: (Eq a, Eq b) =>
+🧶callback :: (Eq a, Eq b) =>
   (Feed a, Feed b) -> sOut -> Maybe (Maybe a, Maybe b)
 ```
 
@@ -287,10 +287,10 @@ For example, a rule can forward these capabilities without new runtime syntax:
 useHigher :: ((a -> b) -> c -> d) -> (a -> b) -> c -> d
 useHigher higher callback x = higher callback x
 
-useHigherBack ::
+🧶useHigher ::
   HigherUnraveler a b c d sA sB sC sD ->
   Unraveler a b sA sB -> Feed c -> sD -> Maybe sC
-useHigherBack higher callback input request =
+🧶useHigher higher callback input request =
   higher.unravel callback input request
 ```
 
@@ -354,7 +354,7 @@ with the normal runtime limits and final atomic source-edit validation.
 
 - [x] Direct matches follow attachment order.
 - [x] Instance-owned materialization, including structural products and lists.
-- [x] General `FieldRequest` validation and lazy no-demand routing.
+- [x] General `FieldConstriction` validation and lazy no-demand routing.
 - [x] Shared constructor/product/cons rule checking and execution, including
   per-field product rules and exact nominal defaults.
 - [x] Unary and multiargument generated companions return ordinary `Maybe` requests.
@@ -381,7 +381,7 @@ Settled decisions:
 - Supplied callback arguments stay fixed for now. Function-type unravels are a
   future design direction for lifting this accepted limitation.
 - Conversion failure is final; do not retry another conversion or rule.
-- Apps default to `Sensitivity T` (`Maybe T` for primitives), and `ListConstraint`
+- Apps default to `Sensitivity T` (`Maybe T` for primitives), and `ListConstriction`
   for lists. Rules may choose other constriction types. Recursive ADT sensitivity
   has constructor-shaped requests; derivation fails for function or opaque fields.
   The brief design clarification is merged in PR #102; generation remains to implement.

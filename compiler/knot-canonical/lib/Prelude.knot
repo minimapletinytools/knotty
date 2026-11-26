@@ -143,7 +143,7 @@ until p f x = if p x then x else until p f (f x)
 
 -- Interfaces -----------------------------------------------------------------
 
--- A relation between an author-chosen constraint and a value type.
+-- A relation between an author-chosen constriction and a value type.
 interface Constriction s t where
   fits :: s -> t -> Bool
   materialize :: s -> Maybe t
@@ -154,7 +154,7 @@ instance Eq t => Constriction t t where
   materialize expected = Just expected
 
 instance Eq t => Constriction (Maybe t) t where
-  fits constraint actual = case constraint of
+  fits constriction actual = case constriction of
     Nothing -> True
     Just expected -> expected == actual
   materialize request = request
@@ -171,32 +171,32 @@ instance Eq t => Constriction (List t) t where
 interface Default a where
   default :: a
 
--- Optional demand for any input, even when its constraint has no wildcard.
+-- Optional demand for any input, even when its constriction has no wildcard.
 -- This is an explicit wrapper, not an implicit conversion.
-type FieldRequest s = NoRequest | RequestField s
+type FieldConstriction s = NoRequest | RequestField s
 
-instance Constriction s a => Constriction (FieldRequest s) a where
+instance Constriction s a => Constriction (FieldConstriction s) a where
   fits request actual = case request of
     NoRequest -> True
-    RequestField constraint -> fits constraint actual
+    RequestField constriction -> fits constriction actual
   materialize request = case request of
     NoRequest -> Nothing
-    RequestField constraint -> materialize constraint
+    RequestField constriction -> materialize constriction
 
-fitsFieldRequest :: Constriction s a => FieldRequest s -> a -> Bool
-fitsFieldRequest request actual = case request of
+fitsFieldConstriction :: Constriction s a => FieldConstriction s -> a -> Bool
+fitsFieldConstriction request actual = case request of
   NoRequest -> True
-  RequestField constraint -> fits constraint actual
+  RequestField constriction -> fits constriction actual
 
 -- Shared reverse-edit protocol. A wildcard tail never forces the remaining list.
-type ListConstraint s
+type ListConstriction s
     = AnyRemainder
     | ExactEnd
-    | Prepend s (ListConstraint s)
+    | Prepend s (ListConstriction s)
     deriving (Eq, Show)
 
-instance Constriction s t => Constriction (ListConstraint s) (List t) where
-  fits constraint actual = case constraint of
+instance Constriction s t => Constriction (ListConstriction s) (List t) where
+  fits constriction actual = case constriction of
     AnyRemainder -> True
     ExactEnd -> case actual of
       [] -> True
@@ -204,7 +204,7 @@ instance Constriction s t => Constriction (ListConstraint s) (List t) where
     Prepend head tail -> case actual of
       [] -> False
       x : xs -> fits head x && fits tail xs
-  materialize constraint = case constraint of
+  materialize constriction = case constriction of
     AnyRemainder -> Just []
     ExactEnd -> Just []
     Prepend head tail -> do
@@ -1218,7 +1218,7 @@ pinAllows input request = case input.pinned of
   Just fixed -> fits request fixed
 
 -- Used by identity and by supported literal/constructor materializers. This
--- translates a constraint; it does not print source or synthesize a candidate.
+-- translates a constriction; it does not print source or synthesize a candidate.
 🧶id :: Constriction s a => { value : a, pinned : Maybe a } -> s -> Maybe s
 🧶id input request =
   if pinAllows input request then Just request else Nothing
@@ -1359,7 +1359,7 @@ integralCandidate target =
 -- Split only the demanded prefix. ExactEnd cannot delete an existing cell;
 -- shape-changing materialization is a separate operation. A wildcard never
 -- examines the remaining left list.
-splitListRequest :: List a -> ListConstraint s -> Maybe (ListConstraint s, ListConstraint s)
+splitListRequest :: List a -> ListConstriction s -> Maybe (ListConstriction s, ListConstriction s)
 splitListRequest left request = case request of
   AnyRemainder -> Just (AnyRemainder, AnyRemainder)
   _ -> case left of
@@ -1371,7 +1371,7 @@ splitListRequest left request = case request of
         pure (Prepend r l, remaining)
       AnyRemainder -> Just (AnyRemainder, AnyRemainder)
 
-matchesListShape :: List a -> ListConstraint s -> Bool
+matchesListShape :: List a -> ListConstriction s -> Bool
 matchesListShape values request = case request of
   AnyRemainder -> True
   ExactEnd -> case values of
@@ -1381,14 +1381,14 @@ matchesListShape values request = case request of
     [] -> False
     _ : rest -> matchesListShape rest more
 
-🧶appendList :: Constriction s a => ({ value : List a, pinned : Maybe (List a) }, { value : List a, pinned : Maybe (List a) }) -> ListConstraint s -> Maybe (ListConstraint s, ListConstraint s)
+🧶appendList :: Constriction s a => ({ value : List a, pinned : Maybe (List a) }, { value : List a, pinned : Maybe (List a) }) -> ListConstriction s -> Maybe (ListConstriction s, ListConstriction s)
 🧶appendList (left, right) request = do
   (l, r) <- splitListRequest (effectiveFeed left) request
   if matchesListShape (effectiveFeed right) r
      && pinAllows left l && pinAllows right r
   then Just (l, r) else Nothing
 
-🧶cons :: Eq a => ({ value : a, pinned : Maybe a }, { value : List a, pinned : Maybe (List a) }) -> ListConstraint (Maybe a) -> Maybe (Maybe a, ListConstraint (Maybe a))
+🧶cons :: Eq a => ({ value : a, pinned : Maybe a }, { value : List a, pinned : Maybe (List a) }) -> ListConstriction (Maybe a) -> Maybe (Maybe a, ListConstriction (Maybe a))
 🧶cons (head, tail) request = case request of
   AnyRemainder -> Just (Nothing, AnyRemainder)
   ExactEnd -> Nothing
@@ -1414,8 +1414,8 @@ solveStringRight _ target prefix =
 -- Higher-order defaults receive an explicitly selected companion. Automatic
 -- companion attachment is separate from these executable translation functions.
 -- 🧶mapWith also works on prepared growth drafts; it never creates fresh values.
-🧶mapWith :: (a -> sOut -> Maybe sIn) -> List a -> ListConstraint sOut -> Maybe (ListConstraint sIn)
-🧶mapWith backF values request = case request of
+🧶mapWith :: (a -> sOut -> Maybe sIn) -> List a -> ListConstriction sOut -> Maybe (ListConstriction sIn)
+🧶mapWith ruleF values request = case request of
   AnyRemainder -> Just AnyRemainder
   ExactEnd -> case values of
     [] -> Just ExactEnd
@@ -1423,23 +1423,23 @@ solveStringRight _ target prefix =
   Prepend r more -> case values of
     [] -> Nothing
     x : xs -> do
-      inputRequest <- backF x r
-      tailRequest <- 🧶mapWith backF xs more
+      inputRequest <- ruleF x r
+      tailRequest <- 🧶mapWith ruleF xs more
       pure (Prepend inputRequest tailRequest)
 
-🧶mapListWith :: Constriction sIn a => ({ value : a, pinned : Maybe a } -> sOut -> Maybe sIn) -> { value : List a, pinned : Maybe (List a) } -> ListConstraint sOut -> Maybe (ListConstraint sIn)
-🧶mapListWith backF input request =
-  let back x r =
+🧶mapListWith :: Constriction sIn a => ({ value : a, pinned : Maybe a } -> sOut -> Maybe sIn) -> { value : List a, pinned : Maybe (List a) } -> ListConstriction sOut -> Maybe (ListConstriction sIn)
+🧶mapListWith ruleF input request =
+  let rule x r =
         let state = { value = x, pinned = case input.pinned of
                       Nothing -> Nothing
                       Just _ -> Just x }
         in do
-          proposed <- backF state r
+          proposed <- ruleF state r
           if pinAllows state proposed then Just proposed else Nothing
-  in 🧶mapWith back (effectiveFeed input) request
+  in 🧶mapWith rule (effectiveFeed input) request
 
-🧶concatMapWith :: (a -> List b) -> (a -> ListConstraint sOut -> Maybe sIn) -> List a -> ListConstraint sOut -> Maybe (ListConstraint sIn)
-🧶concatMapWith forward backF values request = case request of
+🧶concatMapWith :: (a -> List b) -> (a -> ListConstriction sOut -> Maybe sIn) -> List a -> ListConstriction sOut -> Maybe (ListConstriction sIn)
+🧶concatMapWith forward ruleF values request = case request of
   AnyRemainder -> Just AnyRemainder
   _ -> case values of
     [] -> case request of
@@ -1447,20 +1447,20 @@ solveStringRight _ target prefix =
       _ -> Nothing
     x : xs -> do
       (chunk, rest) <- splitListRequest (forward x) request
-      inputRequest <- backF x chunk
-      tailRequest <- 🧶concatMapWith forward backF xs rest
+      inputRequest <- ruleF x chunk
+      tailRequest <- 🧶concatMapWith forward ruleF xs rest
       pure (Prepend inputRequest tailRequest)
 
-🧶concatMapListWith :: Constriction sIn a => (a -> List b) -> ({ value : a, pinned : Maybe a } -> ListConstraint sOut -> Maybe sIn) -> { value : List a, pinned : Maybe (List a) } -> ListConstraint sOut -> Maybe (ListConstraint sIn)
-🧶concatMapListWith forward backF input request =
-  let back x r =
+🧶concatMapListWith :: Constriction sIn a => (a -> List b) -> ({ value : a, pinned : Maybe a } -> ListConstriction sOut -> Maybe sIn) -> { value : List a, pinned : Maybe (List a) } -> ListConstriction sOut -> Maybe (ListConstriction sIn)
+🧶concatMapListWith forward ruleF input request =
+  let rule x r =
         let state = { value = x, pinned = case input.pinned of
                       Nothing -> Nothing
                       Just _ -> Just x }
         in do
-          proposed <- backF state r
+          proposed <- ruleF state r
           if pinAllows state proposed then Just proposed else Nothing
-  in 🧶concatMapWith forward back (effectiveFeed input) request
+  in 🧶concatMapWith forward rule (effectiveFeed input) request
 
 -- Candidate selection for exact requests at editable leaves/reference sites.
 -- Printing constructors, escaping strings and choosing a writable span remain
@@ -1473,7 +1473,7 @@ chooseExact input request =
   in if pinAllows input (Just candidate) then Just candidate else Nothing
 
 -- Update existing slots; only a missing suffix uses instance materialization.
-applyListRequest :: Constriction s a => (a -> s -> Maybe a) -> List a -> ListConstraint s -> Maybe (List a)
+applyListRequest :: Constriction s a => (a -> s -> Maybe a) -> List a -> ListConstriction s -> Maybe (List a)
 applyListRequest update values request = case request of
   AnyRemainder -> Just values
   ExactEnd -> Just []
@@ -1488,26 +1488,26 @@ applyListRequest update values request = case request of
 🧶not = unravelUnary not (\target -> Just (not target))
 
 -- Ordinary cons rule; the engine supplies separate head and tail feeds.
-unravelListCons :: Constriction s a => ({ value : a, pinned : Maybe a }, { value : List a, pinned : Maybe (List a) }) -> ListConstraint s -> Maybe (FieldRequest s, FieldRequest (ListConstraint s))
+unravelListCons :: Constriction s a => ({ value : a, pinned : Maybe a }, { value : List a, pinned : Maybe (List a) }) -> ListConstriction s -> Maybe (FieldConstriction s, FieldConstriction (ListConstriction s))
 unravelListCons _ request = case request of
   AnyRemainder -> Just (NoRequest, NoRequest)
   ExactEnd -> Nothing
   Prepend head tail -> Just (RequestField head, RequestField tail)
 
 -- Companion contracts are inferred from these generic rule signatures.
-🧶mapList :: Constriction sIn a => { forward : a -> b, unravel : { value : a, pinned : Maybe a } -> sOut -> Maybe sIn } -> { value : List a, pinned : Maybe (List a) } -> ListConstraint sOut -> Maybe (ListConstraint sIn)
+🧶mapList :: Constriction sIn a => { forward : a -> b, unravel : { value : a, pinned : Maybe a } -> sOut -> Maybe sIn } -> { value : List a, pinned : Maybe (List a) } -> ListConstriction sOut -> Maybe (ListConstriction sIn)
 🧶mapList unraveler = 🧶mapListWith unraveler.unravel
 
--- Check each proposed input's chunk before returning its ordinary constraint.
--- Changed custom input constraints need an instance-owned candidate.
-🧶concatMap :: Constriction sIn a => { forward : a -> List b, unravel : { value : a, pinned : Maybe a } -> ListConstraint sOut -> Maybe sIn } -> { value : List a, pinned : Maybe (List a) } -> ListConstraint sOut -> Maybe (ListConstraint sIn)
+-- Check each proposed input's chunk before returning its ordinary constriction.
+-- Changed custom input constrictions need an instance-owned candidate.
+🧶concatMap :: Constriction sIn a => { forward : a -> List b, unravel : { value : a, pinned : Maybe a } -> ListConstriction sOut -> Maybe sIn } -> { value : List a, pinned : Maybe (List a) } -> ListConstriction sOut -> Maybe (ListConstriction sIn)
 🧶concatMap unraveler =
-  let back input request = do
+  let rule input request = do
         proposed <- unraveler.unravel input request
         candidate <- if fits proposed input.value then Just input.value else materialize proposed
         if fits proposed candidate && length (unraveler.forward candidate) == length (unraveler.forward input.value)
         then Just proposed else Nothing
-  in 🧶concatMapListWith unraveler.forward back
+  in 🧶concatMapListWith unraveler.forward rule
 
 -- A fresh seed and its materializer share one original throughout an attempt.
 -- Authors choose both the factory and unravel policy; no implicit factory search.
@@ -1520,7 +1520,7 @@ materializationDraft factory unravel =
   in { value = original, finish = finish }
 
 -- Opt-in positional growth; ordinary map stays shape preserving. Forward,
--- growMap is map. Backward, a request longer than the input adds elements.
+-- growMap is map. When unravelled, a request longer than the input adds elements.
 -- A new element has no current value to adjust, so its callback is reversed
 -- against the element type's default, and the result is handed to the input
 -- list to create. Existing elements are reversed through the callback as usual.
@@ -1531,7 +1531,7 @@ growMap f values = map f values
 -- unraveler: the callback, as its forward function and its reverse rule.
 -- input: the current list and its pin. request: the wanted output list.
 -- Returns the wanted input list, with an exact value for each new element.
-🧶growMap :: (Eq a, Default a) => { forward : a -> b, unravel : { value : a, pinned : Maybe a } -> s -> Maybe (Maybe a) } -> { value : List a, pinned : Maybe (List a) } -> ListConstraint s -> Maybe (ListConstraint (Maybe a))
+🧶growMap :: (Eq a, Default a) => { forward : a -> b, unravel : { value : a, pinned : Maybe a } -> s -> Maybe (Maybe a) } -> { value : List a, pinned : Maybe (List a) } -> ListConstriction s -> Maybe (ListConstriction (Maybe a))
 🧶growMap unraveler input request =
   let walk values wanted = case wanted of
         AnyRemainder -> Just AnyRemainder
