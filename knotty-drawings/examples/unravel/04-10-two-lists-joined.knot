@@ -1,0 +1,21 @@
+-- story: Two lists joined with <>
+-- group: 4. Lists
+-- status: works
+-- try: Move a circle from each list. Each edit goes back to the list its circle came from.
+-- check: edit 0 cx 40
+-- check: edit 3 cx 210
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+warm :: List Float
+warm = [50, 100]
+
+cool :: List Float
+cool = [150, 200]
+
+dot :: Color -> Float -> Node
+dot color x = circle x 80 18 |> set_fill color
+
+program = svg 240 160 (map (dot tomato) warm <> map (dot slate_gray) cool)

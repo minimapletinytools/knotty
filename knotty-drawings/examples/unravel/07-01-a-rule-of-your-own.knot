@@ -1,0 +1,28 @@
+-- story: A function and its rule
+-- group: 7. Writing a rule
+-- status: works
+-- try: Change the radius. spread's rule decides: the step changes and the base never does.
+-- check: edit 0 r 50
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+import DrawingUnravel
+
+base :: Float
+base = 10
+
+step :: Float
+step = 5
+
+@unravel(🧶spread)
+spread :: Float -> Float -> Float
+spread start each = start + each * 4
+
+-- Without this rule the default would be free to change either argument.
+🧶spread :: (DrawingUnravel.Feed Float, DrawingUnravel.Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
+🧶spread (start, _) wanted = case wanted of
+    Nothing -> Just (Nothing, Nothing)
+    Just total -> Just (Nothing, Just ((total - start.value) / 4))
+
+program = svg 240 160 [circle 120 80 (spread base step) |> set_fill tomato]

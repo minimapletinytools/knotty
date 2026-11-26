@@ -1,0 +1,11 @@
+-- story: Two radii, one argument
+-- group: 3. Moving and resizing
+-- status: works
+-- try: Change rx. ry follows, because rounded_rect takes a single radius.
+-- check: edit 0 rx 24
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 [rounded_rect 40 40 160 80 12 |> set_fill tomato]

@@ -1,0 +1,15 @@
+-- story: A literal beside a name
+-- group: 1. Editing a value in place
+-- status: works
+-- try: Change the rect's width to 100. The 2 becomes 2.5 and span is left alone: an edit takes the literal written in place before it follows a name.
+-- check: edit 0 width 100
+-- source: (2.5) * span
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+span :: Float
+span = 40
+
+program = svg 240 160 [rect 20 50 (2 * span) 50 |> set_fill tomato]

@@ -228,6 +228,25 @@ async function checkLanternWaddle(page) {
     await graph.getByRole("button", { name: "Discard edits", exact: true }).click();
     await page.waitForFunction(() => document.querySelector("#drawing-graph").contentDocument.querySelector("input.literal")?.value === "63");
     await page.locator("#toggle-source").click();
+    // Unravelling stories: a storybook whose every story is a small editable drawing.
+    await page.goto(base + "unravel/");
+    const storyLinks = page.getByRole("navigation", { name: "Unravelling stories" }).locator("li a");
+    assert((await storyLinks.count()) >= 60);
+    assert.equal(await page.locator("#badge").textContent(), "Works");
+    const story = page.frameLocator("#drawing");
+    await story.locator("#stage svg circle").waitFor();
+    await story.locator("#stage svg circle").click({ force: true });
+    await story.locator("#field-cx").click();
+    await story.locator("dialog input").fill("120");
+    await story.locator("dialog [data-action=ok]").click();
+    await story.locator("dialog").waitFor({ state: "detached" });
+    await page.waitForFunction(() => /circle \(120/.test(document.querySelector("#drawing").contentDocument.querySelector(".view-lines")?.innerText.replaceAll("\u00a0", " ")));
+    // A story that does not work yet is still listed, with what is missing.
+    await page.goto(base + "unravel/?story=the-bezier-shapes");
+    assert.equal(await page.locator("#badge").textContent(), "Needs work");
+    assert.match(await page.locator("#note").textContent(), /^What is missing: /);
+    await page.frameLocator("#drawing").locator("#stage svg polygon").first().waitFor();
+    await page.frameLocator("#drawing").getByRole("link", { name: "← Unravelling stories" }).waitFor();
     await page.goto(base + "drawings/circle-creation/");
     await page.locator("#stage svg circle").first().click();
     const code = page.locator("#source-editor .view-lines");

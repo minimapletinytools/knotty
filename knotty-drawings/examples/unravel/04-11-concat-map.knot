@@ -1,0 +1,12 @@
+-- story: One input, two shapes
+-- group: 4. Lists
+-- status: works
+-- try: Move a top circle. Its partner below moves too: both come from one number.
+-- check: edit 2 cx 100
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160
+    (concatMap (\x -> [circle x 55 16 |> set_fill tomato, circle x 110 16 |> set_fill slate_gray]) [50, 120, 190])

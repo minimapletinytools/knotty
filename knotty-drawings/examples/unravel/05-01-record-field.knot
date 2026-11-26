@@ -1,0 +1,13 @@
+-- story: A record field
+-- group: 5. Records, tuples and maps
+-- status: works
+-- try: Move the circle. The field in the record changes.
+-- check: edit 0 cx 140
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+dot = { x = 80, y = 80, radius = 30 }
+
+program = svg 240 160 [circle dot.x dot.y dot.radius |> set_fill tomato]

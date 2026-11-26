@@ -1,0 +1,12 @@
+-- story: Points of a polyline
+-- group: 3. Moving and resizing
+-- status: works
+-- try: Edit the points. The count has to stay the same.
+-- check: edit 0 points [[30,120],[90,60],[150,120],[210,40]]
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160
+    [polyline [point 30 120, point 90 40, point 150 120, point 210 40] |> set_no_fill |> set_stroke tomato |> set_stroke_width 4]

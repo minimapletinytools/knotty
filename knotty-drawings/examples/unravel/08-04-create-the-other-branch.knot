@@ -1,0 +1,20 @@
+-- story: Create on the other branch
+-- group: 8. Creating things
+-- status: needs-work
+-- try: Round dots are drawn as circles and square ones as rects. A new record starts round, so a rect cannot be created.
+-- note: The default value picks which branch of the callback runs, and only that branch is unravelled. Creating the other shape needs the engine to try the other branch.
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+type alias Mark = { x : Float, y : Float, size : Float, square : Bool }
+
+marks :: List Mark
+marks = [{ x = 70, y = 80, size = 24, square = False }, { x = 170, y = 80, size = 24, square = True }]
+
+draw :: Mark -> Node
+draw m = if m.square then rect (m.x - m.size) (m.y - m.size) (2 * m.size) (2 * m.size) |> set_fill slate_gray
+    else circle m.x m.y m.size |> set_fill tomato
+
+program = svg 240 160 (growMap draw marks)

@@ -1,0 +1,22 @@
+-- story: A value in a Map
+-- group: 5. Records, tuples and maps
+-- status: needs-work
+-- try: Change the radius. It is refused.
+-- note: The Map module has no unravel rules, so an edit cannot be followed through a lookup to the entry it read.
+-- wanted: edit 0 r 50
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+import Map
+
+sizes = Map.fromList [("sun", 40), ("moon", 22)]
+
+radiusOf name = case Map.get name sizes of
+    Just radius -> radius
+    Nothing -> 10
+
+program = svg 240 160
+    [ circle 80 80 (radiusOf "sun") |> set_fill tomato
+    , circle 180 80 (radiusOf "moon") |> set_fill slate_gray
+    ]

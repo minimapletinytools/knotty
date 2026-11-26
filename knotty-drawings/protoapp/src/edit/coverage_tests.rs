@@ -1091,3 +1091,100 @@ fn locate_names_the_lines_behind_each_field_without_writing() {
     assert!(!f.editor.can_undo(&f.drawing));
     assert_eq!(f.editor.locate(&mut f.drawing, "stale", "0")["ok"], false);
 }
+
+/// Every unravelling story says what it expects in its own header:
+/// `check:` an edit that must be accepted, `reject:` one that must be refused,
+/// `wanted:` one that is refused today and marks the story as needing work.
+/// A `wanted` edit that starts working fails here, so its status gets updated.
+#[test]
+fn unravel_stories_behave_as_their_headers_say() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/unravel");
+    let mut files: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == "knot"))
+        .collect();
+    files.sort();
+    assert!(files.len() > 20, "expected the unravelling stories in {dir:?}");
+    let report = std::env::var("UNRAVEL_STORY_REPORT").is_ok();
+    let mut failures = Vec::new();
+    for path in files {
+        let name = path.file_stem().unwrap().to_string_lossy().into_owned();
+        let source = std::fs::read_to_string(&path).unwrap();
+        let header: Vec<(String, String)> = source
+            .lines()
+            .take_while(|l| l.starts_with("--"))
+            .filter_map(|l| l[2..].trim().split_once(':'))
+            .map(|(k, v)| (k.trim().to_owned(), v.trim().to_owned()))
+            .collect();
+        let field = |key: &str| header.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
+        let status = field("status").unwrap_or_default();
+        for key in ["story", "group", "try"] {
+            if field(key).is_none() {
+                failures.push(format!("{name}: missing `-- {key}:`"));
+            }
+        }
+        if !["works", "needs-work"].contains(&status.as_str()) {
+            failures.push(format!("{name}: status must be works or needs-work, not {status:?}"));
+        }
+        let loaded = std::panic::catch_unwind(|| Fixture::source(source.clone()));
+        let Ok(mut f) = loaded else {
+            failures.push(format!("{name}: does not load"));
+            continue;
+        };
+        let mut wanted = 0;
+        for (kind, spec) in header.iter().filter(|(k, _)| ["check", "reject", "wanted"].contains(&k.as_str())) {
+            let words: Vec<&str> = spec.splitn(4, ' ').collect();
+            let optional = |w: &str| (w != "-").then(|| w.to_owned());
+            let result = match words.as_slice() {
+                ["edit", key, name, value] => f.apply(key, name, serde_json::from_str(value).unwrap()),
+                ["create", "circle", parent, rest] => {
+                    let n: Vec<f64> = rest.split(' ').map(|n| n.parse().unwrap()).collect();
+                    let request = CreateCircleRequest {
+                        snapshot: f.snapshot(),
+                        parent: optional(parent).unwrap_or_default(),
+                        cx: n[0],
+                        cy: n[1],
+                        r: n[2],
+                    };
+                    f.editor.create_circle(&mut f.drawing, &request, false)
+                }
+                ["whip", index, key, value] => {
+                    let edit = crate::whips::WhipEdit {
+                        snapshot: f.snapshot(),
+                        index: index.parse().unwrap(),
+                        key: optional(key),
+                        value: value.parse().unwrap(),
+                    };
+                    f.editor.apply_whip(&mut f.drawing, &edit)
+                }
+                _ => panic!("{name}: cannot read `{kind}: {spec}`"),
+            };
+            let ok = result["ok"] == true;
+            if report {
+                eprintln!("{name} [{status}] {kind}: {spec} => {}", if ok { "ok".into() } else { result["reason"].to_string() });
+            }
+            match (kind.as_str(), ok) {
+                ("check", false) => failures.push(format!("{name}: `{spec}` should be accepted: {result}")),
+                ("reject", true) => failures.push(format!("{name}: `{spec}` should be refused")),
+                ("wanted", true) => failures.push(format!("{name}: `{spec}` works now; change `wanted` to `check` and the status to works")),
+                _ => {}
+            }
+            wanted += usize::from(kind == "wanted");
+        }
+        if status == "works" && wanted > 0 {
+            failures.push(format!("{name}: a working story cannot have a `wanted` edit"));
+        }
+        let edited = std::fs::read_to_string(f.drawing.path()).unwrap();
+        for (_, expected) in header.iter().filter(|(k, _)| k == "source") {
+            if !edited.contains(expected.as_str()) {
+                failures.push(format!("{name}: source should contain `{expected}` after the edits:\n{edited}"));
+            }
+        }
+        if report {
+            let lines: Vec<_> = f.original.lines().zip(edited.lines()).filter(|(a, b)| a != b).map(|(_, b)| b.trim()).collect();
+            eprintln!("    changed: {lines:?}");
+        }
+    }
+    assert!(failures.is_empty(), "\n{}", failures.join("\n"));
+}

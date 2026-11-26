@@ -42,6 +42,8 @@ Application specific knot programs can declare *whips* which declare a UI object
 
 The drawing demos run Twine in a browser worker. Select a shape and change a property to see the drawing and its Knot source update together. **Source** opens the Knot source in Monaco. Edits apply as you type; invalid source is marked and leaves the drawing at its last valid version, and any edit from the drawing or Tangle replaces it. **Tangle** opens a graph of the current drawing. Choose a definition and edit a number, connect a rope or reposition a node. Finishing the edit updates the drawing. **Undo** reverses an accepted edit. Reloading a demo restores the original drawing. Drag the divider beside the Source/Tangle panel to resize it. In Tangle, the mouse wheel zooms about the cursor and the middle button pans. Right-click an element in Layers or on the canvas and choose **Copy for AI** to copy its file, place in the drawing and source lines for a prompt.
 
+The [Unravelling stories](https://minimapletinytools.github.io/knotty/unravel/) are small drawings, each showing one way an edit travels back to the source. Stories marked **Needs work** show something the editor cannot do yet, and say what is missing. They live in [`knotty-drawings/examples/unravel/`](knotty-drawings/examples/unravel/); each file's leading comments give its title, what to try, and the edits `cargo test` checks.
+
 In the storybook, each story's source is editable. The graph is redrawn from your edit as you type; **Reset** or a reload restores the original.
 
 ### Run locally

@@ -1,0 +1,12 @@
+-- story: Move and resize a rect
+-- group: 3. Moving and resizing
+-- status: works
+-- try: Drag the rect or its handles on the canvas.
+-- check: edit 0 width 160
+-- check: edit 0 x 20
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 [rect 40 40 120 70 |> set_fill tomato]

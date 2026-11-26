@@ -1,0 +1,16 @@
+-- story: A callback's branch guards creation
+-- group: 6. Callbacks
+-- status: works
+-- try: Draw a small circle, then a large one. The callback caps a dot at radius 30, so a larger one cannot come out of it and is refused.
+-- check: create circle - 170 80 20
+-- reject: create circle - 120 80 45
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+dots :: List CircleInput
+dots = [{ x = 70, y = 80, radius = 20, color = tomato }]
+
+program = svg 240 160
+    (growMap (\d -> if d.radius <= 30 then circleFromInput d else circleFromInput { d | radius = 30 }) dots)

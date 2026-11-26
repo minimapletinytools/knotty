@@ -1,0 +1,12 @@
+-- story: Set and clear an id
+-- group: 2. Setters and optional properties
+-- status: works
+-- try: Give the circle an id, then clear it.
+-- check: edit 0 id "sun"
+-- check: edit 0 id null
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 [circle 120 80 45 |> set_fill tomato |> set_optional_id Nothing]

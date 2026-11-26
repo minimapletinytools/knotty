@@ -1,0 +1,11 @@
+-- story: Append a shape
+-- group: 4. Lists
+-- status: works
+-- try: Choose the Circle tool and draw. The new circle is written into the second list.
+-- check: create circle - 150 90 25
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 (editableShapes [rect 20 20 60 40 |> set_fill slate_gray] [])

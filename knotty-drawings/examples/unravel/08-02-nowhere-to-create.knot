@@ -1,0 +1,11 @@
+-- story: A list that has not opted in
+-- group: 8. Creating things
+-- status: works
+-- try: Draw a circle. It is refused: an ordinary list keeps its length, and nothing here says where a new shape may go.
+-- reject: create circle - 150 90 25
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 [rect 20 20 60 40 |> set_fill slate_gray]

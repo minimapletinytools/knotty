@@ -1,0 +1,21 @@
+-- story: Change which key is read
+-- group: 5. Records, tuples and maps
+-- status: needs-work
+-- try: The circle reads the sun's size. There is no edit that makes it read the moon's instead.
+-- note: An edit could change the key instead of the value. Nothing chooses between those two today.
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+import Map
+
+sizes = Map.fromList [("sun", 40), ("moon", 22)]
+
+which :: String
+which = "sun"
+
+radius = case Map.get which sizes of
+    Just found -> found
+    Nothing -> 10
+
+program = svg 240 160 [circle 120 80 radius |> set_fill tomato]

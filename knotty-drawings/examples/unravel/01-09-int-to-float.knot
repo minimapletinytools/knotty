@@ -1,0 +1,14 @@
+-- story: A count that becomes a size
+-- group: 1. Editing a value in place
+-- status: works
+-- try: Change the radius to 50. The whole number rings changes to 5.
+-- check: edit 0 r 50
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+rings :: Int
+rings = 3
+
+program = svg 240 160 [circle 120 80 (fromIntegral rings * 10) |> set_fill tomato]

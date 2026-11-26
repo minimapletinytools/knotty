@@ -1,0 +1,14 @@
+-- story: Inside a rotated group
+-- group: 3. Moving and resizing
+-- status: works
+-- try: Drag the rect. The handles follow the rotation, and the numbers change in the group's own coordinates.
+-- check: edit 0.0 x 15
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160
+    [ group [rect 0 0 100 50 |> set_fill tomato]
+        |> set_transform [Translate 80 30, Rotate 20 Nothing]
+    ]

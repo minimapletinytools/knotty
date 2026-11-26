@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Unravelling stories · Knotty</title>
+  <style>
+    :root { color-scheme: light; font-family: "DM Sans", system-ui, sans-serif; color: #28382f; background: #f6f5ee; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body { display: grid; grid-template-columns: minmax(15rem, 19rem) 1fr; }
+    a { color: inherit; text-underline-offset: .2em; }
+    nav { overflow: auto; padding: 1rem 0 2rem; border-right: 1px solid #c5c9bb; background: #eef0e6; }
+    nav header { padding: 0 1rem 1rem; }
+    nav header a { font-size: .85rem; }
+    h1 { font: 500 1.6rem "DM Serif Text", Georgia, serif; margin: .4rem 0 .2rem; }
+    nav header p { margin: 0; font-size: .85rem; color: #536556; }
+    nav h2 { font: 650 .78rem system-ui, sans-serif; text-transform: uppercase; letter-spacing: .04em; color: #536556; margin: 1.1rem 1rem .3rem; }
+    nav ol { list-style: none; margin: 0; padding: 0; }
+    nav li a { display: flex; align-items: baseline; gap: .5rem; padding: .32rem 1rem; text-decoration: none; font-size: .92rem; }
+    nav li a:hover { background: #e2e7d8; }
+    nav li a[aria-current] { background: #234c39; color: white; }
+    nav li a:focus-visible { outline: 2px solid #327255; outline-offset: -2px; }
+    /* Stories that do not work yet are still listed, marked so the list doubles as a to-do. */
+    .todo-mark { flex: none; width: .55rem; height: .55rem; border-radius: 50%; border: 1.5px solid #b4690e; }
+    .done-mark { flex: none; width: .55rem; height: .55rem; border-radius: 50%; background: #3f8a63; }
+    main { display: grid; grid-template-rows: auto 1fr; min-width: 0; min-height: 0; }
+    .about { padding: .9rem 1.2rem; border-bottom: 1px solid #c5c9bb; background: white; }
+    .about h2 { font: 500 1.35rem "DM Serif Text", Georgia, serif; margin: 0; display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
+    .badge { font: 650 .72rem system-ui, sans-serif; padding: .2rem .55rem; border-radius: 99px; }
+    .badge.works { background: #dcefe3; color: #1d5a3c; }
+    .badge.needs-work { background: #fbe9cf; color: #8a4b05; }
+    .about p { margin: .45rem 0 0; max-width: 62rem; line-height: 1.45; }
+    .about .note { color: #8a4b05; }
+    .about .file { font-size: .82rem; color: #536556; }
+    iframe { width: 100%; height: 100%; border: 0; background: white; }
+    @media (max-width: 760px) {
+      body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+      nav { max-height: 11rem; border-right: 0; border-bottom: 1px solid #c5c9bb; }
+      main { min-height: 34rem; }
+    }
+  </style>
+</head>
+<body>
+  <nav aria-label="Unravelling stories">
+    <header><a href="../">← Knotty demos</a><h1>Unravelling stories</h1><p id="summary"></p></header>
+    <div id="groups"></div>
+  </nav>
+  <main>
+    <section class="about" aria-live="polite">
+      <h2><span id="title"></span><span class="badge" id="badge"></span></h2>
+      <p id="try"></p>
+      <p class="note" id="note" hidden></p>
+      <p class="file"><a id="file"></a></p>
+    </section>
+    <iframe id="drawing" title="Story drawing"></iframe>
+  </main>
+  <script>
+    const stories = STORIES_JSON;
+    const repository = "REPOSITORY_SOURCE";
+    const wanted = new URLSearchParams(location.search).get("story");
+    const current = stories.find(s => s.slug === wanted) || stories[0];
+    const todo = stories.filter(s => s.status !== "works").length;
+    document.getElementById("summary").textContent =
+      `${stories.length} small drawings. ${stories.length - todo} work today; ${todo} show what still needs work.`;
+    const groups = document.getElementById("groups");
+    for (const name of [...new Set(stories.map(s => s.group))]) {
+      const heading = document.createElement("h2");
+      heading.textContent = name;
+      const list = document.createElement("ol");
+      for (const story of stories.filter(s => s.group === name)) {
+        const item = document.createElement("li"), link = document.createElement("a"), mark = document.createElement("span");
+        mark.className = story.status === "works" ? "done-mark" : "todo-mark";
+        mark.title = story.status === "works" ? "Works" : "Needs work";
+        link.href = "?story=" + encodeURIComponent(story.slug);
+        link.append(mark, story.title);
+        if (story === current) link.setAttribute("aria-current", "page");
+        item.append(link);
+        list.append(item);
+      }
+      groups.append(heading, list);
+    }
+    document.title = current.title + " · Unravelling stories";
+    document.getElementById("title").textContent = current.title;
+    const badge = document.getElementById("badge");
+    badge.textContent = current.status === "works" ? "Works" : "Needs work";
+    badge.classList.add(current.status);
+    document.getElementById("try").textContent = current.try;
+    const note = document.getElementById("note");
+    note.hidden = !current.note;
+    note.textContent = current.note ? "What is missing: " + current.note : "";
+    const file = document.getElementById("file");
+    file.textContent = current.path;
+    file.href = repository + "/" + current.path;
+    document.getElementById("drawing").src = "../drawings/unravel-" + current.slug + "/";
+    groups.querySelector("[aria-current]")?.scrollIntoView({ block: "nearest" });
+  </script>
+</body>
+</html>

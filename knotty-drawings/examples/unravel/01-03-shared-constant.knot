@@ -1,0 +1,17 @@
+-- story: A constant shared by two shapes
+-- group: 1. Editing a value in place
+-- status: works
+-- try: Change x on either rect. Both move, because both read margin.
+-- check: edit 0 x 50
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+margin :: Float
+margin = 30
+
+program = svg 240 160
+    [ rect margin 20 80 40 |> set_fill tomato
+    , rect margin 90 120 40 |> set_fill slate_gray
+    ]

@@ -1,0 +1,14 @@
+-- story: A constant in a callback stays pinned
+-- group: 6. Callbacks
+-- status: works
+-- try: Change one circle's radius. It is refused: every circle reads size, and an edit to one element may not change the callback.
+-- reject: edit 1 r 30
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+size :: Float
+size = 18
+
+program = svg 240 160 (map (\x -> circle x 80 size |> set_fill tomato) [50, 120, 190])

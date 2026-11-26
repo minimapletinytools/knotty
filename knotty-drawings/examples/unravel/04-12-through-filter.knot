@@ -1,0 +1,13 @@
+-- story: Through filter
+-- group: 4. Lists
+-- status: needs-work
+-- try: Move a circle. It is refused.
+-- note: filter has no unravel rule. A rule would also have to refuse edits that push an element out of the filter.
+-- wanted: edit 0 cx 100
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160
+    (map (\x -> circle x 80 18 |> set_fill tomato) (filter (\x -> x > 60) [30, 90, 150, 210]))

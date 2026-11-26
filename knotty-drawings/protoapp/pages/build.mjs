@@ -28,21 +28,48 @@ const names = ["KnottyDrawings", "DrawingUnravel", "Constrictions", "Scene", "Ty
 const libs = await Promise.all(names.map(async name => [name + ".knot", await text("../" + name + ".knot")]));
 await writeFile(path.join(assets, "libraries.json"), JSON.stringify(Object.fromEntries(libs)));
 const drawingHtml = await text("web/index.html");
-for (const [slug, title, source] of demos) {
+// One editor page per drawing. `back` is the link shown in its header.
+async function drawingPage(slug, title, source, back) {
   const dir = path.join(out, "drawings", slug);
   await mkdir(dir, { recursive: true });
   await cp("../" + source, path.join(dir, "source.knot"));
-  const svg = execFileSync("cargo", ["run", "--locked", "--quiet", "--release", "--bin", "knottydrawings",
-    "--", "--export-svg", "../" + source], { maxBuffer: 16 * 1024 * 1024 });
-  await writeFile(path.join(dir, "preview.svg"), svg);
   await writeFile(path.join(dir, "index.html"), drawingHtml
     .replace("<head>", '<head>\n  <base href="../../assets/">')
     .replace("<body>", `<body data-demo="${slug}" data-source-path="knotty-drawings/${source}">`)
     .replace("<title>Knotty Drawings", `<title>${title} · Knotty Drawings`)
     .replace('data-src="/tangle?embed=1"', 'data-src="../tangle/?embed=1"')
-    .replace('<a href="/tangle" class="back-link">Full editor</a>', '<a href="../" class="back-link">← Back to demos</a>')
+    .replace('<a href="/tangle" class="back-link">Full editor</a>', back)
     .replace('<script src="app.js">', '<script src="transport.js"></script>\n  <script src="app.js">'));
+  return dir;
 }
+for (const [slug, title, source] of demos) {
+  const dir = await drawingPage(slug, title, source, '<a href="../" class="back-link">← Back to demos</a>');
+  const svg = execFileSync("cargo", ["run", "--locked", "--quiet", "--release", "--bin", "knottydrawings",
+    "--", "--export-svg", "../" + source], { maxBuffer: 16 * 1024 * 1024 });
+  await writeFile(path.join(dir, "preview.svg"), svg);
+}
+// Unravelling stories: each is a small drawing with its own editor page, listed
+// by a storybook shell. A story describes itself in its leading comment lines.
+const storyFiles = (await readdir("../examples/unravel")).filter(name => name.endsWith(".knot")).sort();
+const unravelStories = [];
+for (const name of storyFiles) {
+  const source = "examples/unravel/" + name, slug = name.replace(/^\d+-\d+-|\.knot$/g, "");
+  const header = {};
+  for (const line of (await text("../" + source)).split("\n")) {
+    const match = line.match(/^-- (\w+): (.*)$/);
+    if (!line.startsWith("--")) break;
+    if (match && !(match[1] in header)) header[match[1]] = match[2];
+  }
+  unravelStories.push({ slug, title: header.story, group: header.group, status: header.status, try: header.try,
+    note: header.note || null, path: "knotty-drawings/" + source });
+  await drawingPage("unravel-" + slug, header.story, source,
+    `<a href="../unravel/?story=${slug}" target="_top" class="back-link">← Unravelling stories</a>`);
+}
+const repositorySource = "https://github.com/minimapletinytools/knotty/tree/" + (process.env.GITHUB_SHA || "main");
+await mkdir(path.join(out, "unravel"), { recursive: true });
+await writeFile(path.join(out, "unravel", "index.html"), (await text("pages/unravel.html"))
+  .replace("STORIES_JSON", JSON.stringify(unravelStories).replaceAll("<", "\\u003c"))
+  .replace("REPOSITORY_SOURCE", repositorySource));
 const stories = execFileSync("cargo", ["run", "--locked", "--quiet", "--release", "--bin", "knottydrawings", "--", "--export-stories"],
   { maxBuffer: 32 * 1024 * 1024 });
 const dir = path.join(out, "tangle");
@@ -56,7 +83,10 @@ await writeFile(path.join(dir, "index.html"), (await text("web/tangle/index.html
   .replace('href="/tangle/stories"', 'href="./"').replace('href="/"', 'href="../"'));
 const cards = demos.map(([slug, title]) =>
   `<a class="drawing" href="./drawings/${slug}/"><img src="./drawings/${slug}/preview.svg" alt=""><span>${title} ↗</span></a>`);
-await writeFile(path.join(out, "index.html"), (await text("pages/index.html")).replace("<!-- drawings -->", cards.join("\n")).replace("REPOSITORY_SOURCE", "https://github.com/minimapletinytools/knotty/tree/" + (process.env.GITHUB_SHA || "main")));
+const needWork = unravelStories.filter(story => story.status !== "works").length;
+await writeFile(path.join(out, "index.html"), (await text("pages/index.html")).replace("<!-- drawings -->", cards.join("\n"))
+  .replace("UNRAVEL_SUMMARY", `${unravelStories.length} small drawings, each showing one way an edit travels back to the source. ${needWork} mark what still needs work.`)
+  .replace("REPOSITORY_SOURCE", repositorySource));
 await cp("pages/gallery.css", path.join(out, "gallery.css"));
 await cp("../../LICENSE", path.join(out, "LICENSE"));
 await writeFile(path.join(out, ".nojekyll"), "");

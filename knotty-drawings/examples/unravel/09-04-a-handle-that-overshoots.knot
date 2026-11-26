@@ -1,0 +1,18 @@
+-- story: A handle the drawing does not follow exactly
+-- group: 9. Whips
+-- status: works
+-- try: Drag the handle outward. The dashed box is what the drag asks for. The dot grows by less, because part of its radius does not depend on the scale.
+-- check: whip 0 0 2
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+@whip(OnNodes dots (ScaleHandle "Dot scale"))
+scale :: Float
+scale = 1.0
+
+dots :: List Node
+dots = map (\i -> circle (fromIntegral i * 70 + 50) 80 (14 + scale * 8) |> set_fill tomato) (intRange 0 1 2)
+
+program = svg 240 160 dots

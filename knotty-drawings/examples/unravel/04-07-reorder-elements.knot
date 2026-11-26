@@ -1,0 +1,11 @@
+-- story: Reorder elements
+-- group: 4. Lists
+-- status: needs-work
+-- try: There is no bring-to-front or send-to-back. The slate square stays under the circle.
+-- note: Elements are matched by position. Reordering needs elements to be matched by identity, so a moved element keeps its source expression.
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 (editableShapes [] [rect 70 40 80 80 |> set_fill slate_gray, circle 150 80 40 |> set_fill tomato])

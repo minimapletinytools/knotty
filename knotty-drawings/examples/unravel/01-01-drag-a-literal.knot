@@ -1,0 +1,11 @@
+-- story: Drag a literal
+-- group: 1. Editing a value in place
+-- status: works
+-- try: Select the circle and change cx, or drag it. The number in the source changes.
+-- check: edit 0 cx 120
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 [circle 80 80 30 |> set_fill tomato]

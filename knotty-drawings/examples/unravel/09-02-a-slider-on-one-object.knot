@@ -1,0 +1,19 @@
+-- story: A slider on one object
+-- group: 9. Whips
+-- status: works
+-- try: Select the grey bar. Its Dots slider appears. Select a dot and it does not.
+-- check: whip 0 0 6
+-- reject: whip 0 1 6
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+@whip(OnNode bar (IntSlider "Dots" 1 8))
+count :: Int
+count = 4
+
+bar :: Node
+bar = rect 10 120 220 12 |> set_fill slate_gray
+
+program = svg 240 160 (bar : map (\i -> circle (fromIntegral i * 28 + 22) 70 10 |> set_fill tomato) (intRange 0 1 (count - 1)))

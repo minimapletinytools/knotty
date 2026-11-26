@@ -1,0 +1,14 @@
+-- story: The parts of a tuple
+-- group: 5. Records, tuples and maps
+-- status: works
+-- try: Move the circle. The pair changes.
+-- check: edit 0 cx 140
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+centre :: (Float, Float)
+centre = (90, 80)
+
+program = svg 240 160 [circle (fst centre) (snd centre) 30 |> set_fill tomato]

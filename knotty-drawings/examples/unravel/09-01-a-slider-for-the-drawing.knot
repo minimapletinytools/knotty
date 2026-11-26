@@ -1,0 +1,15 @@
+-- story: A slider for the whole drawing
+-- group: 9. Whips
+-- status: works
+-- try: Clear the selection. The Dots slider is in the properties pane.
+-- check: whip 0 - 6
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+@whip(IntSlider "Dots" 1 8)
+count :: Int
+count = 4
+
+program = svg 240 160 (map (\i -> circle (fromIntegral i * 28 + 22) 80 10 |> set_fill tomato) (intRange 0 1 (count - 1)))

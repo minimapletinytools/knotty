@@ -1,0 +1,11 @@
+-- story: Arithmetic inside a callback
+-- group: 6. Callbacks
+-- status: works
+-- try: Move the middle circle to x = 100. The list stores 50, because the callback doubles it.
+-- check: edit 1 cx 100
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 (map (\x -> circle (x * 2) 80 18 |> set_fill tomato) [25, 60, 95])

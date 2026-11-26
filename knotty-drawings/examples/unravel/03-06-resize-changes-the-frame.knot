@@ -1,0 +1,18 @@
+-- story: A resize that changes its own frame
+-- group: 3. Moving and resizing
+-- status: needs-work
+-- try: Drag a corner of the page rect on the canvas. It moves, but it will not resize.
+-- note: The view box reads the same two numbers. Resizing the rect would rescale the whole view, so the edge could never follow the pointer, and the canvas refuses. The properties pane can still change the width.
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+pageWidth :: Float
+pageWidth = 240
+
+pageHeight :: Float
+pageHeight = 160
+
+program = svg 480 320 [rect 0 0 pageWidth pageHeight |> set_fill alice_blue, circle 120 80 30 |> set_fill tomato]
+    |> set_view_box 0 0 pageWidth pageHeight

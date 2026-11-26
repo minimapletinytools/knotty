@@ -1,0 +1,14 @@
+-- story: Create inside a moved group
+-- group: 8. Creating things
+-- status: works
+-- try: Select the group, then draw a circle. Its numbers are written in the group's own coordinates.
+-- check: create circle 0 150 100 20
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160
+    [ group (editableShapes [rect 0 0 60 40 |> set_fill slate_gray] [])
+        |> set_transform [Translate 60 40]
+    ]

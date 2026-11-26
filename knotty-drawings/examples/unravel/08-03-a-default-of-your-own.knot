@@ -1,0 +1,22 @@
+-- story: A default of your own
+-- group: 8. Creating things
+-- status: works
+-- try: Draw a circle. Its record gets the label "new dot", from the Default instance written for Label.
+-- check: create circle - 160 80 25
+-- source: Label "new dot"
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+type Label = Label String deriving Eq
+
+instance Default Label where
+  default = Label "new dot"
+
+type alias Dot = { x : Float, y : Float, size : Float, color : Color, label : Label }
+
+dots :: List Dot
+dots = [{ x = 60, y = 80, size = 22, color = tomato, label = Label "first dot" }]
+
+program = svg 240 160 (growMap (\d -> circle d.x d.y d.size |> set_fill d.color) dots)

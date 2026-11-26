@@ -1,0 +1,15 @@
+-- story: Delete a key from a Map
+-- group: 5. Records, tuples and maps
+-- status: needs-work
+-- try: There is no edit that removes an entry.
+-- note: Deleting an entry is the Map version of deleting a list element, and has the same gap.
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+import Map
+
+sizes = Map.fromList [("sun", 40), ("moon", 22)]
+
+program = svg 240 160
+    (map (\(name, radius) -> circle (if name == "sun" then 80 else 180) 80 radius |> set_fill tomato) (Map.toList sizes))

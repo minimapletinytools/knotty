@@ -1,0 +1,11 @@
+-- story: A colour written with rgb
+-- group: 1. Editing a value in place
+-- status: works
+-- try: Pick a new fill. The three numbers inside rgb change.
+-- check: edit 0 fill.paint [10,120,200]
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 [circle 120 80 45 |> set_fill (rgb 200 60 60)]

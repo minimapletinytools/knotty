@@ -1,0 +1,12 @@
+-- story: Through zipWith
+-- group: 4. Lists
+-- status: needs-work
+-- try: Move a circle. It is refused.
+-- note: zipWith has no unravel rule.
+-- wanted: edit 1 cx 100
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 (zipWith (\x r -> circle x 80 r |> set_fill tomato) [50, 120, 190] [12, 20, 28])

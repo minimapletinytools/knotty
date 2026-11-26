@@ -1,0 +1,14 @@
+-- story: Append a record
+-- group: 4. Lists
+-- status: works
+-- try: Draw a circle. A new record is added to dots, and the callback draws it.
+-- check: create circle - 160 80 25
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+dots :: List CircleInput
+dots = [{ x = 60, y = 80, radius = 22, color = tomato }]
+
+program = svg 240 160 (growMap circleFromInput dots)

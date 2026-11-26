@@ -1,0 +1,12 @@
+-- story: Text content and size
+-- group: 1. Editing a value in place
+-- status: works
+-- try: Edit the text's content and its font size.
+-- check: edit 0 content "knot"
+-- check: edit 0 font.size 40
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 [text 30 90 "hello" |> set_font_size 28]

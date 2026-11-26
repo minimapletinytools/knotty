@@ -1,0 +1,12 @@
+-- story: Bézier knobs
+-- group: 3. Moving and resizing
+-- status: works
+-- try: Select the curve and drag a round knob or a square anchor.
+-- check: edit 0 commands [["M",30,120],["C",80,40,160,40,210,120]]
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160
+    [path [MoveTo 30 120, CurveTo 80 20 160 20 210 120] |> set_no_fill |> set_stroke tomato |> set_stroke_width 4]

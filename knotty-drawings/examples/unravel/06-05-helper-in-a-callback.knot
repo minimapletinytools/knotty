@@ -1,0 +1,12 @@
+-- story: A helper bound inside a callback
+-- group: 6. Callbacks
+-- status: works
+-- try: Move a circle. The edit passes through tilt, a partly applied function bound in a let, and reaches the list.
+-- check: edit 1 cx 100
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160
+    (map (\x -> let tilt = add_transform (Rotate 10 Nothing) in circle x 80 18 |> set_fill tomato |> tilt) [50, 120, 190])

@@ -1,0 +1,11 @@
+-- story: A setter on a group
+-- group: 2. Setters and optional properties
+-- status: works
+-- try: Change one circle's fill. Both change, because the colour is set once on the group.
+-- check: edit 0.0 fill.paint [10,120,200]
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 [group [circle 80 80 30, circle 160 80 30] |> set_fill tomato]

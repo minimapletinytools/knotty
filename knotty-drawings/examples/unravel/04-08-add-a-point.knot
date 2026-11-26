@@ -1,0 +1,12 @@
+-- story: Add a point to a polyline
+-- group: 4. Lists
+-- status: works
+-- try: Edit the points in the properties pane and add a fifth. The list grows.
+-- check: edit 0 points [[30,120],[90,40],[150,120],[210,40],[230,120]]
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160
+    [polyline [point 30 120, point 90 40, point 150 120, point 210 40] |> set_no_fill |> set_stroke tomato |> set_stroke_width 4]

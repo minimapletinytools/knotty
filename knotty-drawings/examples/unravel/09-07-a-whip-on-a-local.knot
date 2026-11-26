@@ -1,0 +1,13 @@
+-- story: A whip on a local value
+-- group: 9. Whips
+-- status: needs-work
+-- try: The gap between rows is named inside a let. It cannot carry a whip.
+-- note: @whip attaches to top-level bindings only.
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program =
+    let gap = 40
+    in svg 240 160 (map (\i -> rect 30 (fromIntegral i * gap + 20) 180 14 |> set_fill tomato) (intRange 0 1 2))

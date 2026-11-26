@@ -1,0 +1,11 @@
+-- story: A property with a setter
+-- group: 2. Setters and optional properties
+-- status: works
+-- try: Change the stroke width. The setter's argument changes.
+-- check: edit 0 stroke.width 6
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 [rect 40 40 160 80 |> set_fill tomato |> set_stroke dark_gray |> set_stroke_width 2]

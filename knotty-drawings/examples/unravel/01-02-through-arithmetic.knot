@@ -1,0 +1,11 @@
+-- story: Edit through arithmetic
+-- group: 1. Editing a value in place
+-- status: works
+-- try: Change the circle's cx. The sum is kept and one of its numbers changes.
+-- check: edit 0 cx 120
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 [circle (40 + 40) 80 30 |> set_fill tomato]

@@ -1,0 +1,11 @@
+-- story: Insert in the middle
+-- group: 4. Lists
+-- status: needs-work
+-- try: There is no way to ask for a new element between two existing ones.
+-- note: A list can only grow at its end. Insertion needs a request that says where, and a way to choose it in the editor.
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 (editableShapes [] [circle 50 80 18 |> set_fill tomato, circle 190 80 18 |> set_fill tomato])

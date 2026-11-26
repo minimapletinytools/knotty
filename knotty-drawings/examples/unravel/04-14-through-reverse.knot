@@ -1,0 +1,12 @@
+-- story: Through reverse
+-- group: 4. Lists
+-- status: needs-work
+-- try: Move a circle. It is refused.
+-- note: reverse, take and drop have no unravel rules.
+-- wanted: edit 0 cx 200
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 (map (\x -> circle x 80 18 |> set_fill tomato) (reverse [50, 120, 190]))
