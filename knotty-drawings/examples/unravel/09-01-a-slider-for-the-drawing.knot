@@ -12,4 +12,7 @@ import Types exposing (..)
 count :: Int
 count = 4
 
-program = svg 240 160 (map (\i -> circle (fromIntegral i * 28 + 22) 80 10 |> set_fill tomato) (intRange 0 1 (count - 1)))
+dot :: Int -> Node
+dot i = circle (fromIntegral i * 28 + 22) 80 10 |> set_fill tomato
+
+program = svg 240 160 (map dot (intRange 0 1 (count - 1)))

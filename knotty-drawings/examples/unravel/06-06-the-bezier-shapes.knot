@@ -1,8 +1,11 @@
 -- story: The shapes on the Bézier curve
 -- group: 6. Callbacks
 -- status: needs-work
--- try: Each star's size is built from a constant, a position along a curve and a random number, inside a callback over a range. Change one star's points: it is refused.
--- note: This is the Bézier demo in miniature. Nothing per element can be edited: the list is a range, and constants inside the callback are pinned. A scale handle reaches the shared size instead; see the Whips stories.
+-- try: Each star's size is built from a constant, a position along a curve and a random number,
+--   inside a callback over a range. Change one star's points: it is refused.
+-- note: This is the Bézier demo in miniature. Nothing per element can be edited: the list is a
+--   range, and constants inside the callback are pinned. A scale handle reaches the shared size
+--   instead; see the Whips stories.
 -- wanted: edit 1 points [[95,50],[125,110],[65,110]]
 module Story exposing (..)
 
@@ -21,6 +24,7 @@ star index =
         x = fromIntegral index * 50 + 45
         turn = add_transform (Rotate (random index * 90) (Just (x, 80)))
         filled = \shape -> shape |> set_fill tomato |> turn
-    in filled (polygon [point x (80 - size), point (x + size) (80 + size), point (x - size) (80 + size)])
+    in filled
+        (polygon [point x (80 - size), point (x + size) (80 + size), point (x - size) (80 + size)])
 
 program = svg 240 160 (map star (intRange 0 1 3))

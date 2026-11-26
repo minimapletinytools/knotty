@@ -16,4 +16,7 @@ count = 4
 bar :: Node
 bar = rect 10 120 220 12 |> set_fill slate_gray
 
-program = svg 240 160 (bar : map (\i -> circle (fromIntegral i * 28 + 22) 70 10 |> set_fill tomato) (intRange 0 1 (count - 1)))
+dot :: Int -> Node
+dot i = circle (fromIntegral i * 28 + 22) 70 10 |> set_fill tomato
+
+program = svg 240 160 (bar : map dot (intRange 0 1 (count - 1)))

@@ -7,7 +7,7 @@ module Story exposing (..)
 
 import KnottyDrawings exposing (..)
 import Types exposing (..)
-import DrawingUnravel
+import DrawingUnravel exposing (Feed)
 
 tens :: Int
 tens = 3
@@ -19,7 +19,7 @@ ones = 2
 digits :: Int -> Int -> Int
 digits high low = high * 10 + low
 
-🧶digits :: (DrawingUnravel.Feed Int, DrawingUnravel.Feed Int) -> Maybe Int -> Maybe (Maybe Int, Maybe Int)
+🧶digits :: (Feed Int, Feed Int) -> Maybe Int -> Maybe (Maybe Int, Maybe Int)
 🧶digits _ wanted = case wanted of
     Nothing -> Just (Nothing, Nothing)
     Just total -> if total < 0 then Nothing else Just (Just (div total 10), Just (mod total 10))

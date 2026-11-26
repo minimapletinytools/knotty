@@ -1,14 +1,15 @@
 -- story: A rule that refuses
 -- group: 7. Writing a rule
 -- status: works
--- try: Change the radius to 50, then to 5. The rule refuses anything below the base, so 5 is rejected.
+-- try: Change the radius to 50, then to 5. The rule refuses anything below the base, so 5 is
+--   rejected.
 -- check: edit 0 r 50
 -- reject: edit 0 r 5
 module Story exposing (..)
 
 import KnottyDrawings exposing (..)
 import Types exposing (..)
-import DrawingUnravel
+import DrawingUnravel exposing (Feed)
 
 base :: Float
 base = 10
@@ -20,9 +21,10 @@ extra = 20
 atLeast :: Float -> Float -> Float
 atLeast least more = least + more
 
-🧶atLeast :: (DrawingUnravel.Feed Float, DrawingUnravel.Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
+🧶atLeast :: (Feed Float, Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
 🧶atLeast (least, _) wanted = case wanted of
     Nothing -> Just (Nothing, Nothing)
-    Just total -> if total < least.value then Nothing else Just (Nothing, Just (total - least.value))
+    Just total ->
+        if total < least.value then Nothing else Just (Nothing, Just (total - least.value))
 
 program = svg 240 160 [circle 120 80 (atLeast base extra) |> set_fill tomato]

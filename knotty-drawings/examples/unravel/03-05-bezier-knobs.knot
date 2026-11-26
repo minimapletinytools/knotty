@@ -9,4 +9,8 @@ import KnottyDrawings exposing (..)
 import Types exposing (..)
 
 program = svg 240 160
-    [path [MoveTo 30 120, CurveTo 80 20 160 20 210 120] |> set_no_fill |> set_stroke tomato |> set_stroke_width 4]
+    [ path [MoveTo 30 120, CurveTo 80 20 160 20 210 120]
+        |> set_no_fill
+        |> set_stroke tomato
+        |> set_stroke_width 4
+    ]

@@ -3,12 +3,13 @@
 // Any other change to the drawing (a property, Tangle or Undo) replaces the
 // buffer, discarding text that never became valid.
 const KnotSource = (() => {
-  const PAUSE_MS = 400, BURST_MS = 2000;
+  const PAUSE_MS = 400, BURST_MS = 2000, LINE_LIMIT = 100;
   let source = "", editor, loading;
   let timer, saving = null, again = false, submitted = null, lastSave = 0;
   const host = document.getElementById("source-editor");
   const fallback = document.getElementById("source-text");
   const status = document.getElementById("source-status");
+  const lint = document.getElementById("source-lint");
 
   function show(text, error = false) {
     status.textContent = text;
@@ -21,6 +22,15 @@ const KnotSource = (() => {
     const file = document.getElementById("file-name").textContent;
     if (!match || !file || !match[1].endsWith(file)) return null;
     return { line: Number(match[2]), column: Number(match[3]), message: match[4] || reason };
+  }
+
+  // Edits from the drawing rewrite source without regard for line length, so
+  // this is checked on every change and not only while typing.
+  function showLint(lines) {
+    lint.hidden = !lines.length;
+    lint.textContent = lines.length === 1 ? `Line ${lines[0]} is over ${LINE_LIMIT} characters`
+      : `${lines.length} lines are over ${LINE_LIMIT} characters`;
+    lint.title = lines.length ? "Lines " + lines.join(", ") : "";
   }
 
   async function publish() {
@@ -90,7 +100,7 @@ const KnotSource = (() => {
       css.href = new URL("editor.css", url);
       document.head.append(css);
       loading = import(url.href).then(({ create }) => {
-        editor = create(host, source, () => { show("Editing…"); schedule(); });
+        editor = create(host, source, () => { show("Editing…"); schedule(); }, { lineLimit: LINE_LIMIT, onLint: showLint });
         fallback.remove();
       }).catch(() => { fallback.title = "Plain source view. Build the Monaco assets to enable editing."; });
     },

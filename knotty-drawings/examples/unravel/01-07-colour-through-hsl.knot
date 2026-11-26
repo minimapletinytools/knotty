@@ -2,7 +2,8 @@
 -- group: 1. Editing a value in place
 -- status: needs-work
 -- try: Pick a new fill. It is refused.
--- note: hsl has no unravel rule, so a colour cannot be turned back into hue, saturation and lightness.
+-- note: hsl has no unravel rule, so a colour cannot be turned back into hue, saturation and
+--   lightness.
 -- wanted: edit 0 fill.paint [10,120,200]
 module Story exposing (..)
 

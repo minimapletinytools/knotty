@@ -2,7 +2,8 @@
 -- group: 9. Whips
 -- status: needs-work
 -- try: The line's bend is a pair of numbers that no shape sits on. There is nothing to drag.
--- note: There are two whip controls, a slider and a scale handle. A point handle bound to two numbers is not one of them.
+-- note: There are two whip controls, a slider and a scale handle. A point handle bound to two
+--   numbers is not one of them.
 module Story exposing (..)
 
 import KnottyDrawings exposing (..)
@@ -15,4 +16,8 @@ bendY :: Float
 bendY = 30
 
 program = svg 240 160
-    [path [MoveTo 30 130, CurveTo bendX bendY bendX bendY 210 130] |> set_no_fill |> set_stroke tomato |> set_stroke_width 4]
+    [ path [MoveTo 30 130, CurveTo bendX bendY bendX bendY 210 130]
+        |> set_no_fill
+        |> set_stroke tomato
+        |> set_stroke_width 4
+    ]

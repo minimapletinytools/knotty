@@ -1,7 +1,8 @@
 -- story: One handle on every dot
 -- group: 9. Whips
 -- status: works
--- try: Select any dot and drag its round amber handle. All of them scale, and the drawing follows as you drag.
+-- try: Select any dot and drag its round amber handle. All of them scale, and the drawing follows
+--   as you drag.
 -- check: whip 0 1 1.5
 module Story exposing (..)
 
@@ -13,6 +14,9 @@ scale :: Float
 scale = 1.0
 
 dots :: List Node
-dots = map (\i -> circle (fromIntegral i * 55 + 40) 80 (scale * (8 + 4 * fromIntegral i)) |> set_fill tomato) (intRange 0 1 3)
+dots = map dot (intRange 0 1 3)
+
+dot :: Int -> Node
+dot i = circle (fromIntegral i * 55 + 40) 80 (scale * (8 + 4 * fromIntegral i)) |> set_fill tomato
 
 program = svg 240 160 dots

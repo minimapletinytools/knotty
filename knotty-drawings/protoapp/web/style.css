@@ -386,6 +386,8 @@ button, select, input { font: inherit; color: inherit; }
 #source-heading:not([hidden]) { display: flex; align-items: baseline; gap: 8px; }
 .source-status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-weight: 400; font-size: 12px; }
 .source-status.error { color: var(--accent); }
+/* Line-length lint: a warning, shown beside the status and never instead of it. */
+.source-lint { flex: none; margin-left: 8px; padding: 1px 7px; border-radius: 99px; background: #fbe9cf; color: #8a4b05; font-weight: 500; font-size: 11px; white-space: nowrap; }
 .split-view:has(.source-panel:not([hidden])) .workspace:not(.no-tree) { --tree-width: clamp(110px, 12vw, 200px); }
 .split-view:has(.source-panel:not([hidden])) .workspace:not(.no-properties) { --properties-width: clamp(155px, 15vw, 250px); }
 @media (max-width: 900px) {

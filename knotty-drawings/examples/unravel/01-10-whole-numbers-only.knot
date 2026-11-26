@@ -1,7 +1,8 @@
 -- story: A size a whole number cannot make
 -- group: 1. Editing a value in place
 -- status: works
--- try: Change the radius to 45. No whole number of rings gives 45, so the edit is refused and nothing is rounded.
+-- try: Change the radius to 45. No whole number of rings gives 45, so the edit is refused and
+--   nothing is rounded.
 -- reject: edit 0 r 45
 module Story exposing (..)
 

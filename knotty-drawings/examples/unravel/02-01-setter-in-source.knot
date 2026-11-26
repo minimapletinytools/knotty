@@ -8,4 +8,5 @@ module Story exposing (..)
 import KnottyDrawings exposing (..)
 import Types exposing (..)
 
-program = svg 240 160 [rect 40 40 160 80 |> set_fill tomato |> set_stroke dark_gray |> set_stroke_width 2]
+program = svg 240 160
+    [rect 40 40 160 80 |> set_fill tomato |> set_stroke dark_gray |> set_stroke_width 2]

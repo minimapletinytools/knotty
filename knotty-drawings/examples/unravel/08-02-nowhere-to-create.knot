@@ -1,7 +1,8 @@
 -- story: A list that has not opted in
 -- group: 8. Creating things
 -- status: works
--- try: Draw a circle. It is refused: an ordinary list keeps its length, and nothing here says where a new shape may go.
+-- try: Draw a circle. It is refused: an ordinary list keeps its length, and nothing here says where
+--   a new shape may go.
 -- reject: create circle - 150 90 25
 module Story exposing (..)
 

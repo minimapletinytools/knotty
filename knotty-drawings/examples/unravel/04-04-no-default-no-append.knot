@@ -1,7 +1,8 @@
 -- story: A type with no default cannot be created
 -- group: 4. Lists
 -- status: works
--- try: Draw a circle. It is refused: Tag has no Default instance, so there is nothing to start a new record from.
+-- try: Draw a circle. It is refused: Tag has no Default instance, so there is nothing to start a
+--   new record from.
 -- reject: create circle - 160 80 25
 module Story exposing (..)
 

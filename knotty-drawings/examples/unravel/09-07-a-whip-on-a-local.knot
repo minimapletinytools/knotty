@@ -10,4 +10,5 @@ import Types exposing (..)
 
 program =
     let gap = 40
-    in svg 240 160 (map (\i -> rect 30 (fromIntegral i * gap + 20) 180 14 |> set_fill tomato) (intRange 0 1 2))
+    in svg 240 160
+        (map (\i -> rect 30 (fromIntegral i * gap + 20) 180 14 |> set_fill tomato) (intRange 0 1 2))

@@ -2,10 +2,16 @@
 -- group: 4. Lists
 -- status: needs-work
 -- try: There is no delete. Removing a shape means editing the source by hand.
--- note: Unravel rules keep or grow a list's length. A shorter list is not something a request can ask for yet.
+-- note: Unravel rules keep or grow a list's length. A shorter list is not something a request can
+--   ask for yet.
 module Story exposing (..)
 
 import KnottyDrawings exposing (..)
 import Types exposing (..)
 
-program = svg 240 160 (editableShapes [] [circle 50 80 18 |> set_fill tomato, circle 120 80 18 |> set_fill tomato, circle 190 80 18 |> set_fill tomato])
+program = svg 240 160
+    (editableShapes []
+        [ circle 50 80 18 |> set_fill tomato
+        , circle 120 80 18 |> set_fill tomato
+        , circle 190 80 18 |> set_fill tomato
+        ])

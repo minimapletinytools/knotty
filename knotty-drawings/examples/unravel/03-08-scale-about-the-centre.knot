@@ -1,8 +1,10 @@
 -- story: Scale a shape about its centre
 -- group: 3. Moving and resizing
 -- status: needs-work
--- try: All four numbers come from size, so the square can only grow about its centre. A corner drag holds the opposite corner still, which this program cannot do, and it is refused.
--- note: The canvas has no gesture that asks only for a size and lets the position land where the program puts it. The scale handle does this for a whip; ordinary shapes need the same.
+-- try: All four numbers come from size, so the square can only grow about its centre. A corner drag
+--   holds the opposite corner still, which this program cannot do, and it is refused.
+-- note: The canvas has no gesture that asks only for a size and lets the position land where the
+--   program puts it. The scale handle does this for a whip; ordinary shapes need the same.
 module Story exposing (..)
 
 import KnottyDrawings exposing (..)

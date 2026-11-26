@@ -1,7 +1,8 @@
 -- story: A whip for a colour
 -- group: 9. Whips
 -- status: needs-work
--- try: Every shape is tinted from one colour. There is no control that sets it for the whole drawing.
+-- try: Every shape is tinted from one colour. There is no control that sets it for the whole
+--   drawing.
 -- note: A whip can drive an Int or a Float. A colour control is not written.
 module Story exposing (..)
 

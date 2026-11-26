@@ -1,7 +1,8 @@
 -- story: Inside a rotated group
 -- group: 3. Moving and resizing
 -- status: works
--- try: Drag the rect. The handles follow the rotation, and the numbers change in the group's own coordinates.
+-- try: Drag the rect. The handles follow the rotation, and the numbers change in the group's own
+--   coordinates.
 -- check: edit 0.0 x 15
 module Story exposing (..)
 

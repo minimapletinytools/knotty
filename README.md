@@ -44,6 +44,8 @@ The drawing demos run Twine in a browser worker. Select a shape and change a pro
 
 The [Unravelling stories](https://minimapletinytools.github.io/knotty/unravel/) are small drawings, each showing one way an edit travels back to the source. Stories marked **Needs work** show something the editor cannot do yet, and say what is missing. They live in [`knotty-drawings/examples/unravel/`](knotty-drawings/examples/unravel/); each file's leading comments give its title, what to try, and the edits `cargo test` checks.
 
+The source pane warns about lines over 100 characters, and checks again after every edit, including ones made from the drawing.
+
 In the storybook, each story's source is editable. The graph is redrawn from your edit as you type; **Reset** or a reload restores the original.
 
 ### Run locally

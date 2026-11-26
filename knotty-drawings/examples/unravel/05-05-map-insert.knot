@@ -1,8 +1,10 @@
 -- story: Insert a key into a Map
 -- group: 5. Records, tuples and maps
 -- status: needs-work
--- try: The star has no entry and falls back to 10. Change its radius: the fallback number changes. No entry is added.
--- note: Changing a value that came from a missing key should insert the key. That needs Map rules and a way to create an entry.
+-- try: The star has no entry and falls back to 10. Change its radius: the fallback number changes.
+--   No entry is added.
+-- note: Changing a value that came from a missing key should insert the key. That needs Map rules
+--   and a way to create an entry.
 -- check: edit 1 r 30
 -- source: Nothing -> (30.0)
 module Story exposing (..)

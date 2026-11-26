@@ -9,4 +9,6 @@ import KnottyDrawings exposing (..)
 import Types exposing (..)
 
 program = svg 240 160
-    (concatMap (\x -> [circle x 55 16 |> set_fill tomato, circle x 110 16 |> set_fill slate_gray]) [50, 120, 190])
+    (concatMap
+        (\x -> [circle x 55 16 |> set_fill tomato, circle x 110 16 |> set_fill slate_gray])
+        [50, 120, 190])

@@ -1,7 +1,8 @@
 -- story: Create inside a moved group
 -- group: 8. Creating things
 -- status: works
--- try: Select the group, then draw a circle. Its numbers are written in the group's own coordinates.
+-- try: Select the group, then draw a circle. Its numbers are written in the group's own
+--   coordinates.
 -- check: create circle 0 150 100 20
 module Story exposing (..)
 

@@ -2,7 +2,8 @@
 -- group: 5. Records, tuples and maps
 -- status: needs-work
 -- try: Change the radius. It is refused.
--- note: The Map module has no unravel rules, so an edit cannot be followed through a lookup to the entry it read.
+-- note: The Map module has no unravel rules, so an edit cannot be followed through a lookup to the
+--   entry it read.
 -- wanted: edit 0 r 50
 module Story exposing (..)
 

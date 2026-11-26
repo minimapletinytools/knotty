@@ -1,7 +1,8 @@
 -- story: Which name moves in a + b
 -- group: 1. Editing a value in place
 -- status: works
--- try: Change cx to 120. Either name could take the change. The default rule for + gives it to the left one.
+-- try: Change cx to 120. Either name could take the change. The default rule for + gives it to the
+--   left one.
 -- check: edit 0 cx 120
 -- source: left = (70.0)
 module Story exposing (..)

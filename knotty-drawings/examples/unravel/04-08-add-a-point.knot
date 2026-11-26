@@ -9,4 +9,8 @@ import KnottyDrawings exposing (..)
 import Types exposing (..)
 
 program = svg 240 160
-    [polyline [point 30 120, point 90 40, point 150 120, point 210 40] |> set_no_fill |> set_stroke tomato |> set_stroke_width 4]
+    [ polyline [point 30 120, point 90 40, point 150 120, point 210 40]
+        |> set_no_fill
+        |> set_stroke tomato
+        |> set_stroke_width 4
+    ]

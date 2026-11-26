@@ -7,7 +7,7 @@ module Story exposing (..)
 
 import KnottyDrawings exposing (..)
 import Types exposing (..)
-import DrawingUnravel
+import DrawingUnravel exposing (Feed)
 
 base :: Float
 base = 10
@@ -20,7 +20,7 @@ spread :: Float -> Float -> Float
 spread start each = start + each * 4
 
 -- Without this rule the default would be free to change either argument.
-🧶spread :: (DrawingUnravel.Feed Float, DrawingUnravel.Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
+🧶spread :: (Feed Float, Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
 🧶spread (start, _) wanted = case wanted of
     Nothing -> Just (Nothing, Nothing)
     Just total -> Just (Nothing, Just ((total - start.value) / 4))

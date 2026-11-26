@@ -1,7 +1,8 @@
 -- story: A default of your own
 -- group: 8. Creating things
 -- status: works
--- try: Draw a circle. Its record gets the label "new dot", from the Default instance written for Label.
+-- try: Draw a circle. Its record gets the label "new dot", from the Default instance written for
+--   Label.
 -- check: create circle - 160 80 25
 -- source: Label "new dot"
 module Story exposing (..)

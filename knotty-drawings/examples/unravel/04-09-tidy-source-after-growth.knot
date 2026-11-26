@@ -1,8 +1,10 @@
 -- story: Tidy source after a list grows
 -- group: 4. Lists
 -- status: needs-work
--- try: Draw a circle. It works, but look at the source: the new element is written as raw constructors, and a grown list may be rebuilt with a let.
--- note: New values are printed from their data, not as the code a person would write: `circle 160 80 25`, appended to the list literal.
+-- try: Draw a circle. It works, but look at the source: the new element is written as raw
+--   constructors, and a grown list may be rebuilt with a let.
+-- note: New values are printed from their data, not as the code a person would write: `circle 160
+--   80 25`, appended to the list literal.
 -- check: create circle - 160 80 25
 module Story exposing (..)
 

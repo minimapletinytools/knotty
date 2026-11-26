@@ -241,6 +241,28 @@ async function checkLanternWaddle(page) {
     await story.locator("dialog [data-action=ok]").click();
     await story.locator("dialog").waitFor({ state: "detached" });
     await page.waitForFunction(() => /circle \(120/.test(document.querySelector("#drawing").contentDocument.querySelector(".view-lines")?.innerText.replaceAll("\u00a0", " ")));
+    // The story list folds away and stays folded on the next story.
+    const listToggle = page.getByRole("button", { name: "☰ Stories" });
+    await listToggle.click();
+    assert(await page.getByRole("navigation", { name: "Unravelling stories" }).isHidden());
+    assert.equal(await listToggle.getAttribute("aria-expanded"), "false");
+    // Every source edit is linted for line length, including ones the drawing makes.
+    await page.goto(base + "unravel/?story=tidy-source-after-growth");
+    assert(await page.getByRole("navigation", { name: "Unravelling stories" }).isHidden());
+    const grown = page.frameLocator("#drawing");
+    await grown.locator("#stage svg circle").waitFor();
+    assert(await grown.locator("#source-lint").isHidden());
+    await grown.getByRole("button", { name: "Circle" }).click();
+    await grown.locator("#creation-status", { hasText: "Drag from the center" }).waitFor();
+    const stageBox = await grown.locator("#stage svg").boundingBox();
+    await page.mouse.move(stageBox.x + stageBox.width * 0.7, stageBox.y + stageBox.height * 0.5);
+    await page.mouse.down();
+    await page.mouse.move(stageBox.x + stageBox.width * 0.8, stageBox.y + stageBox.height * 0.6, { steps: 4 });
+    await page.mouse.up();
+    await grown.locator("#source-lint").waitFor();
+    assert.match(await grown.locator("#source-lint").textContent(), /over 100 characters/);
+    await page.getByRole("button", { name: "☰ Stories" }).click();
+    assert(await page.getByRole("navigation", { name: "Unravelling stories" }).isVisible());
     // A story that does not work yet is still listed, with what is missing.
     await page.goto(base + "unravel/?story=the-bezier-shapes");
     assert.equal(await page.locator("#badge").textContent(), "Needs work");

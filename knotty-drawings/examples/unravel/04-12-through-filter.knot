@@ -2,7 +2,8 @@
 -- group: 4. Lists
 -- status: needs-work
 -- try: Move a circle. It is refused.
--- note: filter has no unravel rule. A rule would also have to refuse edits that push an element out of the filter.
+-- note: filter has no unravel rule. A rule would also have to refuse edits that push an element out
+--   of the filter.
 -- wanted: edit 0 cx 100
 module Story exposing (..)
 

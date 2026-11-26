@@ -1,7 +1,8 @@
 -- story: A record update
 -- group: 5. Records, tuples and maps
 -- status: works
--- try: Move the red circle. The edit lands on the update, and the grey circle, drawn from the base record, stays.
+-- try: Move the red circle. The edit lands on the update, and the grey circle, drawn from the base
+--   record, stays.
 -- check: edit 1 cx 150
 module Story exposing (..)
 

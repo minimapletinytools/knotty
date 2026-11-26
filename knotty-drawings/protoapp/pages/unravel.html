@@ -8,6 +8,9 @@
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; }
     body { display: grid; grid-template-columns: minmax(15rem, 19rem) 1fr; }
+    /* The story list folds away to give the drawing the whole window. */
+    body.collapsed { grid-template-columns: 1fr; }
+    body.collapsed nav { display: none; }
     a { color: inherit; text-underline-offset: .2em; }
     nav { overflow: auto; padding: 1rem 0 2rem; border-right: 1px solid #c5c9bb; background: #eef0e6; }
     nav header { padding: 0 1rem 1rem; }
@@ -25,6 +28,9 @@
     .done-mark { flex: none; width: .55rem; height: .55rem; border-radius: 50%; background: #3f8a63; }
     main { display: grid; grid-template-rows: auto 1fr; min-width: 0; min-height: 0; }
     .about { padding: .9rem 1.2rem; border-bottom: 1px solid #c5c9bb; background: white; }
+    #toggle-stories { font: 650 .8rem system-ui, sans-serif; padding: .3rem .6rem; border: 1px solid #b9c0b0; border-radius: .35rem; background: #f3f5ec; color: inherit; cursor: pointer; }
+    #toggle-stories:hover { background: #e2e7d8; }
+    #toggle-stories:focus-visible { outline: 2px solid #327255; outline-offset: 2px; }
     .about h2 { font: 500 1.35rem "DM Serif Text", Georgia, serif; margin: 0; display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
     .badge { font: 650 .72rem system-ui, sans-serif; padding: .2rem .55rem; border-radius: 99px; }
     .badge.works { background: #dcefe3; color: #1d5a3c; }
@@ -36,18 +42,19 @@
     @media (max-width: 760px) {
       body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
       nav { max-height: 11rem; border-right: 0; border-bottom: 1px solid #c5c9bb; }
+      body.collapsed { grid-template-rows: 1fr; }
       main { min-height: 34rem; }
     }
   </style>
 </head>
 <body>
-  <nav aria-label="Unravelling stories">
+  <nav id="story-list" aria-label="Unravelling stories">
     <header><a href="../">← Knotty demos</a><h1>Unravelling stories</h1><p id="summary"></p></header>
     <div id="groups"></div>
   </nav>
   <main>
     <section class="about" aria-live="polite">
-      <h2><span id="title"></span><span class="badge" id="badge"></span></h2>
+      <h2><button id="toggle-stories" type="button" aria-controls="story-list" aria-expanded="true">☰ Stories</button><span id="title"></span><span class="badge" id="badge"></span></h2>
       <p id="try"></p>
       <p class="note" id="note" hidden></p>
       <p class="file"><a id="file"></a></p>
@@ -92,6 +99,18 @@
     file.textContent = current.path;
     file.href = repository + "/" + current.path;
     document.getElementById("drawing").src = "../drawings/unravel-" + current.slug + "/";
+    // Folding the list is remembered, so stepping through stories keeps the wide view.
+    const toggle = document.getElementById("toggle-stories");
+    function fold(collapsed) {
+      document.body.classList.toggle("collapsed", collapsed);
+      toggle.setAttribute("aria-expanded", String(!collapsed));
+      toggle.title = collapsed ? "Show the story list" : "Hide the story list";
+      try { localStorage.setItem("unravel.collapsed", collapsed ? "1" : ""); } catch {}
+    }
+    let stored = "";
+    try { stored = localStorage.getItem("unravel.collapsed") || ""; } catch {}
+    fold(stored === "1");
+    toggle.onclick = () => fold(!document.body.classList.contains("collapsed"));
     groups.querySelector("[aria-current]")?.scrollIntoView({ block: "nearest" });
   </script>
 </body>

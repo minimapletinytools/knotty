@@ -1111,12 +1111,22 @@ fn unravel_stories_behave_as_their_headers_say() {
     for path in files {
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
         let source = std::fs::read_to_string(&path).unwrap();
-        let header: Vec<(String, String)> = source
-            .lines()
-            .take_while(|l| l.starts_with("--"))
-            .filter_map(|l| l[2..].trim().split_once(':'))
-            .map(|(k, v)| (k.trim().to_owned(), v.trim().to_owned()))
-            .collect();
+        // `-- key: text`; a line indented further (`--   more text`) continues the one above.
+        let mut header: Vec<(String, String)> = Vec::new();
+        for line in source.lines().take_while(|l| l.starts_with("--")) {
+            let rest = &line[2..];
+            match (rest.starts_with("   "), header.last_mut()) {
+                (true, Some((_, value))) => {
+                    value.push(' ');
+                    value.push_str(rest.trim());
+                }
+                _ => {
+                    if let Some((k, v)) = rest.trim().split_once(':') {
+                        header.push((k.trim().to_owned(), v.trim().to_owned()));
+                    }
+                }
+            }
+        }
         let field = |key: &str| header.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
         let status = field("status").unwrap_or_default();
         for key in ["story", "group", "try"] {

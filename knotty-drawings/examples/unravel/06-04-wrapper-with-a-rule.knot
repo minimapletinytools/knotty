@@ -1,14 +1,17 @@
 -- story: A wrapper with its own rule
 -- group: 6. Callbacks
 -- status: works
--- try: Change any circle's radius. All three scale: scaled has a rule that turns a new radius into a new factor.
+-- try: Change any circle's radius. All three scale: scaled has a rule that turns a new radius into
+--   a new factor.
 -- check: edit 1 r 27
 module Story exposing (..)
 
 import KnottyDrawings exposing (..)
 import Types exposing (..)
-import DrawingUnravel
-import Constrictions
+import DrawingUnravel exposing (..)
+import Constrictions exposing (..)
+
+type alias Nodes = ListConstriction NodeConstriction
 
 factor :: Float
 factor = 1.0
@@ -19,7 +22,7 @@ scaled k nodes = map (map_circle (\c -> { c | r = c.r * k })) nodes
 
 -- A new radius on any circle becomes a new factor. The radius is then taken
 -- out of the request, so the circles themselves are left alone.
-🧶scaled :: (DrawingUnravel.Feed Float, DrawingUnravel.Feed (List Node)) -> ListConstriction Constrictions.NodeConstriction -> Maybe (Maybe Float, ListConstriction Constrictions.NodeConstriction)
+🧶scaled :: (Feed Float, Feed (List Node)) -> Nodes -> Maybe (Maybe Float, Nodes)
 🧶scaled (_, nodes) request =
     let
         walk values wanted = case (wanted, values) of
@@ -28,18 +31,23 @@ scaled k nodes = map (map_circle (\c -> { c | r = c.r * k })) nodes
             (Prepend head tail, node : rest) -> do
                 (next, residual) <- scaledRequest node head
                 (others, more) <- walk rest tail
-                shared <- DrawingUnravel.merge next others
+                shared <- merge next others
                 pure (shared, Prepend residual more)
             _ -> Nothing
     in walk nodes.value request
 
-scaledRequest :: Node -> Constrictions.NodeConstriction -> Maybe (Maybe Float, Constrictions.NodeConstriction)
+scaledRequest :: Node -> NodeConstriction -> Maybe (Maybe Float, NodeConstriction)
 scaledRequest node request = case (request, node) of
-    (Constrictions.ShapeNodeRequest common (Constrictions.RequestCircle wanted), ShapeNode _ (Circle original)) ->
+    (ShapeNodeRequest common (RequestCircle wanted), ShapeNode _ (Circle original)) ->
         case wanted.r of
-            Just radius -> Just (Just (radius / original.r), Constrictions.ShapeNodeRequest common (Constrictions.RequestCircle { wanted | r = Nothing }))
+            Just radius ->
+                Just
+                    ( Just (radius / original.r)
+                    , ShapeNodeRequest common (RequestCircle { wanted | r = Nothing })
+                    )
             Nothing -> Just (Nothing, request)
     _ -> Just (Nothing, request)
 
 program = svg 240 160
-    (scaled factor (map (\(x, r) -> circle x 80 r |> set_fill tomato) [(50, 10), (120, 18), (190, 26)]))
+    (scaled factor
+        (map (\(x, r) -> circle x 80 r |> set_fill tomato) [(50, 10), (120, 18), (190, 26)]))

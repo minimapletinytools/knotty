@@ -12,4 +12,6 @@ import Map
 sizes = Map.fromList [("sun", 40), ("moon", 22)]
 
 program = svg 240 160
-    (map (\(name, radius) -> circle (if name == "sun" then 80 else 180) 80 radius |> set_fill tomato) (Map.toList sizes))
+    (map
+        (\(name, radius) -> circle (if name == "sun" then 80 else 180) 80 radius |> set_fill tomato)
+        (Map.toList sizes))

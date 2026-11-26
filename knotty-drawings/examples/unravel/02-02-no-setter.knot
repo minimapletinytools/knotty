@@ -2,7 +2,8 @@
 -- group: 2. Setters and optional properties
 -- status: needs-work
 -- try: Change the stroke width. It is refused, because the source never sets one.
--- note: The editor changes arguments that exist. Inserting a new setter into the source is not implemented.
+-- note: The editor changes arguments that exist. Inserting a new setter into the source is not
+--   implemented.
 -- wanted: edit 0 stroke.width 6
 module Story exposing (..)
 

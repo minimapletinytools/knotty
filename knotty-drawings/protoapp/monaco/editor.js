@@ -16,11 +16,13 @@ monaco.languages.setMonarchTokensProvider("knot", {
 // `onEdit` hears only the user's typing; `set` applies published source as a
 // minimal edit so the cursor and scroll position survive. `fit` grows the
 // editor to its content so a scrolling page, not the editor, scrolls.
-export function create(host, source, onEdit, { readOnly = false, fit = false } = {}) {
+// lineLimit: lines longer than this get a warning; onLint(count) hears how many there are.
+export function create(host, source, onEdit, { readOnly = false, fit = false, lineLimit = 0, onLint } = {}) {
   const editor = monaco.editor.create(host, { value: source, language: "knot",
     ariaLabel: "Knot source", automaticLayout: true, minimap: { enabled: false },
     scrollBeyondLastLine: false, fontSize: 12, lineNumbersMinChars: 3,
     readOnly, domReadOnly: readOnly, ...(readOnly && { renderLineHighlight: "none" }),
+    ...(lineLimit && { rulers: [lineLimit] }),
     ...(fit && { wordWrap: "on", scrollbar: { vertical: "hidden", alwaysConsumeMouseWheel: false } }) });
   const model = editor.getModel();
   if (fit) {
@@ -28,8 +30,23 @@ export function create(host, source, onEdit, { readOnly = false, fit = false } =
     editor.onDidContentSizeChange(resize);
     resize();
   }
+  // The line-length lint runs on every change to the text, whoever made it:
+  // typing here, or an edit from the drawing that rewrote the source.
+  function lint() {
+    if (!lineLimit) return;
+    const long = [];
+    for (let line = 1; line <= model.getLineCount(); line++) {
+      const length = model.getLineLength(line);
+      if (length > lineLimit) long.push({ severity: monaco.MarkerSeverity.Warning,
+        message: `This line is ${length} characters long. Keep lines to ${lineLimit}.`,
+        startLineNumber: line, startColumn: lineLimit + 1, endLineNumber: line, endColumn: length + 1 });
+    }
+    monaco.editor.setModelMarkers(model, "knot-lint", long);
+    onLint?.(long.map(marker => marker.startLineNumber));
+  }
   let applying = false;
-  model.onDidChangeContent(() => { if (!applying) onEdit?.(model.getValue()); });
+  model.onDidChangeContent(() => { lint(); if (!applying) onEdit?.(model.getValue()); });
+  lint();
   return {
     value: () => model.getValue(),
     set(next) {

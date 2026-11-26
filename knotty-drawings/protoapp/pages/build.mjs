@@ -54,11 +54,14 @@ const storyFiles = (await readdir("../examples/unravel")).filter(name => name.en
 const unravelStories = [];
 for (const name of storyFiles) {
   const source = "examples/unravel/" + name, slug = name.replace(/^\d+-\d+-|\.knot$/g, "");
+  // `-- key: text`; a line indented further (`--   more text`) continues the one above.
   const header = {};
+  let last = null;
   for (const line of (await text("../" + source)).split("\n")) {
-    const match = line.match(/^-- (\w+): (.*)$/);
     if (!line.startsWith("--")) break;
-    if (match && !(match[1] in header)) header[match[1]] = match[2];
+    const match = line.match(/^-- (\w+): (.*)$/);
+    if (/^-- {3}/.test(line) && last) header[last] += " " + line.slice(2).trim();
+    else if (match) { last = match[1] in header ? null : match[1]; if (last) header[last] = match[2]; }
   }
   unravelStories.push({ slug, title: header.story, group: header.group, status: header.status, try: header.try,
     note: header.note || null, path: "knotty-drawings/" + source });

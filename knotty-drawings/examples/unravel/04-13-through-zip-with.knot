@@ -9,4 +9,5 @@ module Story exposing (..)
 import KnottyDrawings exposing (..)
 import Types exposing (..)
 
-program = svg 240 160 (zipWith (\x r -> circle x 80 r |> set_fill tomato) [50, 120, 190] [12, 20, 28])
+program = svg 240 160
+    (zipWith (\x r -> circle x 80 r |> set_fill tomato) [50, 120, 190] [12, 20, 28])
