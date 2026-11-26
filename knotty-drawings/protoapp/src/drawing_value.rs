@@ -54,20 +54,39 @@ pub fn anchor_keys(
         bytes: 0,
         layers: None,
     };
-    let (name, fields) = d.constructor(target, "Types")?;
-    let common = match (name.as_str(), fields.as_slice()) {
-        ("ShapeNode", [common, _]) => d.force(*common)?,
-        ("ContainerNode", [container]) => {
-            let container = d.force(*container)?;
-            d.field(&container, "common")?
-        }
-        _ => return Err("expected a drawing Node anchor".into()),
-    };
-    let id = d.field(&common, "id")?;
-    let id = d.optional(id, Decoder::text)?;
-    let candidates = AnchorCandidate::children(displayed, &id);
     let mut keys = Vec::new();
-    d.match_children(root, &candidates, target, &mut keys)?;
+    d.anchor(root, target, displayed, &mut keys)?;
+    Ok(keys)
+}
+
+/// Every displayed occurrence of every node in a `List Node` anchor.
+pub fn anchor_list_keys(
+    reader: ValueReader<'_>,
+    root: ValueHandle,
+    mut list: ValueHandle,
+    displayed: &Value,
+) -> Result<Vec<String>> {
+    let mut d = Decoder {
+        reader,
+        work: 0,
+        bytes: 0,
+        layers: None,
+    };
+    let mut keys = Vec::new();
+    loop {
+        let (ctor, fields) = d.constructor(list, "Prelude")?;
+        let [head, tail] = fields.as_slice() else {
+            break;
+        };
+        if ctor != ":" {
+            return Err("expected a list of drawing Node anchors".into());
+        }
+        let node = d.force(*head)?;
+        d.anchor(root, node, displayed, &mut keys)?;
+        list = d.force(*tail)?;
+    }
+    keys.sort();
+    keys.dedup();
     Ok(keys)
 }
 
@@ -517,6 +536,28 @@ impl Decoder<'_, '_> {
         self.style(stroke, true, props)?;
         Ok(kind.into())
     }
+    fn anchor(
+        &mut self,
+        root: ValueHandle,
+        target: ValueHandle,
+        displayed: &Value,
+        keys: &mut Vec<String>,
+    ) -> Result<()> {
+        let (name, fields) = self.constructor(target, "Types")?;
+        let common = match (name.as_str(), fields.as_slice()) {
+            ("ShapeNode", [common, _]) => self.force(*common)?,
+            ("ContainerNode", [container]) => {
+                let container = self.force(*container)?;
+                self.field(&container, "common")?
+            }
+            _ => return Err("expected a drawing Node anchor".into()),
+        };
+        let id = self.field(&common, "id")?;
+        let id = self.optional(id, Decoder::text)?;
+        let candidates = AnchorCandidate::children(displayed, &id);
+        self.match_children(root, &candidates, target, keys)
+    }
+
     fn match_children(
         &mut self,
         container: ValueHandle,

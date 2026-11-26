@@ -316,6 +316,7 @@ function setupCanvas() {
 
   canvas.addEventListener("pointermove", (event) => {
     if (shapeTool?.gesture) {moveShape(event);return;}
+    if (scaleDrag) { moveScaleDrag(event); return; }
     if (geometryDrag) { moveGeometryDrag(event); return; }
     if (pan) {
       state.view.x = pan.viewX + event.clientX - pan.x;
@@ -332,9 +333,10 @@ function setupCanvas() {
   };
   canvas.addEventListener("pointerup", event => {
     if (shapeTool?.gesture) {finishShape(event);return;}
+    if (scaleDrag && event.pointerId===scaleDrag.pointerId) { moveScaleDrag(event); finishScaleDrag(true); return; }
     if (geometryDrag && event.pointerId===geometryDrag.pointerId) { moveGeometryDrag(event); finishGeometryDrag(true); } else endPan();
   });
-  canvas.addEventListener("pointercancel", () => { if (shapeTool?.gesture) stopShape(); if (geometryDrag) finishGeometryDrag(false); endPan(); });
+  canvas.addEventListener("pointercancel", () => { finishScaleDrag(false); if (shapeTool?.gesture) stopShape(); if (geometryDrag) finishGeometryDrag(false); endPan(); });
   canvas.addEventListener("lostpointercapture", () => { if (shapeTool?.gesture) stopShape(); if (geometryDrag && !geometryDrag.ended) finishGeometryDrag(false); });
   canvas.addEventListener("pointerleave", () => showHover(null));
 
@@ -578,6 +580,107 @@ function svgPart(name, attributes) {
   return element;
 }
 function renderGeometryWidget() {
+  renderGeometryHandles();
+  renderScaleWhip();
+}
+
+// Scale whips -----------------------------------------------------------------------
+// A scale handle sets its Float binding directly: nothing is reversed through the
+// drawing. The dashed box is what the drag asks for. The drawing is only evaluated
+// on release, and what it produces may differ, so afterwards the asked-for box
+// stays up beside the real one when they disagree.
+let scaleDrag = null, scaleAsked = null;
+function scaleWhip(key) {
+  const index = key === null ? -1 : state.whips.findIndex(w => w.kind === "scale" && w.keys?.includes(key));
+  return index < 0 ? null : { index, whip: state.whips[index] };
+}
+function scaleFactor(drag, event) {
+  const distance = Math.hypot(event.clientX - drag.centerX, event.clientY - drag.centerY);
+  return Math.max(0.05, distance / drag.grip);
+}
+async function applyScaleWhip(index, key, value) {
+  const status = $("edit-status");
+  try {
+    const response = await drawingRequest("/api/whip", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({snapshot: state.snapshot, index, key, value})});
+    const result = await response.json();
+    if (!result.ok) throw Error(result.reason);
+    status.textContent = `${state.whips[index].label}: ${formatNumber(value)}.`;
+    status.classList.remove("error");
+    return true;
+  } catch (error) {
+    status.textContent = error.message;
+    status.classList.add("error");
+    return false;
+  } finally {
+    await load();
+  }
+}
+function renderScaleWhip() {
+  const overlay = $("whip-overlay");
+  overlay.replaceChildren();
+  const key = state.selected, found = scaleWhip(key), element = found && elementFor(key);
+  if (!element || state.error || paintPicker || geometryDrag || shapeTool) return;
+  const canvas = $("canvas").getBoundingClientRect(), rect = element.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2 - canvas.left, cy = rect.top + rect.height / 2 - canvas.top;
+  const box = (width, height, cls) => svgPart("rect", {x: cx - width / 2, y: cy - height / 2, width, height, class: cls});
+  const asked = scaleAsked?.key === key ? scaleAsked : null;
+  if (asked) overlay.append(box(asked.width, asked.height, "whip-asked"));
+  const factor = scaleDrag?.factor ?? 1, width = rect.width * factor, height = rect.height * factor;
+  if (scaleDrag) overlay.append(box(width, height, "whip-asked"));
+  const enabled = state.whipsEditable && found.whip.value !== null;
+  // The handle sits just outside the corner, clear of any resize handles.
+  const handle = svgPart("circle", {cx: cx + width / 2 + 9, cy: cy - height / 2 - 9, r: 6.5,
+    class: "whip-scale-handle" + (enabled ? "" : " disabled"), "data-whip": "scale",
+    role: "slider", tabindex: 0, "aria-label": found.whip.label, "aria-valuenow": found.whip.value ?? ""});
+  const title = svgPart("title", {});
+  title.textContent = enabled ? `${found.whip.label}: drag away from the shape to grow, toward it to shrink. Scales every shape that shares it. Escape cancels.`
+    : `${found.whip.label} cannot be edited right now.`;
+  handle.append(title);
+  overlay.append(handle);
+  if (!scaleDrag) $("geometry-status").textContent = `Drag the round handle to change ${found.whip.label} (now ${formatNumber(found.whip.value)}). `;
+  if (!enabled) return;
+  handle.addEventListener("pointerdown", event => {
+    if (event.button !== 0 || spaceHeld) return;
+    event.preventDefault(); event.stopPropagation();
+    const centerX = rect.left + rect.width / 2, centerY = rect.top + rect.height / 2;
+    scaleDrag = {key, index: found.index, value: found.whip.value, label: found.whip.label, pointerId: event.pointerId,
+      centerX, centerY, grip: Math.max(1, Math.hypot(event.clientX - centerX, event.clientY - centerY)), factor: 1};
+    scaleAsked = null;
+    $("canvas").setPointerCapture(event.pointerId);
+    $("canvas").classList.add("geometry-dragging");
+  });
+}
+function moveScaleDrag(event) {
+  if (!scaleDrag || event.pointerId !== scaleDrag.pointerId) return;
+  scaleDrag.factor = scaleFactor(scaleDrag, event);
+  $("edit-status").textContent = `${scaleDrag.label}: ${formatNumber(scaleDrag.value)} → ${formatNumber(scaleDrag.value * scaleDrag.factor)}. Release to apply, Escape to cancel.`;
+  $("edit-status").classList.remove("error");
+  renderScaleWhip();
+}
+async function finishScaleDrag(keep) {
+  const drag = scaleDrag;
+  if (!drag) return;
+  scaleDrag = null; suppressCanvasClick = true;
+  $("canvas").classList.remove("geometry-dragging");
+  if ($("canvas").hasPointerCapture(drag.pointerId)) $("canvas").releasePointerCapture(drag.pointerId);
+  if (!keep || Math.abs(drag.factor - 1) < 0.005) { $("edit-status").textContent = keep ? "" : "Scale cancelled."; renderScaleWhip(); return; }
+  const before = elementFor(drag.key)?.getBoundingClientRect();
+  const applied = await applyScaleWhip(drag.index, drag.key, drag.value * drag.factor);
+  const after = elementFor(drag.key)?.getBoundingClientRect();
+  if (!applied || !before || !after) return;
+  // Keep the asked-for box only when the drawing settled somewhere else.
+  const width = before.width * drag.factor, height = before.height * drag.factor;
+  const off = Math.max(Math.abs(after.width - width) / Math.max(width, 1), Math.abs(after.height - height) / Math.max(height, 1));
+  if (off > 0.03) {
+    const asked = scaleAsked = {key: drag.key, width, height};
+    $("edit-status").textContent += " The drawing settled on a different size than the drag asked for (dashed box).";
+    setTimeout(() => { if (scaleAsked === asked) { scaleAsked = null; renderScaleWhip(); } }, 4000);
+  }
+  renderScaleWhip();
+}
+
+function renderGeometryHandles() {
   placeBox($("selection-box"),state.selected);
   const overlay = $("geometry-overlay");
   overlay.replaceChildren();
@@ -773,6 +876,24 @@ function drawingControls(controls, title) {
     const row = document.createElement("div");
     row.className = "drawing-slider";
     const label = document.createElement("label");
+    if (whip.kind === "scale") {
+      // The canvas handle is the main control; this field sets the same value exactly.
+      const input = document.createElement("input");
+      input.type = "number"; input.min = "0"; input.step = "0.05";
+      input.id = "drawing-scale-" + index;
+      input.value = whip.value ?? "";
+      input.disabled = savingWhip || !state.whipsEditable || whip.value === null;
+      label.htmlFor = input.id;
+      label.textContent = whip.label;
+      input.addEventListener("change", async () => {
+        if (savingWhip || !(input.valueAsNumber > 0)) { input.value = whip.value ?? ""; return; }
+        savingWhip = true;
+        try { await applyScaleWhip(index, key, input.valueAsNumber); } finally { savingWhip = false; renderProperties(); }
+      });
+      row.append(label, input);
+      section.append(row);
+      return;
+    }
     const range = document.createElement("input");
     const count = document.createElement("output");
     range.type = "range";
@@ -1232,6 +1353,7 @@ function setupControls() {
   document.addEventListener("keydown", (event) => {
     if (shapeTool && event.key==="Escape") {event.preventDefault();stopShape();return;}
     if (shapeTool?.gesture || shapeTool?.committing) return;
+    if (scaleDrag && event.key==="Escape") { event.preventDefault(); finishScaleDrag(false); return; }
     if (geometryDrag && event.key==="Escape") { event.preventDefault(); finishGeometryDrag(false); return; }
     if (paintPicker || typing(event) || (event.code === "Space" && event.target.closest("button, summary, [role=tab]"))) return;
     if ((event.key==="c" || event.key==="C") && !event.ctrlKey && !event.metaKey && !event.altKey) {event.preventDefault();activateShape();return;}

@@ -5,7 +5,16 @@ import Types exposing (..)
 import DrawingBack
 
 -- Controls in the properties pane can be parked on a drawing node.
-type DrawingWhip = IntSlider String Int Int | OnNode Node DrawingWhip
+-- Controls a drawing attaches to its own bindings with @whip.
+-- IntSlider label low high: a slider for an Int, in the properties panel.
+-- ScaleHandle label: a canvas handle that multiplies a Float as it is dragged.
+-- OnNode node control: show the control when that node is selected.
+-- OnNodes nodes control: show it when any node of the list is selected.
+type DrawingWhip
+    = IntSlider String Int Int
+    | ScaleHandle String
+    | OnNode Node DrawingWhip
+    | OnNodes (List Node) DrawingWhip
 
 -- Opt in to adding new shapes separately from the generated part of a drawing.
 -- The unravel routes new slots to additions; existing shapes keep their routes.

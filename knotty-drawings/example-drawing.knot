@@ -19,6 +19,11 @@ shapeCount = 64
 sparkleCount :: Int
 sparkleCount = 160
 
+-- Select any shape on the curve and drag its round handle to scale them all.
+@whip(OnNodes decorations (ScaleHandle "Shape scale"))
+shapeScale :: Float
+shapeScale = 1.0
+
 to_float :: Int -> Float
 to_float n = fromIntegral n
 
@@ -210,7 +215,7 @@ decorated_shape index =
         seed = index * 17
         progress = progress_of index shapeCount
         center = snake_point progress (random_between seed (negate 18) 18)
-        size = 1.5 + 13 * growth progress * random_between (seed + 1) 0.6 1.25
+        size = shapeScale * (1.5 + 13 * growth progress * random_between (seed + 1) 0.6 1.25)
         color = palette progress (seed + 2)
         turn = add_transform (Rotate (random_between (seed + 4) 0 360) (Just (center.x, center.y)))
         filled = \shape ->
@@ -287,6 +292,10 @@ snake =
     , circle (snake_center 1).x (snake_center 1).y 1.8 |> set_fill (hsl 250 0.3 0.3)
     ]
 
+-- Every shape on the curve, named so one control can belong to all of them.
+decorations :: List Node
+decorations = gradient gradientTint (map decorated_shape (intRange 0 1 (shapeCount - 1)))
+
 program :: Container
 program =
     svg 794 1123
@@ -300,7 +309,7 @@ program =
          , group (gradient gradientTint (concatMap sparkle (intRange 0 1 (sparkleCount - 1))))
          ]
             <> snake
-            <> gradient gradientTint (map decorated_shape (intRange 0 1 (shapeCount - 1)))
+            <> decorations
             <> [ text (pageWidth - 12) (pageHeight - 12) "knotty drawings"
                     |> set_font_family "Georgia, serif"
                     |> set_font_size 7

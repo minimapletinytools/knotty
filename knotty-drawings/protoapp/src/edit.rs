@@ -186,7 +186,24 @@ impl Editor {
                     return Err("Select the object that owns this control.".into());
                 }
             }
-            if whip.value.is_none() || !(whip.min..=whip.max).contains(&edit.value) {
+            if whip.kind == "scale" {
+                // A scale handle sets its Float directly; nothing is reversed through the drawing.
+                if whip.value.is_none() || !edit.value.is_finite() || edit.value <= 0.0 {
+                    return Err(format!("{} requires a positive number.", whip.label));
+                }
+                return Ok((
+                    whip.binding.clone(),
+                    Request {
+                        expression: format!("Just ({:?})", edit.value),
+                        type_name: "Maybe Float".into(),
+                    },
+                ));
+            }
+            let whole = edit.value.fract() == 0.0;
+            if whip.value.is_none()
+                || !whole
+                || !(f64::from(whip.min)..=f64::from(whip.max)).contains(&edit.value)
+            {
                 return Err(format!(
                     "{} requires a value from {} to {}.",
                     whip.label, whip.min, whip.max
@@ -195,7 +212,7 @@ impl Editor {
             Ok((
                 whip.binding.clone(),
                 Request {
-                    expression: format!("Just ({})", edit.value),
+                    expression: format!("Just ({})", edit.value as i64),
                     type_name: "Maybe Int".into(),
                 },
             ))

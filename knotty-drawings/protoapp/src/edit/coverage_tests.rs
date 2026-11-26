@@ -818,14 +818,14 @@ program = svg 80 80 [circle (fromIntegral decorations) 10 4]
     let controls = &f.drawing.last_good().unwrap().whips;
     assert_eq!(controls.len(), 2);
     assert_eq!(
-        (&*controls[1].label, controls[1].value),
-        ("Fine density", Some(8))
+        (&*controls[1].label, controls[1].value.clone()),
+        ("Fine density", Some(8.into()))
     );
     let mut edit = crate::whips::WhipEdit {
         snapshot: snap,
         key: None,
         index: 1,
-        value: 18,
+        value: 18.0,
     };
     assert_eq!(f.editor.apply_whip(&mut f.drawing, &edit)["ok"], false);
     edit.index = 2;
@@ -840,7 +840,7 @@ program = svg 80 80 [circle (fromIntegral decorations) 10 4]
     let source = std::fs::read_to_string(f.drawing.path()).unwrap();
     assert!(source.contains("decorations = base"));
     assert_eq!(f.value("0", "cx"), json!(18.0));
-    assert_eq!(f.drawing.last_good().unwrap().whips[0].value, Some(18));
+    assert_eq!(f.drawing.last_good().unwrap().whips[0].value, Some(18.into()));
     assert_eq!(f.editor.apply_whip(&mut f.drawing, &edit)["ok"], false);
     let snap = f.snapshot();
     assert_eq!(f.editor.undo(&mut f.drawing, &snap)["ok"], true);
@@ -848,7 +848,7 @@ program = svg 80 80 [circle (fromIntegral decorations) 10 4]
         std::fs::read_to_string(f.drawing.path()).unwrap(),
         f.original
     );
-    assert_eq!(f.drawing.last_good().unwrap().whips[0].value, Some(8));
+    assert_eq!(f.drawing.last_good().unwrap().whips[0].value, Some(8.into()));
 }
 
 #[test]
@@ -884,7 +884,7 @@ program = svg 80 80 [other, group [curve, anonymous], curve]
         snapshot: f.snapshot(),
         index: 0,
         key: Some("0".into()),
-        value: 10,
+        value: 10.0,
     };
     assert_eq!(f.editor.apply_whip(&mut f.drawing, &edit)["ok"], false);
     edit.key = Some("1.0".into());
@@ -898,6 +898,60 @@ program = svg 80 80 [other, group [curve, anonymous], curve]
     assert_eq!(keys(&f, 0), ["2"]);
     assert_eq!(keys(&f, 1), ["0"]);
     assert_eq!(f.editor.apply_whip(&mut f.drawing, &edit)["ok"], false);
+}
+
+#[test]
+fn scale_whips_belong_to_every_node_of_a_list_and_multiply_a_float() {
+    let mut f = Fixture::source(
+        r#"module Drawing exposing (..)
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+@whip(OnNodes dots (ScaleHandle "Dot scale"))
+@whip(ScaleHandle "No anchor")
+scale :: Float
+scale = 1.0
+@whip(OnNodes dots (ScaleHandle "Wrong type"))
+count :: Int
+count = 3
+dotAt :: Int -> Node
+dotAt i = circle (fromIntegral i * 30 + 20) 50 (scale * (4 + fromIntegral i))
+dots :: List Node
+dots = map dotAt [0, 1, 2]
+program = svg 200 200 ([rect 0 0 200 200] <> dots)
+"#
+        .into(),
+    );
+    // A scale handle needs an anchor to sit on and a Float to multiply.
+    let whips = &f.drawing.last_good().unwrap().whips;
+    assert_eq!(whips.len(), 1);
+    assert_eq!((whips[0].kind, &*whips[0].label), ("scale", "Dot scale"));
+    assert_eq!(whips[0].keys.clone().unwrap(), ["1", "2", "3"]);
+    assert_eq!(whips[0].value, serde_json::Number::from_f64(1.0));
+    let mut edit = crate::whips::WhipEdit {
+        snapshot: f.snapshot(),
+        index: 0,
+        key: Some("0".into()),
+        value: 1.5,
+    };
+    // The page rect is not in the list, and a scale must be positive.
+    assert_eq!(f.editor.apply_whip(&mut f.drawing, &edit)["ok"], false);
+    edit.key = Some("2".into());
+    edit.value = 0.0;
+    assert_eq!(f.editor.apply_whip(&mut f.drawing, &edit)["ok"], false);
+    edit.value = 1.5;
+    let result = f.editor.apply_whip(&mut f.drawing, &edit);
+    assert_eq!(result["ok"], true, "{result}");
+    // One constant changed; every dot scaled and kept its relation to the others.
+    let edited = std::fs::read_to_string(f.drawing.path()).unwrap();
+    let changed: Vec<_> = f.original.lines().zip(edited.lines()).filter(|(a, b)| a != b).collect();
+    assert_eq!(changed.len(), 1, "{edited}");
+    assert!(changed[0].0.starts_with("scale = "));
+    for (key, r) in [("1", 6.0), ("2", 7.5), ("3", 9.0)] {
+        assert_eq!(f.value(key, "r"), json!(r));
+    }
+    let snapshot = f.snapshot();
+    assert_eq!(f.editor.undo(&mut f.drawing, &snapshot)["ok"], true);
+    assert_eq!(std::fs::read_to_string(f.drawing.path()).unwrap(), f.original);
 }
 
 fn save_text(fixture: &mut Fixture, source: &str, coalesce: bool) -> Value {

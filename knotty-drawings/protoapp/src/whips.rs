@@ -1,4 +1,5 @@
-//! Drawing-wide and object-bound integer sliders attached to checked entry-module bindings.
+//! Drawing-wide and object-bound controls attached to checked entry-module bindings:
+//! integer sliders, and scale handles that multiply a Float from the canvas.
 use knot_canonical::ast::{CDecl, CExpr, Ref};
 use knot_checker::program::TypedProgram;
 use knot_workbench::operation::ValueType;
@@ -7,16 +8,21 @@ use twine::{Session, ValueView};
 
 #[derive(serde::Serialize)]
 pub struct Slider {
+    /// "slider" edits an Int in the panel; "scale" multiplies a Float from a canvas handle.
+    pub kind: &'static str,
     #[serde(skip)]
     pub binding: String,
     #[serde(skip)]
     anchor: Option<String>,
+    /// The anchor is a `List Node`: the control belongs to every node in it.
+    #[serde(skip)]
+    anchor_list: bool,
     /// None is drawing-wide. A bound control has one key per occurrence in this snapshot.
     pub keys: Option<Vec<String>>,
     pub label: String,
     pub min: i32,
     pub max: i32,
-    pub value: Option<i64>,
+    pub value: Option<serde_json::Number>,
 }
 
 #[derive(serde::Deserialize)]
@@ -24,7 +30,7 @@ pub struct WhipEdit {
     pub snapshot: String,
     pub index: usize,
     pub key: Option<String>,
-    pub value: i32,
+    pub value: f64,
 }
 
 fn bound(e: &CExpr) -> Option<i32> {
@@ -43,21 +49,48 @@ fn drawing_ctor(expr: &CExpr, expected: &str) -> bool {
 }
 
 fn slider(e: &CExpr, binding: &str, program: &TypedProgram) -> Option<Slider> {
-    let (mut control, mut anchor) = (e, None);
+    let (mut control, mut anchor, mut anchor_list) = (e, None, false);
     if let CExpr::App(rest, inner) = e {
         if let CExpr::App(ctor, reference) = &rest.node {
-            if drawing_ctor(&ctor.node, "OnNode") {
+            let many = drawing_ctor(&ctor.node, "OnNodes");
+            if many || drawing_ctor(&ctor.node, "OnNode") {
                 let CExpr::Var(Ref::TopLevel(name)) = &reference.node else {
                     return None;
                 };
+                let node = |ty: &ValueType| matches!(ty, ValueType::Named(n, args) if n.module == ["Types"] && n.name == "Node" && args.is_empty());
                 let ty = ValueType::of_binding(program, name).ok()?;
-                if !matches!(ty, ValueType::Named(n, args) if n.module == ["Types"] && n.name == "Node" && args.is_empty())
-                {
+                let fits = match &ty {
+                    ValueType::Named(n, args) if many => {
+                        *n == knot_core::prelude("List") && args.len() == 1 && node(&args[0])
+                    }
+                    ty => !many && node(ty),
+                };
+                if !fits {
                     return None;
                 }
                 anchor = Some(name.clone());
+                anchor_list = many;
                 control = &inner.node;
             }
+        }
+    }
+    if let CExpr::App(ctor, label) = control {
+        if drawing_ctor(&ctor.node, "ScaleHandle") {
+            let CExpr::StringLit(label) = &label.node else {
+                return None;
+            };
+            // A scale handle lives on the canvas, so it needs something to sit on.
+            return anchor.is_some().then(|| Slider {
+                kind: "scale",
+                binding: binding.into(),
+                keys: Some(Vec::new()),
+                anchor,
+                anchor_list,
+                label: label.clone(),
+                min: 0,
+                max: 0,
+                value: None,
+            });
         }
     }
     let CExpr::App(rest, high) = control else {
@@ -77,9 +110,11 @@ fn slider(e: &CExpr, binding: &str, program: &TypedProgram) -> Option<Slider> {
     };
     let (min, max) = (bound(&low.node)?, bound(&high.node)?);
     (min < max).then(|| Slider {
+        kind: "slider",
         binding: binding.into(),
         keys: anchor.as_ref().map(|_| Vec::new()),
         anchor,
+        anchor_list,
         label: label.clone(),
         min,
         max,
@@ -93,8 +128,9 @@ pub fn declared(program: &TypedProgram) -> Vec<Slider> {
         let CDecl::Fn(f) = &decl.node else { continue };
         for a in f.annotations.iter().filter(|a| a.key == "whip") {
             if let Some(control) = slider(&a.value.node, &f.name, program) {
+                let wanted = if control.kind == "scale" { "Float" } else { "Int" };
                 if ValueType::of_binding(program, &f.name)
-                    == Ok(ValueType::Named(knot_core::prelude("Int"), vec![]))
+                    == Ok(ValueType::Named(knot_core::prelude(wanted), vec![]))
                 {
                     whips.push(control);
                 }
@@ -134,21 +170,25 @@ pub fn read_values(
                 session.evaluate(&global("program")),
                 crate::find_node(scene, source_root_key),
             ) {
-                if let Ok(keys) = crate::drawing_value::anchor_keys(
-                    session.read_values(),
-                    root,
-                    target,
-                    displayed,
-                ) {
+                let find = if whip.anchor_list {
+                    crate::drawing_value::anchor_list_keys
+                } else {
+                    crate::drawing_value::anchor_keys
+                };
+                if let Ok(keys) = find(session.read_values(), root, target, displayed) {
                     whip.keys = Some(keys);
                 }
             }
         }
         if let Ok(handle) = session.evaluate(&global(&whip.binding)) {
-            if let Ok(ValueView::Literal(knot_core::Literal::Int(value))) =
-                session.read_values().view(handle)
-            {
-                whip.value = Some(*value);
+            match session.read_values().view(handle) {
+                Ok(ValueView::Literal(knot_core::Literal::Int(value))) if whip.kind == "slider" => {
+                    whip.value = Some((*value).into());
+                }
+                Ok(ValueView::Literal(knot_core::Literal::Float(value))) if whip.kind == "scale" => {
+                    whip.value = serde_json::Number::from_f64(*value);
+                }
+                _ => {}
             }
         }
     }

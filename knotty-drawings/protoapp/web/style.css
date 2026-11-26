@@ -356,6 +356,10 @@ button, select, input { font: inherit; color: inherit; }
 .geometry-frame { fill:none; stroke:#2476cf; stroke-width:1.5; pointer-events:none; }
 .geometry-move { fill:transparent; stroke:transparent; stroke-width:12; pointer-events:all; cursor:move; }
 .geometry-handle { fill:white; stroke:#2476cf; stroke-width:1.5; pointer-events:all; }
+/* A whip's own handle: round and warm, so it never reads as a resize handle. */
+.whip-scale-handle { fill:#fff4d6; stroke:#b4690e; stroke-width:1.5; pointer-events:all; cursor:nesw-resize; }
+.whip-scale-handle.disabled { fill:#eee; stroke:#999; cursor:not-allowed; }
+.whip-asked { fill:none; stroke:#b4690e; stroke-width:1.2; stroke-dasharray:5 4; pointer-events:none; }
 .geometry-overlay, .canvas.geometry-dragging { touch-action:none; }
 .canvas.geometry-dragging { user-select:none; cursor:move; }
 
