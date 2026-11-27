@@ -1,281 +1,216 @@
 # Unravel design follow-ups
 
-Updated 2026-11-16 · Agreed direction; migration in progress.
+Updated 2026-11-26 · Open work only.
 
-## Unify constructor and product unraveling
+The design itself is in [unravel-design.md](unravel-design.md). What works
+today, and what does not, is shown one case at a time by the
+[unravelling stories](knotty-drawings/examples/unravel/); stories marked
+`needs-work` are referred to below by file name.
 
-Use ordinary unravel rules on data constructors. The separate constructor/product
-decomposer protocol is removed.
-Constructor identity, source field locations and reconstruction remain engine work;
-request policy, dispatch and validation use the same framework as function unravels.
+The migration tracked here until 2026-11-16 is finished: constructor and
+product rules run through the ordinary rule framework, materialization belongs
+to `Constriction` instances, generated callbacks return ordinary `Maybe`
+requests for one or several arguments, and `BodyRequest`, `@materialize` and
+the decomposer registrations are removed. Those sections are deleted from this
+file.
 
-For example, a constructor `Pair :: a -> b -> Pair a b` has a rule shaped like:
+`Feed a` and `Unraveller a b sIn sOut` below are shorthand for the records in
+unravel-design.md. The Prelude writes those records out in full; it has no such
+aliases yet.
+
+## 0. Next: splice, then lash
+
+### Splice (implemented)
+
+The design is in unravel-design.md §2 and §3; `tests/splice.rs` in the engine
+and the story `07-04-a-rule-that-splices` show it.
+
+Still open on splice:
+
+- **Generated callback code never answers `Splice`.** A rule inside a lambda's
+  body that says `Splice` is a failure there, because the body is shared by
+  every element. The calling rule only sees a `Splice` from a callback an
+  author wrote by hand.
+- **A bubbled splice is all or nothing.** Edits already routed out through the
+  call's arguments are dropped and the whole call is printed. Keeping the parts
+  that could be routed needs the wrapping work in §7.
+- **A partial request cannot be spliced.** `Splice` prints the materialized
+  request, so "second element is 7, rest anything" has nothing to print. If
+  that matters, `Splice` would carry a value.
+- **Your own functions are not bubbled.** Only read-only source bubbles. A
+  literal inside your own function is edited in place, for every caller.
+
+### Lash (designed, to implement next)
+
+Splice throws an expression away and prints a value. Lashing keeps the
+expression and adds a call around it: `e` becomes `e |> set_stroke blue`. It is
+how a property with no setter in the source gets one (`02-02-no-setter`), and
+how a created value is written with the library's own functions and not as raw
+data (`04-09-tidy-source-after-growth`).
+
+**How.** Insert the call with `default` arguments, then unravel the request
+through it in the ordinary way. `🧶set_stroke` routes the stroke to its
+argument, whose literal is then spliced; the rest goes to `e`, which already
+fits. `growMap` does the same with a callback. Creating `circle 160 80 25` is
+the same step with nothing wrapped: insert `circle default default default`
+and unravel through `🧶circle`.
+
+**Which function.** A library marks the functions that may be lashed on with
+`@lasher`. For each, in the order marked, the engine:
+
+1. calls its rule with default arguments, the current value of `e` as the last
+   argument, and the request;
+2. calls `fits` on the request the rule returns for that last argument and the
+   current value of `e`.
+
+The first function for which that holds absorbs what was missing. If it leaves
+part of the request unmet, repeat with what remains. An application may also
+name the function outright for one edit.
+
+Conventions and limits: the wrapped expression is the last argument, as `|>`
+feeds it. The rule is run on a default argument, the same assumption `growMap`
+makes. A rule that asks nothing of the wrapped argument passes for any request,
+so marking and ordering lashers is the library author's care. The test only
+picks the function; the final check still decides whether the edit is right.
+
+**Where.** The very end by default: the outermost expression that produces the
+value. An author moves it with `@cleat` on an expression:
+
+```knot
+circle 120 80 30 |> @cleat set_fill tomato |> rotate 30
+```
+
+Later, perhaps: named cleats such as `@cleat("style")`, so a whip can aim at
+one of several.
+
+**When: the caller's strategy.** An edit from the application carries a
+request and a strategy. A whip's control is data the application reads, so it
+can carry the strategy, as in `@whip(LashFirst (ColourPicker "Outline"))`; the
+canvas and the properties pane choose per property or gesture.
+
+| Strategy | Meaning |
+| --- | --- |
+| Unravel first (default) | Go all the way back. On a snag, lash at the nearest cleat passed on the way, or at the very end. |
+| Lash first | At the first cleat reached, try the lashers. If none absorbs the request, carry on unravelling. |
+| Splice here | Replace the expression the edit lands on with the printed value. |
+
+Lash first can duplicate a setter: with `set_fill red` inside the cleat, a blue
+fill adds a second `set_fill` and leaves the red one. Setters outside the cleat
+are reached first and edited as usual.
+
+Build splice-at-an-expression in the engine so that both a rule's outcome and
+a caller's strategy can invoke it.
+
+### The same fork, still decided by fixed policy
+
+- A reference to a top-level value always edits the definition, never the one
+  use. Detaching one shape from a shared size is the "splice here" strategy
+  above.
+- `if` always follows the branch that ran (§6, branch choice).
+- Replacement throws away the argument expressions (§7, wrapping).
+
+### Requests that may be missed
+
+The final check calls `fits` on the request. It only behaves as exact equality
+because applications send exact requests such as `Just 43`. A request that is a
+preference needs no engine change:
+
+- a looser constriction type, whose `fits` accepts a range or anything and
+  whose `materialize` gives the preferred value;
+- rules that accept it. The default rules take `Maybe a`; a relaxed rule for
+  `fromIntegral`, say, would turn a request for 43 into 40 where the source
+  can only make multiples of ten (`01-10-whole-numbers-only`). Strict stays the
+  default; the relaxed rule is named with a qualifier, `🧶fromIntegralRelaxed`;
+- the application sending it and drawing both what was asked and what was
+  given. Only the scale whip draws the second box today
+  (`03-06-resize-changes-the-frame`, `03-08-scale-about-the-centre`). Every
+  gizmo should be able to work this way, switched on by the application.
+
+## 1. Constructor attachment syntax
+
+Rules can be attached to data constructors from the host
+(`SourceEditor.with_constructor_rules`), and the engine supplies defaults for
+records, tuples and cons. There is no source syntax for an author to attach a
+rule to a constructor.
 
 ```knot
 -- Schematic: request types are chosen by the rule author.
 🧶pair :: (Feed a, Feed b) -> sOut -> Maybe (sA, sB)
 ```
 
-Its input requests require the corresponding `Constriction` relations. Constructor
-annotation syntax still needs defining. Changing constructor variants remains a
-materialization operation; editing arguments preserves the existing constructor.
+To decide: where the annotation goes in a `type` declaration, and how it reads
+when a type has several constructors. A constructor's rule edits its arguments; changing
+to a different constructor is replacement by the engine (§0).
 
-Implemented: `SourceEditor.with_constructor_rules` attaches ordered ordinary rules
-to constructors with fields. Source traversal and generated callbacks share function
-rule checking and selection; source calls also share proposal execution and pins.
-Standard cons rules and tuple/record defaults now use this path too, including
-record updates and generated callbacks. Empty products have no editable arguments.
-Legacy constructor/family and product registrations are removed. Custom products
-use `ProductRule` with per-field feeds (alphabetical for records); the drawing
-app uses `ConstructorRule`. Exact nominal defaults share rule checking/execution,
-with variant changes handed to the engine replacement boundary.
+## 2. Sensitivity
 
-## Keep FieldConstriction, make it general
+`Sensitivity a` is a stub type in the Prelude and the checker. Nothing is
+generated from it.
 
-```knot
-type FieldConstriction s = NoRequest | RequestField s
-```
-
-This remains useful when a constraint has no unconstrained case of its own:
-`NoRequest` skips an input without forcing it; `RequestField s` routes `s` normally.
-It must work through the unified unravel framework, not a separate decomposer-only
-result convention. Ordinary requests remain valid without this wrapper.
-
-Implemented: `Constriction s a => Constriction (FieldConstriction s) a`.
-`NoRequest` accepts any value; `RequestField s` checks `fits s`. Materialization
-returns `Nothing` for `NoRequest`, otherwise delegates to the inner request.
-Ordinary rules, product fields, output requests and generated callbacks unwrap it.
-Skipping still requires the inner relation and does not waive pins, branch guards
-or final output validation. Custom instances overriding this wrapper now conflict.
-
-## Records and tuples
-
-Provide engine-generated default unravel rules for record construction/fields and
-tuples, using the same checked contract, dispatch and validation as author rules.
-Their requests may contain `FieldConstriction` per field; this is not a second framework.
-
-Concrete record request types can already be written in Knot. What Knot cannot
-currently express is a generic transformation over an arbitrary record's fields
-(or an arbitrary-length tuple) that produces the corresponding request shape.
-That needs structural type-level mapping/row machinery, not just an ordinary
-higher-kinded parameter. Generate those shapes in the engine for now; prefer
-Knot-authored definitions if the language later gains the required expressiveness.
-
-## Simplify generated callback requests
-
-Remove `BodyRequest` from the default callback protocol. Generated callback
-unravelers use `Eq a` and ordinary `Maybe a` input constraints:
-
-```knot
--- Default generated callback contract:
-🧶callback :: Eq a => Feed a -> sOut -> Maybe (Maybe a)
-
--- Generic map rule remains parameterized by the callback's constraint types:
-🧶map :: Constriction sIn a =>
-  Unraveler a b sIn sOut -> Feed (List a) ->
-  ListConstriction sOut -> Maybe (ListConstriction sIn)
-```
-
-For the generated default, `sIn = Maybe a`: outer `Nothing` means failure,
-`Just Nothing` means no input constraint, and `Just (Just candidate)` requests
-an equal input. Accept ordinary `Eq` semantics for this default; do not add a
-runtime-injected predicate to its request type.
-
-Authors may provide custom `Constriction` types and callback unravelers when
-exact requests are insufficient. Generic `map` forwards the supplied callback
-contract rather than requiring `BodyRequest` or any other particular input
-constraint representation.
-
-Remove the `BodyRequest` type, its adapter and dedicated selectors after migrating
-generated callbacks, Prelude map/concatMap/growth policies, materialization
-examples and tests to ordinary exact requests or explicit author-defined policies.
-Retain the source editor's normal output validation, pins and transaction checks;
-this decision does not introduce a replacement public guard-carrying request type.
-
-Implemented: unary and multiargument generation use ordinary `Maybe` requests.
-Internal guards check proposals before returning; final transactions validate
-retained requests and pins. Prelude map/concatMap are generic over callback
-constraints. ConcatMap checks chunk lengths using an instance-materialized input
-candidate; generated exact requests supply one. `BodyRequest` and its adapter
-and selectors are removed from code, examples and current implementation docs.
-
-## Materialization and sensitivity migration
-
-- Add optional `materialize :: s -> Maybe t` to `Constriction`, defaulting to
-  `Nothing`. Validate returned candidates with `fits`; retain normal transaction checks.
-- Replace selector/`@materialize(template)` registration with instance-owned
-  candidate construction. Drafts remain ordinary Knot helpers, with no special
-  engine protocol. Keep source locations and reconstruction
-  in the engine. Decide standard list/product materialization policies explicitly.
 - Generate recursive `Sensitivity` request types and validators for records,
-  arbitrary tuples and ADTs; use `ListConstriction` for lists. Specify generated
-  constructor names, recursive derivation, opaque leaves and instance coherence.
-- Add fallible sensitivity adapters only after direct rule matching fails. Enforce
-  the converted-request-implies-original law on actual candidates by validating
-  both requests; no arbitrary conversion search or missing-validator fallback.
-- Implement multiargument callback companions using grouped per-argument feeds,
-  requests and validation evidence, as proposed in the callback contracts below.
-  Keep unary `map` generic over author constraint types; generated defaults use
-  `Maybe a` per ordinary callback input.
-- Keep recursively higher-order companion execution/generation deferred. Its
-  proposed recursive contract and fixed-capture semantics are recorded below; nested
-  calls inside an otherwise unary callback are a separate existing capability.
-- Separately design policies that stop traversal and wrap existing source, such as
-  `original <> [newItem]`. Candidate values alone cannot preserve an original
-  expression or select a particular factory-call spelling.
+  tuples of any length and ADTs; use `ListConstriction` for lists. Specify the
+  generated constructor names, recursive derivation, opaque leaves and instance
+  coherence. Derivation fails for function or opaque fields.
+- Add `ToSensitivity` / `FromSensitivity` dispatch, tried only after direct
+  rule matching fails. A failed conversion is final: no second conversion, no
+  other rule.
+- Enforce the converted-request-implies-original law on actual candidates by
+  validating both requests.
+- The name is not settled. unravel-design.md has a TODO to rename it; "tension"
+  and "taut" are held in reserve for this in the style guide.
 
-## Proposed higher-order callback contracts
+## 3. Callbacks
 
+### Supplied arguments and captures stay fixed
 
-**Proposal for manual integration into the design, not implementation status.** Multiargument callbacks are required
-for the next companion extension. Recursively higher-order callback contracts are
-specified below but their implementation is deferred. The bridge now accepts
-unary and multiargument callbacks. Nested higher-order calls inside a callback
-body are distinct from callbacks whose own parameters are functions.
+In `map (f x) ys`, the callback's rule can return requests for elements of
+`ys`, but not for the already supplied `x`. An edit that needs `x` to change
+fails. The same holds for a value a lambda captures from outside: it is pinned.
 
-### Unary callback companions
+This is the main thing the Bézier demo runs into
+(`06-06-the-bezier-shapes`; `06-02-captures-stay-pinned` shows it alone). The
+current way around it is a whip on the shared value (§5), or a wrapper function
+with its own rule (`06-04-wrapper-with-a-rule`).
 
-```knot
-type alias Unraveler a b sIn sOut =
-  { forward : a -> b
-  , unravel : Feed a -> sOut -> Maybe sIn
-  }
-```
+To design: unravels on function types themselves, so that a request on `f x`
+can reach `x`, possibly through `f`'s own rule. Open questions:
 
-A higher-order rule receives an `Unraveler` for each callback instead of a `Feed`.
-These packages come first, in callback argument order, followed by the grouped
-feeds for ordinary arguments and the output request. One ordinary argument has
-one feed; multiple ordinary arguments have a tuple of feeds. Returned requests
-cover only those ordinary arguments, in their original order.
+- How shared requests are reconciled when several elements ask for different
+  values of the one captured `x`.
+- What provenance a generated lambda needs to carry a route back to an
+  enclosing editable input. Until that exists, such captures reject; they are
+  not silently treated as one more editable argument.
+- (V2, to consider) Editing the callback's own code is the same idea: a
+  request on the function value, unravelled into the lambda's source. In
+  `map (\x -> circle x 80 18) xs`, moving one circle in `y` can only be done by
+  changing the `80`, which is a request on the callback, not on any element
+  (`04-01-one-element`). It is not a splice: nothing is replaced per element,
+  and the change applies to every element, so the other elements' requests
+  must still fit. Until then literals inside a callback stay fixed.
+- Generated bodies for a partial application need a concrete source body
+  today ("generated callback partial application needs a concrete source
+  body").
 
-For now, callback code and already supplied arguments stay fixed (see the accepted
-partial-application limitation below).
-The attached rule's signature specifies
-the callback request types; `a -> b` alone cannot determine them. A companion
-retains the actual forward closure and the corresponding unravel closure, with
-their selected dictionaries and captures. Function values need no `Eq` or
-`Constriction` instance.
+### Function-valued inputs and results
 
-The default Prelude `map` rule stays generic:
+A callback contract describes one call with a fixed number of ordinary
+arguments and a non-function result. Function-valued inputs and results are
+rejected.
 
-```knot
-🧶map :: Constriction sIn a =>
-  Unraveler a b sIn sOut -> Feed (List a) ->
-  ListConstriction sOut -> Maybe (ListConstriction sIn)
-```
+### Recursively higher-order callbacks (specified, not implemented)
 
-Generated unary callback unravelers use `sIn = Maybe a` and require `Eq a`.
-Author-written companions may choose other constraints. There is no `BodyRequest`
-in this intended design. Ordinary `map` preserves shape; growth requires an
-explicit policy.
-
-### Multiargument callbacks
-
-The same grouped-feed convention applies within a companion:
-
-```knot
-type alias Unraveler2 a b c sA sB sOut =
-  { forward : a -> b -> c
-  , unravel : (Feed a, Feed b) -> sOut -> Maybe (sA, sB)
-  }
-```
-
-The checker requires `Constriction sA a`, `Constriction sB b` and
-`Constriction sOut c`. Each input has its own pin. Outer `Nothing` fails the
-whole invocation; `Just (requestA, requestB)` proposes both input requests
-jointly. A proposal is not a candidate or a proof: the transaction must satisfy
-both requests and pins, and validate the actual forward result.
-
-For example, a binary callback can be passed to `zipWith`:
-
-```knot
-🧶zipWith :: (Constriction sA a, Constriction sB b) =>
-  Unraveler2 a b c sA sB sOut ->
-  (Feed (List a), Feed (List b)) ->
-  ListConstriction sOut -> Maybe (ListConstriction sA, ListConstriction sB)
-```
-
-The rule can invoke `callback.unravel (leftFeed, rightFeed) elementRequest` and
-route the returned constraints to the corresponding list elements. Which side
-changes is rule policy, informed by pins; the engine does not automatically favor
-one side. Ordinary zip-with preserves the input list shapes, produces the shorter
-length, and leaves unpaired suffixes unconstrained. Growth needs an explicit policy.
-
-For an accumulator combinator such as `foldl`, an accumulator request routes to
-the preceding callback invocation (eventually the initial accumulator), while an
-element request routes to that element's source. Intermediate accumulators are
-computed values, not independently editable leaves. The combinator's author
-supplies this reverse policy and retains obligations across repeated calls.
-
-For three or more ordinary inputs, extend the feed and request tuples in argument
-order, without an arity cap. `Unraveler2` is a convenience alias, not a distinct
-runtime protocol; the engine checks record shapes rather than alias names.
-
-Implemented for author-written `CallbackFactory` companions: grouped feeds and
-requests, per-input validators and pins, lazy skipped inputs, and invocation arity
-in checked metadata. These also work inside generated unary callbacks.
-Generated multiargument companions now solve inputs jointly, refresh affected
-values between requests, and preserve independent pins and lazy skipped inputs.
-Unary and multiargument generation both return ordinary `Maybe` requests.
-Function-valued inputs/results remain unsupported.
-
-Generated multiargument companions return a tuple of optional exact requests:
-
-```knot
--- Generated default for a -> b -> c:
-🧶callback :: (Eq a, Eq b) =>
-  (Feed a, Feed b) -> sOut -> Maybe (Maybe a, Maybe b)
-```
-
-This is a schematic generated signature: `sOut` is fixed by the selected
-contract, not a promise that one generated body can invert every request type.
-
-`Just (Nothing, Just y)` constrains only the second input. The generator must
-solve the body over all input roots together, refresh values after proposals,
-respect shared source and pins, and validate the full callback result. Running
-two independent unary inverses is insufficient. Any internal obligations needed
-by generation remain transaction validation responsibilities, not fields added
-to this public request type. Candidate selection and budgets remain explicit;
-this extension does not make arbitrary predicates invertible.
-
-Feed/request tuples retain ordinary lazy semantics. Inspecting one component
-does not force every input; an unconstrained component need not inspect its feed.
-Independent pins and final validation obligations still apply.
-
-### Arity, currying and partial application
-
-The companion contract describes one invocation with a specified number of
-arguments and a non-function result. `a -> b -> c` is a curried binary invocation;
-`(a, b) -> c` is a unary invocation with one tuple-valued feed. These contracts
-are not interchangeable. Invocation arity/argument roles are retained in checked
-metadata and matched against the companion's unravel signature; they must not
-be guessed by splitting source lambdas or accepting the first matching arrow.
-Forward types and requests must determine all contract types before selection;
-arity handling does not introduce new inference from runtime values.
-
-**Accepted limitation:** in `map (f x) ys`, the companion for `f x` can return
-requests for elements of `ys`, but not for the already supplied `x`. It stays fixed;
-an edit requiring a change to `x` fails. Supporting multiple callback arguments
-does not remove this limitation.
-
-**Future spec:** investigate unravels on function types themselves to handle partial
-applications. How a request on `f x` reaches `x` (possibly through `f`'s unravel),
-and how shared requests are reconciled, remains to be designed. The earlier
-source-linked proposal channel is not a settled requirement.
-
-### Recursively higher-order companions (specified, implementation deferred)
-
-A companion can itself describe a function accepting callbacks. Its `forward`
-field keeps the original function type; its `unravel` field receives companions
-for its callback arguments, then grouped ordinary feeds, then the output request.
-It returns requests for ordinary arguments only. Apply this rule recursively.
+A companion can itself describe a function that accepts callbacks. Its
+`forward` field keeps the original function type; its `unravel` field receives
+companions for its callback arguments, then the grouped ordinary feeds, then
+the output request. It returns requests for ordinary arguments only. Apply this
+rule recursively.
 
 For a callback of type `(a -> b) -> c -> d`:
 
 ```knot
 type alias HigherUnraveler a b c d sA sB sC sD =
   { forward : (a -> b) -> c -> d
-  , unravel : Unraveler a b sA sB -> Feed c -> sD -> Maybe sC
+  , unravel : Unraveller a b sA sB -> Feed c -> sD -> Maybe sC
   }
 ```
 
@@ -289,130 +224,131 @@ useHigher higher callback x = higher callback x
 
 🧶useHigher ::
   HigherUnraveler a b c d sA sB sC sD ->
-  Unraveler a b sA sB -> Feed c -> sD -> Maybe sC
+  Unraveller a b sA sB -> Feed c -> sD -> Maybe sC
 🧶useHigher higher callback input request =
   higher.unravel callback input request
 ```
 
-A callback's own callback may have several arguments or itself take callbacks;
-substitute its corresponding companion shape recursively. Different levels may
-choose different request types. Each call site must supply compatible companion
-contracts or an explicit supported adapter; do not search for contracts, silently
-change them, or try another rule after selected-rule failure.
+- A callback's own callback may have several arguments or itself take
+  callbacks; substitute its companion shape recursively. Different levels may
+  choose different request types.
+- Each call site must supply compatible companion contracts or an explicit
+  supported adapter. No searching for contracts, and no trying another rule
+  after the selected one fails.
+- This is a finite tree of checked contracts. It does not need a recursive type
+  alias, rank-n polymorphism, dependent types, function equality or
+  function-valued requests. Packages are monomorphic at their use sites to
+  begin with; a callback that must work at several instantiations is out of
+  scope.
+- Callback code stays fixed at every level. A nested rule may request changes
+  to ordinary inputs, not to callback code or unrelated captures.
+- Dynamic callbacks must carry a companion for the closure actually selected.
+  None is rebuilt from a function name or a forward type alone.
+- A contract with no ordinary inputs has nothing upstream to edit. Its unravel
+  signature omits the feed group and returns `Maybe Unit`; success only accepts
+  an invocation that is already valid. Current preparation requires an ordinary
+  input.
+- Checking and generation share explicit depth, node and work limits.
+  Recursive source definitions must not cause unbounded contract expansion;
+  unsupported recursion rejects.
 
-This is a finite tree of checked capability contracts, not a recursive Knot type
-alias or a requirement for rank-n polymorphism, dependent types, function equality
-or function-valued requests. Initially, packages are monomorphic at their use sites;
-ordinary outer type variables may specialize them. Polymorphic callbacks requiring
-one package to work at multiple instantiations are outside this extension.
+Tests to add with it: zero-value-input preparation, nested closure provenance,
+contract compatibility and bounded generation.
 
-Fixed-callback semantics apply at every level. A nested rule may request changes
-to ordinary inputs, including already supplied arguments with source routes,
-but not to callback code or unrelated captures.
-Generated lambdas capturing an enclosing editable input need explicit provenance
-and a route back to that input; until that route exists they reject, rather than
-silently treating the capture as another editable argument. Dynamic callbacks
-must carry compatible companions for the actual selected closure; no package is
-reconstructed from a function name or a forward type alone.
+## 4. Rules the standard library still lacks
 
-Contracts with no ordinary inputs have no upstream editable value. For completeness,
-their unravel signature omits the feed group and returns `Maybe Unit`; success can
-only accept an already valid fixed invocation, not manufacture an editable function.
-Executing an unnecessary rule is still avoided when a request is already satisfied.
-This degenerate case is also deferred; current preparation requires an ordinary input.
+The stories show these as the most visible gaps. None needs new engine work
+unless noted.
 
-Recursive checking and generation must share explicit depth/node/work limits.
-Recursive source definitions must not trigger unbounded static contract expansion;
-unsupported recursion rejects. Companion execution remains ordinary lazy Knot calls,
-with the normal runtime limits and final atomic source-edit validation.
+| Function | Story | Note |
+| --- | --- | --- |
+| `zipWith` | `04-13-through-zip-with` | Binary callbacks are supported; the rule is not written. Which side changes is the rule's policy, informed by pins. It keeps both list shapes and leaves unpaired suffixes unconstrained. |
+| `foldl` and other accumulators | | A request on the accumulator routes to the preceding call, and in the end to the initial value; a request on an element routes to that element. The rule must keep obligations across repeated calls. |
+| `filter` | `04-12-through-filter` | The rule must refuse an edit that pushes an element out of the filter. |
+| `reverse`, `take`, `drop` | `04-14-through-reverse` | |
+| `Map` | `05-04-map-value`, `05-05-map-insert`, `05-06-map-delete`, `05-07-map-retarget` | No rules at all. Insert and delete share the list gaps in §6. Nothing chooses between editing a value and editing the key that reads it. |
+| `hsl` | `01-07-colour-through-hsl` | |
+| Ranges such as `[0..n]` | `06-06-the-bezier-shapes` | A range's elements cannot be edited one by one. |
 
-## Multiargument callback implementation
+## 5. Whips
 
-- Replace the unary assumption in `check_companion` with a checked invocation
-  contract: argument positions/roles, ordinary input types, per-input constraints
-  and validator evidence, and a non-function output/request pair. Preserve the
-  distinction between a unary tuple input and several curried arguments.
-- Thread that contract through explicit companion preparation, inferred contracts,
-  source factories and generated bodies. Supplied arguments remain fixed for now;
-  extending partial applications is deferred to the function-type unravel design.
-- Generate bodies over multiple input roots jointly, returning tuples of optional
-  exact requests with per-input Eq evidence. Preserve shared-input obligations,
-  pins, branch validation and final forward-output validation without reintroducing
-  `BodyRequest` as a public requirement.
-- Test binary/ternary callbacks, unary tuples, mixed callback/value positions,
-  repeated argument types, static partial applications, custom request types,
-  ignored/erroring inputs, per-input pins, shared inputs and conflicting requests.
-  Exercise a binary combinator such as zipWith and an accumulator combinator such
-  as foldl; repeated invocations must retain earlier obligations. Partial-application
-  tests should preserve supplied arguments under the accepted limitation.
-- Add rejection tests for unsupported function results, unresolved contract types,
-  mismatched companions and nested higher-order contracts until implemented.
-  Future recursive contracts additionally need zero-value-input preparation,
-  nested closure provenance, contract compatibility and bounded generation.
+`@whip` is implemented in the drawing application, not in the engine. The
+engine parses the annotation and hands it over; the application evaluates the
+control, places it and turns a gesture into a request on the bound value.
 
-## Implementation checklist
+Working today: `IntSlider` and `ScaleHandle` controls; `OnNode` and `OnNodes`
+anchors; a live preview for every whip through
+the same preview session as other edits.
 
-- [x] Direct matches follow attachment order.
-- [x] Instance-owned materialization, including structural products and lists.
-- [x] General `FieldConstriction` validation and lazy no-demand routing.
-- [x] Shared constructor/product/cons rule checking and execution, including
-  per-field product rules and exact nominal defaults.
-- [x] Unary and multiargument generated companions return ordinary `Maybe` requests.
-- [x] Generic map/concatMap contracts; updated growth, examples and drawing integration.
-- [x] Preserve source routes, pins, budgets, atomic validation and undo.
-- [x] Remove legacy selector/template and decomposer registration APIs.
-- [ ] Source constructor attachment syntax.
-- [ ] Sensitivity generation/conversions.
-- Deferred: function-type unravels, including editable supplied callback arguments.
-- [ ] Whips and the remaining replacement-boundary decision.
+Decided but not exercised: several whips on one expression are allowed.
 
-This tracks implementation follow-ups to [unravel-design.md](unravel-design.md).
+Open:
 
-## Migration checkpoint — 2026-11-16
+- **An engine-level contract.** Expose evaluated anchor references and an
+  evaluation identity, so an application can resolve repeated or absent output
+  occurrences and reject or refresh stale handles. Define evaluation
+  dependencies before execution; do not introduce output cycles. With two
+  controls written, it is time to decide what is general and what is the
+  drawing library's own.
+- **Non-proportional scale handles.** `ScaleHandle` asks for a new value by
+  proportion, which is only right when size is proportional to the bound
+  value. Anything else needs a numeric solve.
+- **More controls.** A colour control (`09-06-a-colour-whip`) and a point
+  handle bound to two numbers (`09-05-a-position-handle`).
+- **Whips on local values.** `@whip` attaches to top-level bindings only
+  (`09-07-a-whip-on-a-local`).
+- **Gestures that change their own frame.** A resize that also rescales the
+  view can never follow the pointer, so the canvas refuses it
+  (`03-06-resize-changes-the-frame`). Related: no canvas gesture asks only for
+  a size and lets the position land where the program puts it
+  (`03-08-scale-about-the-centre`); the scale handle does this for a whip only.
 
-Direct matches follow attachment order. Instance-owned materialization replaces
-selector and source-template registration. Exact, alternative, list and structural
-product requests supply candidates; failed construction leaves source unchanged.
-Current-value policies belong in unravel rules. Breaking API changes are welcome;
-there is no compatibility requirement.
+## 6. Lists: growth, insertion, deletion, order
 
-Settled decisions:
+- **Growth through `map`.** `growMap` grows and uses `Default`; plain `map`
+  keeps the list's shape. Still to decide: which of the two should be the
+  default spelling, and a naming scheme for "same function, different unravel".
+  Making plain `map` grow needs the engine to look up `Default` optionally, so
+  that element types without one still unravel.
+- **Insertion in the middle** (`04-05-insert-in-the-middle`). A list grows only
+  at its end. Insertion needs a request that says where, and a way to choose it
+  in the editor.
+- **Deletion** (`04-06-delete-an-element`). Rules keep or grow a list's length;
+  a request cannot ask for a shorter list.
+- **Reordering** (`04-07-reorder-elements`). Elements are matched by position.
+  Reordering needs matching by identity, so a moved element keeps its source
+  expression.
+- **Branch choice** (`08-04-create-the-other-branch`). The default value fixes
+  which branch of a callback runs, so creation only reaches outputs on that
+  branch. Lifting this needs the engine to try other branches, not a different
+  default.
+- **`@stock(value)`** (V2, to consider). An annotation on a function that
+  overrides the default for its input, for when one type needs different
+  starting values in different places. Deferred because `materialize`
+  instances are ordinary code: they can call `default` but cannot see an
+  annotation, so the two would disagree. Open questions if revisited: a wrapper
+  such as `\d -> f d` loses the inner function's stock; what the expression may
+  refer to on a local lambda; several arguments take a tuple.
 
-- Supplied callback arguments stay fixed for now. Function-type unravels are a
-  future design direction for lifting this accepted limitation.
-- Conversion failure is final; do not retry another conversion or rule.
-- Apps default to `Sensitivity T` (`Maybe T` for primitives), and `ListConstriction`
-  for lists. Rules may choose other constriction types. Recursive ADT sensitivity
-  has constructor-shaped requests; derivation fails for function or opaque fields.
-  The brief design clarification is merged in PR #102; generation remains to implement.
-- Multiple whips on an expression are allowed. Apps define anchors, UI, placement
-  and behavior across program revisions. Detailed whip execution is deferred.
+## 7. Source edits
 
-Remaining work/decisions:
+- **Replacement boundaries.** Settle the primitive-type TODO in
+  unravel-design.md. The implementation already goes further than the design
+  text: it reconstructs supported nominal data at editable read-only
+  references.
+- **Wrapping existing source.** A policy that stops traversal and wraps what is
+  there, such as `original <> [newItem]`. Candidate values alone cannot keep an
+  original expression or pick a particular spelling of a call.
+- **Inserting a call that is not there** (`02-02-no-setter`). The editor
+  changes arguments that exist; it cannot add a `set_fill` to a shape that has
+  none.
+- **Printing new values as code** (`04-09-tidy-source-after-growth`). A created
+  value is printed from its data on one line, not as the code a person would
+  write.
 
-- Implement sensitivity generation and fallible conversion dispatch.
-- Constructor attachment syntax: generated sensitivity request constructors do not
-  specify how an author attaches an unravel rule to a value constructor.
-- Whip API: expose evaluated anchor references and evaluation identity so apps can
-  resolve repeated/absent output occurrences and reject or refresh stale handles.
-  Define evaluation dependencies before execution; do not introduce output cycles.
-- Replacement boundaries: settle the primitive-type TODO; current implementation
-  also reconstructs supported nominal data at editable read-only references.
+## 8. Types Knot cannot express yet
 
-- Growth through `map`. `growMap` is the growable variant and uses `Default`;
-  plain `map` stays shape preserving. Still to decide: which of the two should
-  be the default spelling, and a consistent naming scheme for "same function,
-  different unravel" variants. Making plain `map` growable needs the engine to
-  look up `Default` optionally, so that element types without one still unravel.
-- `@stock(value)` (V2, to consider). An annotation on a function that overrides
-  the default for its input, for when one type needs different starting values
-  in different places. Deferred because `materialize` instances are ordinary
-  code: they can call `default` but cannot see an annotation, so the two would
-  disagree. Open questions if revisited: a wrapper such as `\d -> f d` loses the
-  inner function's stock; what the expression may refer to on a local lambda;
-  several arguments take a tuple.
-- Branch choice. A default (like the old seed) fixes which branch of a callback
-  runs, so creation can only reach outputs on that branch. Lifting this needs
-  the engine to try other branches, not a different default.
-
-Recursively higher-order execution and source wrapping remain deferred.
+The engine generates the default rules for records and tuples because Knot
+cannot write a transformation over an arbitrary record's fields, or a tuple of
+any length, that produces the matching request shape. That needs type-level
+mapping over rows. Prefer Knot-authored definitions if the language gains it.

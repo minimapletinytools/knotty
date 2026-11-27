@@ -49,33 +49,31 @@ pushforward2 f left right =
   }
 
 🧶plus :: (Feed Float, Feed Float) -> Maybe Float -> Unravelled (Maybe Float, Maybe Float)
-🧶plus (left, right) target = orSnag (case target of
-  Nothing -> Just (Nothing, Nothing)
+🧶plus (left, right) target = case target of
+  Nothing -> Unravel (Nothing, Nothing)
   Just wanted -> case (left.pinned, right.pinned) of
     (Nothing, _) ->
       let b = effective right
-      in Just (Just (wanted - b), Just b)
-    (Just a, Nothing) -> Just (Just a, Just (wanted - a))
+      in Unravel (Just (wanted - b), Just b)
+    (Just a, Nothing) -> Unravel (Just a, Just (wanted - a))
     (Just a, Just b) ->
-      if a + b == wanted then Just (Just a, Just b) else Nothing
- )
+      if a + b == wanted then Unravel (Just a, Just b) else Snag
 
 🧶times :: (Feed Float, Feed Float) -> Maybe Float -> Unravelled (Maybe Float, Maybe Float)
-🧶times (left, right) target = orSnag (case target of
-  Nothing -> Just (Nothing, Nothing)
+🧶times (left, right) target = case target of
+  Nothing -> Unravel (Nothing, Nothing)
   Just wanted -> case (left.pinned, right.pinned) of
     (Nothing, _) ->
       let b = effective right
       in if b == 0.0 then
-        if wanted == 0.0 then Just (Just left.value, Just b) else Nothing
-      else Just (Just (wanted / b), Just b)
+        if wanted == 0.0 then Unravel (Just left.value, Just b) else Snag
+      else Unravel (Just (wanted / b), Just b)
     (Just a, Nothing) ->
       if a == 0.0 then
-        if wanted == 0.0 then Just (Just a, Just right.value) else Nothing
-      else Just (Just a, Just (wanted / a))
+        if wanted == 0.0 then Unravel (Just a, Just right.value) else Snag
+      else Unravel (Just a, Just (wanted / a))
     (Just a, Just b) ->
-      if a * b == wanted then Just (Just a, Just b) else Nothing
- )
+      if a * b == wanted then Unravel (Just a, Just b) else Snag
 
 chooseInput :: Feed Float -> Maybe Float -> Maybe Float
 chooseInput input request =

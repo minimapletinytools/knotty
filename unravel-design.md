@@ -1,11 +1,12 @@
 # Unravel design
 
-Intended design · 2026-11-05. Implementation migrations are tracked in
-[follow-ups](unravel-design-followups.md).
+Intended design · 2026-11-26. Open work is tracked in
+[follow-ups](unravel-design-followups.md). Working examples are in the
+[unravelling stories](knotty-drawings/examples/unravel/).
 
 Unravel rules translate output requests into input requests. The engine turns these into source changes and validates the output.
 
-## 1. Constraints and materialization
+## 1. Constrictions and materialization
 
 ```knot
 interface Constriction c t where
@@ -47,19 +48,29 @@ for any `sOut` and `sIn` where `Constriction sIn a` and `Constriction sOut out` 
 
 ```knot
 f :: a -> out
-some_valid_unravel_for_f :: Feed a -> sOut -> Maybe sIn
+some_valid_unravel_for_f :: Feed a -> sOut -> Unravelled sIn
 ```
 
 similarly
 
 ```
 g :: a -> b -> out
-some_valid_unravel_for_g :: (Feed a, Feed b) -> sOut -> Maybe (sA, sB)
+some_valid_unravel_for_g :: (Feed a, Feed b) -> sOut -> Unravelled (sA, sB)
 ```
 
 Requires `Constriction sA a`, `Constriction sB b` and `Constriction sOut out`.
 
-An outer `Nothing` in the result means failure. 
+The result type
+
+```knot
+type Unravelled s = Unravel s | Splice | Snag
+```
+
+- `Unravel s` requests `s` of the inputs
+- `Splice` replaces the expression the rule was called on (the whole call, including its arguments). The engine materializes the rule's output request and prints that value as source. If the request does not materialize the edit fails
+- `Snag` fails the edit
+
+`Unravelled` is a monad, `Splice` and `Snag` both end a `do` block.
 
 
 The type
@@ -73,7 +84,24 @@ If `pinned = Just p`, the returned input request `s` must satisfy `fits s p`.
 The engine must also preserve the actual pinned input. No condition on
 `materialize s` is needed: it may choose another acceptable value or return `Nothing`.
 
-Attach rules using `@unravel(rule)` on functions or data constructors.
+Attach rules using `@unravel(🧶rule)` on functions or data constructors. A rule is named 🧶 plus the name of the function it unravels.
+
+### Data constructors
+
+A data constructor is unravelled like any other function, e.g.
+
+```knot
+-- Pair :: a -> b -> Pair a b
+🧶pair :: (Feed a, Feed b) -> sOut -> Unravelled (sA, sB)
+```
+
+- the rule edits the constructor's arguments, the existing constructor is kept
+- when the default constructor unravel sees a request for a different constructor it returns `Splice`. A rule you attach yourself can do the same
+- the engine tracks constructor identity, source field locations and reconstruction
+
+The engine generates default rules for records, tuples and cons. These go through the same checks as a rule you write. They are generated in the engine because Knot can not yet express a transformation over the fields of an arbitrary record or tuple.
+
+TODO source syntax for attaching a rule to a data constructor
 
 ### Unravel selection
 
@@ -82,7 +110,7 @@ The unravel function to be used is chosen in the following order
 1. Prefer rules accepting the output request type directly, including polymorphic specialization.
 2. Otherwise use declared `ToSensitivity` / `FromSensitivity` conversions (§5).
 3. Break ties within each group by annotation order. No ranking by input matches.
-4. If the selected rule returns `Nothing`, fail; do not try another rule.
+4. If the selected rule returns `Snag`, fail; do not try another rule.
 
 
 ## 3. Unravelling
@@ -96,13 +124,60 @@ Given a "request" a basic unravel is as follows:
 4. Recheck and evaluate the candidate program. Publish one atomic edit only if
    every request and retained pin/branch obligation passes. Apply/undo check revisions.
 
-Boundaries include literals, editable uses of read-only values, and structural
-replacement such as a missing list suffix or constructor change. Imported
+Boundaries include literals, editable uses of read-only values, any expression whose rule returns `Splice`, and structural
+replacement such as a missing list suffix. Imported
 library definitions are read-only. 
 
+An unravel that reaches a literal is effectively a `Splice`: there are no inputs to request anything of, so the literal is replaced by the materialized request.
+
+A function with no rule is unravelled through its body. A splice on read-only source can not be done in place, so it bubbles up the call until it reaches source that can be edited. Only a splice bubbles up. An `Unravel` or a `Snag` from a rule is never turned into a splice.
+
 List insertion can preserve existing expressions through constructor-context recipes.
-This does not give rules a general operation for wrapping existing source in an
-arbitrary function call; that remains deferred.
+
+The final validation checks `fits` on each request and the final validation is accepted if it passes. Since fits is a looser constraint than equality, applications should be able handle the unequal case when requesting a loose constriction.
+
+### Lashing
+
+A splice throws the expression away. A lash keeps the expression and adds a call around it, e.g. `e` becomes `e |> set_stroke blue`.
+
+To lash a function on, the engine inserts the call with `default` arguments and then unravels the request through it as usual. e.g. `e |> set_stroke default`, then `🧶set_stroke` sends the stroke to its argument (a literal, so it is spliced) and the rest to `e`.
+
+Creating a value with a library function is the same thing with nothing to wrap, e.g. insert `circle default default default` and unravel through `🧶circle`.
+
+A function that can be lashed on is marked with `@lasher`. The expression being wrapped is its last argument (the one `|>` feeds).
+
+```knot
+@lasher
+@unravel(🧶set_stroke)
+set_stroke :: Color -> Node -> Node
+```
+
+The engine picks the first lasher whose rule, given the request, returns a request for the last argument that already `fits` the current value of `e`. If part of the request is still unmet it repeats with what remains. The application can also name the function to lash.
+
+By default a lash goes at the very end, on the outermost expression that produces the value. A `@cleat` on an expression moves it there
+
+```knot
+circle 120 80 30 |> @cleat set_fill tomato |> rotate 30
+```
+
+FUTURE named cleats e.g. `@cleat("style")` so that a request can aim at one of several
+FUTURE named lashers e.g. `@lasher("meowmeow")` so that a request can aim at a specific lasher, although is this actually useful in practice?
+
+### Unravel strategy
+
+The application sends a strategy along with its request:
+
+- unravel first (default): unravel all the way back. If that snags, lash at the nearest cleat that was passed, or at the very end
+- lash first: at the first cleat reached try the lashers. If none takes the request, carry on unravelling
+- splice here: replace the expression the request lands on
+
+Lash first can leave 2 setters behind, e.g. with `set_fill red` inside the cleat, asking for blue adds a `set_fill blue` at the cleat and keeps the red one. A setter outside the cleat is reached first and is edited as usual.
+
+TODO what is "Splice here" do we need/want that?
+TODO what are other unravel startegies we might want? e.g. no lash strategy, no bubbling up splices in reda onyl libraries, etc
+
+
+### Braching and Converging
 
 A request may eventually "branch" and "converge" producing 2 potentially conflicting requests. A conservative reconciliation algorithm is as follows:
 
@@ -172,45 +247,62 @@ can replace the enclosing list expression while retaining the existing element e
 ## 4. Higher-order functions
 
 ```knot
-type alias Unraveler a b sIn sOut =
+type alias Unraveller a b sIn sOut =
   { forward : a -> b
-  , unravel : Feed a -> sOut -> Maybe sIn
+  , unravel : Feed a -> sOut -> Unravelled sIn
   }
 ```
 
-A higher-order rule receives an `Unraveler` for each "callback" instead of a `Feed`.
+A higher-order rule receives an `Unraveller` for each "callback" instead of a `Feed`.
 These packages come first, in "callback" argument order, followed by feeds for the
-ordinary arguments and the output request. Callback code stays fixed; supplied
-arguments are not automatically pinned. The attached rule's signature specifies the "callback" request types;
+ordinary arguments and the output request. Callback code stays fixed, and so do arguments
+already supplied to the callback (see §9). The attached rule's signature specifies the "callback" request types;
 `a -> b` alone cannot determine them.
-For example, the default `map` unravel has the following signature
+For example, the default `map` unravel for lists has the following signature
 
 ```knot
-unravel_map :: Constriction sIn a =>
-  Unraveler a b sIn sOut -> Feed (List a) ->
-  ListConstriction sOut -> Maybe (ListConstriction sIn)
+🧶mapList :: Constriction sIn a =>
+  Unraveller a b sIn sOut -> Feed (List a) ->
+  ListConstriction sOut -> Unravelled (ListConstriction sIn)
 ```
+
+A callback's unravel is only called by the rule it was passed to, so that rule decides what a `Splice` from the callback means. Passing it on splices the whole higher-order call (e.g. all of `map f xs`). The default `map` rules turn it into a `Snag`.
+
+`map` keeps the shape of the list. Growing a list through a callback is a different policy, so it is a different function: `growMap` uses `Default` (§1) to create the new input.
 
 Multiple arguments are supported.
 
 ```
-type alias Unraveler2 a b c sA sB sOut =
+type alias Unraveller2 a b c sA sB sOut =
   { forward : a -> b -> c
-  , unravel : (Feed a, Feed b) -> sOut -> Maybe (sA, sB)
+  , unravel : (Feed a, Feed b) -> sOut -> Unravelled (sA, sB)
   }
 
 ```
+
+AGENT NOTES BELOW REDUNDANT CAN DELETE
+- each input has its own pin
+- `Snag` fails the whole call, `Unravel (requestA, requestB)` proposes both requests together
+- which side changes is up to the rule, informed by pins. The engine does not favor one side
+- the tuples are lazy, an input the rule does not look at is not forced
+- `a -> b -> c` is one call with 2 arguments, `(a, b) -> c` is one call with 1 tuple argument. These are different contracts and are not interchangeable
+- for 3 or more arguments extend the tuples in argument order
+
+### Generated callback unravels
+
+A function with no rule of its own (e.g. a lambda passed to `map`) gets a rule generated from its body.
+The generated rule only makes exact requests, so its input request type is `Maybe a` and it needs `Eq a`. This is the `sIn` a higher-order rule sees for such a callback.
 
 Nested higher-order callbacks extend naturally with recursion. The example below
 is illustrative; support is deferred for simplicity.
 
 ```
 -- Unraveller for type (a -> b) -> c -> d
-type alias HigherUnraveler a b c d sA sB sC sD =
+type alias HigherUnraveller a b c d sA sB sC sD =
   { forward : (a -> b) -> c -> d
   , unravel :
-      Unraveler a b sA sB ->
-      Feed c -> sD -> Maybe sC
+      Unraveller a b sA sB ->
+      Feed c -> sD -> Unravelled sC
   }
 ```
 
@@ -289,6 +381,17 @@ instance Constriction s t => Constriction (ListConstriction s) (List t)
 `Prepend s rest` requires a head fitting `s`, then checks the tail.
 `Prepend Nothing (Prepend (Just 7) AnyRemainder)` constrains only the second element.
 
+```knot
+-- a request, or no request at all
+type FieldConstriction s = NoRequest | RequestField s
+instance Constriction s a => Constriction (FieldConstriction s) a
+```
+
+`FieldConstriction` is for when a constriction has no "don't care" case of its own.
+`NoRequest` accepts any value and skips the input without forcing it. `RequestField s` routes `s` as usual.
+`materialize` gives `Nothing` for `NoRequest`.
+Skipping an input does not waive its pin, branch guards or final output validation.
+
 
 ## 8. Whipping (Unravelling Heads)
 
@@ -314,6 +417,26 @@ program = [wheel]
 ```
 
 (this example essentially illustrates how to reimplement what a reasonable default applicatio unravelling behavior for Circle might be)
+
+- several whips on one expression are allowed
+- the application defines the controls, where they are anchored, their UI and how they behave across program revisions
+- a whip previews its edit live like any other edit
+
+e.g. the drawing library has `IntSlider` and `ScaleHandle` controls and `OnNode` / `OnNodes` anchors:
+
+```knot
+@whip(OnNodes decorations (ScaleHandle "Shape scale"))
+shapeScale :: Float = 1.0
+```
+
+Whips are implemented by the application. The engine only parses the annotation.
+
+A whip's control is data the application reads, so it can also say which unravel strategy (§3) to use, e.g.
+
+```knot
+@whip(LashFirst (ColourPicker "Outline"))
+outline :: Color = tomato
+```
 
 
 # 9. Unsupported Features
