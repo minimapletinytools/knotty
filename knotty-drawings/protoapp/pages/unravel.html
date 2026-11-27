@@ -38,6 +38,21 @@
     .about p { margin: .45rem 0 0; max-width: 62rem; line-height: 1.45; }
     .about .note { color: #8a4b05; }
     .about .file { font-size: .82rem; color: #536556; }
+    /* Review notes are a development aid, so their button stays faint until it is wanted. */
+    #toggle-comments { margin-left: auto; font: 650 .8rem system-ui, sans-serif; padding: .3rem .6rem; border: 1px solid transparent; border-radius: .35rem; background: none; color: inherit; cursor: pointer; opacity: .3; }
+    #toggle-comments:hover, #toggle-comments:focus-visible, #toggle-comments[aria-expanded=true], #toggle-comments.has-comment { opacity: 1; }
+    #toggle-comments[aria-expanded=true] { border-color: #b9c0b0; background: #f3f5ec; }
+    #toggle-comments:focus-visible { outline: 2px solid #327255; outline-offset: 2px; }
+    #comments { margin-top: .7rem; max-width: 62rem; }
+    #comment { display: block; width: 100%; min-height: 5rem; resize: vertical; padding: .5rem .6rem; font: inherit; font-size: .92rem; border: 1px solid #b9c0b0; border-radius: .35rem; background: #fffdf4; color: inherit; }
+    #comment:focus-visible { outline: 2px solid #327255; outline-offset: 1px; }
+    .comment-actions { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-top: .5rem; font-size: .82rem; color: #536556; }
+    .comment-actions button { font: 650 .8rem system-ui, sans-serif; padding: .3rem .6rem; border: 1px solid #b9c0b0; border-radius: .35rem; background: #f3f5ec; color: inherit; cursor: pointer; }
+    .comment-actions button:hover:not(:disabled) { background: #e2e7d8; }
+    .comment-actions button:disabled { opacity: .5; cursor: default; }
+    .comment-actions button:focus-visible { outline: 2px solid #327255; outline-offset: 2px; }
+    #clear-comments { color: #9a2f1d; }
+    .comment-mark { margin-left: auto; font-size: .7rem; }
     iframe { width: 100%; height: 100%; border: 0; background: white; }
     @media (max-width: 760px) {
       body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
@@ -54,10 +69,18 @@
   </nav>
   <main>
     <section class="about" aria-live="polite">
-      <h2><button id="toggle-stories" type="button" aria-controls="story-list" aria-expanded="true">☰ Stories</button><span id="title"></span><span class="badge" id="badge"></span></h2>
+      <h2><button id="toggle-stories" type="button" aria-controls="story-list" aria-expanded="true">☰ Stories</button><span id="title"></span><span class="badge" id="badge"></span><button id="toggle-comments" type="button" aria-controls="comments" aria-expanded="false" title="Review notes, kept in this browser">✎ Notes</button></h2>
       <p id="try"></p>
       <p class="note" id="note" hidden></p>
       <p class="file"><a id="file"></a></p>
+      <div id="comments" hidden>
+        <textarea id="comment" aria-label="Notes on this story" placeholder="Notes on this story. Saved in this browser as you type."></textarea>
+        <div class="comment-actions">
+          <button id="copy-comments" type="button">Copy comments for agent</button>
+          <button id="clear-comments" type="button">Clear all comments</button>
+          <span id="comment-status" role="status"></span>
+        </div>
+      </div>
     </section>
     <iframe id="drawing" title="Story drawing"></iframe>
   </main>
@@ -111,6 +134,86 @@
     try { stored = localStorage.getItem("unravel.collapsed") || ""; } catch {}
     fold(stored === "1");
     toggle.onclick = () => fold(!document.body.classList.contains("collapsed"));
+    // Review notes: one per story, kept in this browser, handed to an agent as one block of text.
+    let comments = {};
+    try { comments = JSON.parse(localStorage.getItem("unravel.comments") || "{}") || {}; } catch {}
+    const notesToggle = document.getElementById("toggle-comments"), panel = document.getElementById("comments");
+    const box = document.getElementById("comment"), status = document.getElementById("comment-status");
+    const copy = document.getElementById("copy-comments"), clear = document.getElementById("clear-comments");
+    const noted = () => Object.keys(comments).filter(slug => comments[slug].trim());
+    function showComments() {
+      const slugs = noted();
+      notesToggle.classList.toggle("has-comment", slugs.includes(current.slug));
+      copy.disabled = clear.disabled = !slugs.length;
+      copy.textContent = slugs.length ? `Copy comments for agent (${slugs.length})` : "Copy comments for agent";
+      for (const link of groups.querySelectorAll("li a")) {
+        const slug = new URLSearchParams(link.search).get("story");
+        let mark = link.querySelector(".comment-mark");
+        if (slugs.includes(slug) && !mark) {
+          mark = document.createElement("span");
+          mark.className = "comment-mark";
+          mark.title = "Has a note";
+          mark.textContent = "✎";
+          link.append(mark);
+        } else if (!slugs.includes(slug)) mark?.remove();
+      }
+    }
+    function keepComments() {
+      try { localStorage.setItem("unravel.comments", JSON.stringify(comments)); return true; } catch { return false; }
+    }
+    function commentsForAgent() {
+      const slugs = noted();
+      // Stories in their listed order; notes on stories that no longer exist go last.
+      const order = [...stories.filter(s => slugs.includes(s.slug)), ...slugs.filter(slug => !stories.some(s => s.slug === slug)).map(slug => ({ slug }))];
+      const parts = order.map(story => [
+        `## ${story.title || story.slug}` + (story.title ? ` (${story.status === "works" ? "works" : "needs work"})` : " (story no longer listed)"),
+        ...(story.path ? [`File: ${story.path}`] : []),
+        `Story: unravel/?story=${story.slug}`,
+        "",
+        comments[story.slug].trim(),
+      ].join("\n"));
+      return [`# Review comments on the Unravelling stories`, `${order.length} of ${stories.length} stories have a comment.`, ...parts].join("\n\n") + "\n";
+    }
+    function openComments(open) {
+      panel.hidden = !open;
+      notesToggle.setAttribute("aria-expanded", String(open));
+      try { localStorage.setItem("unravel.comments.open", open ? "1" : ""); } catch {}
+    }
+    box.value = comments[current.slug] || "";
+    box.oninput = () => {
+      if (box.value.trim()) comments[current.slug] = box.value; else delete comments[current.slug];
+      status.textContent = keepComments() ? "Saved in this browser" : "Could not save: this browser blocks storage";
+      showComments();
+    };
+    notesToggle.onclick = () => { openComments(panel.hidden); if (!panel.hidden) box.focus(); };
+    copy.onclick = async () => {
+      const text = commentsForAgent();
+      try { await navigator.clipboard.writeText(text); }
+      catch {
+        // Without clipboard permission, copy through a selection instead.
+        const scratch = document.createElement("textarea");
+        scratch.value = text;
+        document.body.append(scratch);
+        scratch.select();
+        const done = document.execCommand("copy");
+        scratch.remove();
+        if (!done) { status.textContent = "Could not copy"; return; }
+      }
+      status.textContent = `Copied ${noted().length} to the clipboard`;
+    };
+    clear.onclick = () => {
+      const count = noted().length;
+      if (!confirm(`Delete the comments on ${count} ${count === 1 ? "story" : "stories"}? This cannot be undone.`)) return;
+      comments = {};
+      box.value = "";
+      keepComments();
+      status.textContent = "Comments cleared";
+      showComments();
+    };
+    let wasOpen = "";
+    try { wasOpen = localStorage.getItem("unravel.comments.open") || ""; } catch {}
+    openComments(wasOpen === "1");
+    showComments();
     groups.querySelector("[aria-current]")?.scrollIntoView({ block: "nearest" });
   </script>
 </body>
