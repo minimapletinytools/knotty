@@ -55,7 +55,7 @@ impl Walker<'_> {
                 .map(|(r, v)| format!("fits {r} {v}"))
                 .collect::<Vec<_>>()
                 .join(" && ");
-            self.probes.check(&format!("{source}validate {} request = case rule {} request of\n  Nothing -> True\n  Just ({}) -> fits request {value} && {checks}\n", group(&feeds), group(&feeds), group(&requests)))?;
+            self.probes.check(&format!("{source}validate {} request = case rule {} request of\n  Snag -> True\n  Splice -> True\n  Unravel ({}) -> fits request {value} && {checks}\n", group(&feeds), group(&feeds), group(&requests)))?;
         }
         Ok(())
     }
@@ -255,5 +255,5 @@ pub(super) fn exact_constructor_rule(constructor: &GlobalName, types: &[Ty]) -> 
         .map(|n| format!("Just {n}"))
         .collect::<Vec<_>>();
     let skipped = vec!["Nothing".to_owned(); names.len()];
-    format!("\\_ request -> case request of\n  Nothing -> Just ({})\n  Just candidate -> case candidate of\n    {} -> Just ({})\n    _ -> Nothing", group(&skipped), constructor_pattern(constructor, &names), group(&requests))
+    format!("\\_ request -> case request of\n  Nothing -> Unravel ({})\n  Just candidate -> case candidate of\n    {} -> Unravel ({})\n    _ -> Splice", group(&skipped), constructor_pattern(constructor, &names), group(&requests))
 }

@@ -269,17 +269,17 @@ impl Walker<'_> {
                 .collect::<Vec<_>>();
             let skipped = vec!["Nothing".into(); children.len()];
             format!(
-                "case request of\n  Nothing -> Just ({})\n  Just candidate ->\n{}",
+                "case request of\n  Nothing -> Unravel ({})\n  Just candidate ->\n{}",
                 group(&skipped),
                 indent(&indent(&format!(
-                    "{projection}Just ({})",
+                    "{projection}Unravel ({})",
                     group(&requested)
                 )))
             )
         } else {
             format!(
                 "let candidate = request in\n{}",
-                indent(&format!("{projection}Just ({})", group(&parts)))
+                indent(&format!("{projection}Unravel ({})", group(&parts)))
             )
         };
         let expression = format!("\\_ request ->\n{}", indent(&body));

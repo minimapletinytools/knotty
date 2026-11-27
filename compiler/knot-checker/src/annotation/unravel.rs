@@ -315,10 +315,10 @@ fn register(
         return Err("unravel rule must accept an output constraint as its second argument".into());
     };
     let Some(Structure::App(head, args)) = sub.head_normal(result) else {
-        return Err("unravel rule must return Maybe sIn".into());
+        return Err("unravel rule must return Unravelled sIn".into());
     };
-    if head != Ref::Builtin("Maybe".into()) || args.len() != 1 {
-        return Err("unravel rule must return Maybe sIn".into());
+    if head != Ref::Builtin("Unravelled".into()) || args.len() != 1 {
+        return Err("unravel rule must return Unravelled sIn".into());
     }
     let input_constraint = args[0];
     unify(&mut sub, state, expected_state).map_err(|_| {
@@ -407,7 +407,7 @@ fn default_callback_requests(
     let Some(Structure::App(head, requests)) = sub.head_normal(result) else {
         return Ok(());
     };
-    if head != Ref::Builtin("Maybe".into()) || requests.len() != 1 {
+    if head != Ref::Builtin("Unravelled".into()) || requests.len() != 1 {
         return Ok(());
     }
     let mut inputs = Vec::new();
@@ -512,10 +512,10 @@ fn check_companion(
         return Err("companion unravel field must accept an output constraint".into());
     };
     let Some(Structure::App(head, args)) = sub.head_normal(result) else {
-        return Err("companion unravel field must return Maybe sIn".into());
+        return Err("companion unravel field must return Unravelled sIn".into());
     };
-    if head != Ref::Builtin("Maybe".into()) || args.len() != 1 {
-        return Err("companion unravel field must return Maybe sIn".into());
+    if head != Ref::Builtin("Unravelled".into()) || args.len() != 1 {
+        return Err("companion unravel field must return Unravelled sIn".into());
     }
     let input_constraint = args[0];
     if arity > 1

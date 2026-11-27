@@ -398,6 +398,8 @@ impl SourceEditor {
             source_values: Default::default(),
             unravel_cache: Default::default(),
             obligations: vec![],
+            spliced: Default::default(),
+            patch_via: BTreeMap::new(),
             guards: vec![],
         };
         if context.reuse_route
@@ -667,6 +669,16 @@ struct Walker<'a> {
     // Retain each input obligation, including unchanged siblings and pins.
     obligations: Vec<(Site, TypedValue, Ty)>,
     guards: Vec<(Site, String)>,
+    /// Spans replaced by a bubbled splice. Patches inside them are dropped.
+    spliced: std::collections::BTreeSet<(u32, u32)>,
+    /// The call each literal patch was reached through, if any.
+    patch_via: BTreeMap<(u32, u32), Arc<syntax::Caller>>,
+}
+/// A rule's answer, read from its `Unravelled` value.
+pub(in crate::traversal) enum RuleAnswer {
+    Unravel(TypedValue),
+    Splice,
+    Snag,
 }
 impl Walker<'_> {
     fn validate_candidate(
@@ -823,6 +835,7 @@ impl Walker<'_> {
         let site = Site {
             recipe: None,
             candidate_source: false,
+            via: None,
             synthetic: false,
             projections: vec![],
             module: entry.clone(),
@@ -925,7 +938,7 @@ impl Walker<'_> {
             ) {
                 if let Some((children, rule, input)) = self.default_product_rule(&s, &t)? {
                     self.remember_product_fields(&s, &children)?;
-                    return self.apply_field_rule(children, r, input, &rule);
+                    return self.apply_field_rule(&s, &t, children, r, input, &rule);
                 }
                 (r, t) = self.product_requests(&s, r, t)?;
             }
@@ -961,6 +974,7 @@ impl Walker<'_> {
                             s = Site {
                                 recipe: None,
                                 candidate_source: false,
+                                via: s.via.clone(),
                                 synthetic: false,
                                 projections: vec![],
                                 module: g.module,
@@ -1084,13 +1098,15 @@ impl Walker<'_> {
         if s.locked {
             return unsupported("this source expression is pinned");
         }
-        let before = self
-            .snapshot
-            .editable_source(&module.path, s.expr.span)
-            .ok_or_else(|| {
-                EditError::Unsupported("this expression is in a read-only module".into())
-            })?
-            .to_string();
+        let Some(before) = self.snapshot.editable_source(&module.path, s.expr.span) else {
+            // A replacement that cannot be made in read-only source is made at
+            // the call that led there, with that call's own request.
+            let Some(caller) = s.via.clone() else {
+                return unsupported("this expression is in a read-only module");
+            };
+            return self.splice_call(&caller);
+        };
+        let before = before.to_string();
         let candidate = self.choose_candidate(s, r, t)?;
         let mut replacement = candidate.edit;
         let source = &self.snapshot.sources()[self.snapshot.entry_path()];
@@ -1101,6 +1117,14 @@ impl Walker<'_> {
             self.probes.limits.source_bytes,
         )?;
         let key = (s.expr.span.start, s.expr.span.end);
+        if self
+            .spliced
+            .iter()
+            .any(|&(a, b)| a <= key.0 && key.1 <= b && (a, b) != key)
+        {
+            // The enclosing call is already being replaced as a whole.
+            return Ok(());
+        }
         if let Some(previous) = self.patches.get(&key) {
             if previous.replacement != replacement {
                 return Err(EditError::ConflictingRequests);
@@ -1110,6 +1134,9 @@ impl Walker<'_> {
                 return unsupported("overlapping source patches");
             }
             self.changed_spans.insert(key);
+            if let Some(via) = &s.via {
+                self.patch_via.insert(key, via.clone());
+            }
             self.patch_locations.insert(
                 key,
                 vec![(key, knot_syntax::Span::new(0, replacement.len() as u32))],
@@ -1124,6 +1151,67 @@ impl Walker<'_> {
             );
         }
         Ok(())
+    }
+    /// Replace a whole call because something inside its read-only body had
+    /// to be replaced. Edits already routed out through its arguments are
+    /// dropped: the printed value takes their place.
+    fn splice_call(&mut self, caller: &Arc<syntax::Caller>) -> Result<(), EditError> {
+        // Requests recorded on the way through this call no longer apply:
+        // the call is replaced, and its own request is checked in their place.
+        let through = |site: &Site| {
+            let mut via = site.via.clone();
+            while let Some(found) = via {
+                if Arc::ptr_eq(&found, caller) {
+                    return true;
+                }
+                via = found.site.via.clone();
+            }
+            false
+        };
+        self.obligations.retain(|(site, _, _)| !through(site));
+        self.guards.retain(|(site, _)| !through(site));
+        let key = (caller.site.expr.span.start, caller.site.expr.span.end);
+        let editable = self
+            .snapshot
+            .graph
+            .modules
+            .iter()
+            .find(|m| m.program.canonical.name == caller.site.module)
+            .is_some_and(|m| {
+                self.snapshot
+                    .editable_source(&m.path, caller.site.expr.span)
+                    .is_some()
+            });
+        if editable && !caller.site.locked && !caller.site.synthetic {
+            // Edits inside the call, and edits elsewhere that were reached
+            // through it (an argument's definition, say).
+            let inside = self
+                .patches
+                .keys()
+                .filter(|&&(a, b)| {
+                    (key.0 <= a && b <= key.1 && (a, b) != key)
+                        || self.patch_via.get(&(a, b)).is_some_and(|via| {
+                            let mut via = Some(via.clone());
+                            while let Some(found) = via {
+                                if Arc::ptr_eq(&found, caller) {
+                                    return true;
+                                }
+                                via = found.site.via.clone();
+                            }
+                            false
+                        })
+                })
+                .copied()
+                .collect::<Vec<_>>();
+            for span in inside {
+                self.patches.remove(&span);
+                self.changed_spans.remove(&span);
+                self.patch_locations.remove(&span);
+                self.patch_via.remove(&span);
+            }
+            self.spliced.insert(key);
+        }
+        self.materialize(&caller.site, &caller.request, &caller.ty)
     }
     fn list(
         &mut self,
@@ -1153,16 +1241,20 @@ impl Walker<'_> {
             || !call.bodies.is_empty()
             || call.has_companions()
         {
-            return self.higher_order_call(higher_order::SourceCall {
-                name,
-                args: call.args,
-                actuals: call.actuals,
-                declarations: call.declarations,
-                output: call.output,
-                request_type: t,
-                rules: call.rules.len(),
-                bodies: call.bodies,
-            });
+            return self.higher_order_call(
+                higher_order::SourceCall {
+                    name,
+                    args: call.args,
+                    actuals: call.actuals,
+                    declarations: call.declarations,
+                    output: call.output,
+                    request_type: t,
+                    rules: call.rules.len(),
+                    bodies: call.bodies,
+                },
+                &s,
+                &r,
+            );
         }
         let selection = if call.rules.is_empty() {
             None
@@ -1185,13 +1277,21 @@ impl Walker<'_> {
             }
             let scope = self.scopes.len();
             self.scopes.push(self.scopes[fun.scope].clone());
-            for (p, a) in f.params.iter().zip(args) {
+            let caller = Arc::new(syntax::Caller {
+                site: s.clone(),
+                request: r.clone(),
+                ty: t.clone(),
+            });
+            for (p, mut a) in f.params.iter().zip(args) {
+                // An argument reached through the body belongs to this call.
+                a.via = Some(caller.clone());
                 self.bind_pattern(&p.node, a, scope, &name.module, false)?;
             }
             return self.schedule(
                 Site {
                     recipe: None,
                     candidate_source: false,
+                    via: Some(caller),
                     synthetic: false,
                     projections: vec![],
                     module: name.module,
@@ -1207,11 +1307,13 @@ impl Walker<'_> {
         }
         let (selected, input) = selection.unwrap();
         let expression = self.source(&rules[selected])?;
-        self.apply_rule(args, r, input, &expression)
+        self.apply_rule(&s, &t, args, r, input, &expression)
     }
 
     fn apply_rule(
         &mut self,
+        site: &Site,
+        request_type: &Ty,
         args: Vec<Site>,
         r: TypedValue,
         input: Ty,
@@ -1220,13 +1322,16 @@ impl Walker<'_> {
         for arg in &args {
             self.reject_partial_solver_pin(arg)?;
         }
-        self.apply_field_rule(args, r, input, expression)
+        self.apply_field_rule(site, request_type, args, r, input, expression)
     }
 
     // Generated field routes and the standard cons rule ignore feeds and route
     // requests into children, where partial solver pins remain enforceable.
+    /// `site` is the call the rule answers for: a `Splice` replaces it.
     fn apply_field_rule(
         &mut self,
+        site: &Site,
+        request_type: &Ty,
         mut args: Vec<Site>,
         r: TypedValue,
         input: Ty,
@@ -1252,7 +1357,7 @@ impl Walker<'_> {
             states.push(format!("{{ value = arg{i}, pinned = {pin} }}"));
         }
         parameters.push("request".into());
-        values.push(r);
+        values.push(r.clone());
         let proposal = self.probes.call_typed(
             &format!(
                 "\\{} -> ({}) {} request",
@@ -1261,12 +1366,13 @@ impl Walker<'_> {
                 group(&states)
             ),
             &values,
-            &Ty::Named("Maybe".into(), vec![input.clone()]),
+            &Ty::Named("Unravelled".into(), vec![input.clone()]),
         )?;
-        let input_value = self
-            .probes
-            .maybe_payload(&proposal, &input)?
-            .ok_or(EditError::RuleFailed)?;
+        let input_value = match self.probes.unravelled_payload(&proposal, &input)? {
+            RuleAnswer::Unravel(value) => value,
+            RuleAnswer::Splice => return self.materialize(site, &r, request_type),
+            RuleAnswer::Snag => return Err(EditError::RuleFailed),
+        };
         if args.len() == 1 {
             return self.schedule(args.pop().unwrap(), input_value, input);
         }
@@ -1322,7 +1428,7 @@ impl Walker<'_> {
             {
                 return Ok(());
             }
-            return self.apply_rule(args, request, input, &expression);
+            return self.apply_rule(site, &request_type, args, request, input, &expression);
         }
         self.retain_argument_pins(&args)?;
         if let Some((expression, input)) =
@@ -1331,7 +1437,7 @@ impl Walker<'_> {
             if self.try_list_route(site, &request, &request_type)? {
                 return Ok(());
             }
-            return self.apply_field_rule(args, request, input, &expression);
+            return self.apply_field_rule(site, &request_type, args, request, input, &expression);
         }
         // Default adapter has the declared Maybe Parent contract. Other
         // requests need an explicit rule or instance materialization.
@@ -1345,12 +1451,9 @@ impl Walker<'_> {
         let (expression, input) = self
             .select_field_rule(site, &args, &request_type, &[expression])?
             .ok_or(EditError::RuleFailed)?;
-        match self.apply_field_rule(args, request.clone(), input, &expression) {
-            // The engine's exact default returns Nothing for a different variant.
-            // Only this default may hand off to the replacement boundary.
-            Err(EditError::RuleFailed) => self.materialize(site, &request, &request_type),
-            result => result,
-        }
+        // The exact default answers Splice for a different variant, like any
+        // rule that cannot express a request through its arguments.
+        self.apply_field_rule(site, &request_type, args, request, input, &expression)
     }
 }
 

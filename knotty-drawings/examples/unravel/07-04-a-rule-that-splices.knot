@@ -1,0 +1,28 @@
+-- story: A rule that replaces its call
+-- group: 7. Writing a rule
+-- status: works
+-- try: Change the radius to 40: count becomes 4. Then change it to 45. tens can only make
+--   multiples of ten, so its rule answers Splice and the call is replaced by 45.
+-- check: edit 0 r 40
+-- check: edit 0 r 45
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+import DrawingUnravel exposing (Feed)
+
+count :: Int
+count = 3
+
+@unravel(🧶tens)
+tens :: Int -> Int
+tens n = n * 10
+
+-- Unravel asks something of the argument. Splice gives up on the argument and
+-- has the whole call rewritten as the value that was asked for.
+🧶tens :: Feed Int -> Maybe Int -> Unravelled (Maybe Int)
+🧶tens _ wanted = case wanted of
+    Nothing -> Unravel Nothing
+    Just size -> if mod size 10 == 0 then Unravel (Just (div size 10)) else Splice
+
+program = svg 240 160 [circle 120 80 (fromIntegral (tens count)) |> set_fill tomato]

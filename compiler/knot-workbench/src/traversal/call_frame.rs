@@ -246,6 +246,7 @@ impl Walker<'_> {
             .map(|rule| Site {
                 recipe: None,
                 candidate_source: false,
+                via: None,
                 synthetic: false,
                 projections: vec![],
                 module: name.module.clone(),
@@ -282,6 +283,7 @@ impl Walker<'_> {
             let contract = Site {
                 recipe: None,
                 candidate_source: false,
+                via: None,
                 synthetic: true,
                 projections: vec![],
                 module: name.module.clone(),

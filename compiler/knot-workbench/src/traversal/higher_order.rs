@@ -142,7 +142,7 @@ impl Walker<'_> {
                 )
             };
             if **state != expected_state
-                || **result != Ty::Named("Maybe".into(), vec![expected_request])
+                || **result != Ty::Named("Unravelled".into(), vec![expected_request])
             {
                 return unsupported(
                     "generated companions require one Maybe request per callback argument",
@@ -264,6 +264,7 @@ impl Walker<'_> {
             self.pin_source_dependencies(Site {
                 recipe: None,
                 candidate_source: false,
+                via: None,
                 synthetic: false,
                 expr: factory.body.clone(),
                 module: checked.canonical.name.clone(),
@@ -349,7 +350,14 @@ impl Walker<'_> {
             .collect::<Result<Vec<_>, EditError>>()?;
         Ok((selected.index, contracts))
     }
-    pub(super) fn higher_order_call(&mut self, call: SourceCall) -> Result<(), EditError> {
+    /// `site` is the higher-order call itself: a `Splice` replaces all of it.
+    pub(super) fn higher_order_call(
+        &mut self,
+        call: SourceCall,
+        site: &Site,
+        incoming: &TypedValue,
+    ) -> Result<(), EditError> {
+        let request_type = call.request_type.clone();
         let PreparedCall {
             mut call,
             policies,
@@ -400,12 +408,13 @@ impl Walker<'_> {
         let (proposal, _) = self.probes.evaluate_lazy_call(
             &format!("rule{} {}", selected, companions.join(" ")),
             &[("states", state_type), ("request", call.request_type)],
-            &Ty::Named("Maybe".into(), vec![input.clone()]),
+            &Ty::Named("Unravelled".into(), vec![input.clone()]),
         )?;
-        let request = self
-            .probes
-            .maybe_payload(&proposal, &input)?
-            .ok_or(EditError::RuleFailed)?;
+        let request = match self.probes.unravelled_payload(&proposal, &input)? {
+            RuleAnswer::Unravel(value) => value,
+            RuleAnswer::Splice => return self.materialize(site, incoming, &request_type),
+            RuleAnswer::Snag => return Err(EditError::RuleFailed),
+        };
         if values.len() == 1 {
             return self.schedule(values.into_iter().next().unwrap().1, request, input);
         }

@@ -2,8 +2,17 @@ use super::*;
 use knot_syntax::ast::pattern::PatternLiteral;
 use std::{cell::RefCell, collections::BTreeSet};
 
+/// The call that led into a function body, with the request it was given. A
+/// replacement that cannot be made in the body is made here.
+pub(super) struct Caller {
+    pub site: Site,
+    pub request: TypedValue,
+    pub ty: Ty,
+}
 #[derive(Clone)]
 pub(super) struct Site {
+    /// The innermost bodied call this expression was reached through.
+    pub via: Option<Arc<Caller>>,
     /// Synthesized aggregate shell with original child spans, never a patch target.
     pub synthetic: bool,
     /// Candidate AST spans belong to the checked new revision. Original lexical
@@ -23,6 +32,7 @@ impl Site {
     pub fn child(&self, expr: &Spanned<CExpr>) -> Self {
         Self {
             synthetic: false,
+            via: self.via.clone(),
             candidate_source: self.candidate_source,
             recipe: None,
             projections: vec![],

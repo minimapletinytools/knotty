@@ -550,6 +550,31 @@ impl Probes {
         self.declarations = declarations;
         result.map(Some)
     }
+    /// Read a rule's answer. `Splice` and `Snag` carry nothing.
+    pub(in crate::traversal) fn unravelled_payload(
+        &mut self,
+        value: &TypedValue,
+        payload: &Ty,
+    ) -> Result<RuleAnswer, EditError> {
+        let (name, arity) = self.constructor_live(value)?;
+        if name.module != ["Prelude"] {
+            return Err(EditError::Internal("expected Unravelled answer".into()));
+        }
+        match (name.name.as_str(), arity) {
+            ("Snag", 0) => return Ok(RuleAnswer::Snag),
+            ("Splice", 0) => return Ok(RuleAnswer::Splice),
+            ("Unravel", 1) => {}
+            _ => return Err(EditError::Internal("expected Unravelled answer".into())),
+        }
+        let declarations = std::mem::take(&mut self.declarations);
+        let result = self.call_typed(
+            "\\answer -> case answer of\n  Unravel value -> value\n  _ -> error \"missing answer\"",
+            std::slice::from_ref(value),
+            payload,
+        );
+        self.declarations = declarations;
+        result.map(RuleAnswer::Unravel)
+    }
     pub(in crate::traversal) fn decode_live(
         &mut self,
         value: &TypedValue,

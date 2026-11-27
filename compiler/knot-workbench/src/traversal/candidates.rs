@@ -82,8 +82,16 @@ impl Walker<'_> {
 }
 
 /// Monomorphic policy contract used by dependency checking as well as execution.
+/// A policy chooses a value and answers in `Maybe`; only rules answer in
+/// `Unravelled`.
 pub(super) fn policy_type(value: &Ty, request: &Ty, output: Ty) -> Ty {
-    rule_type([value.clone()], request, output)
+    Ty::Function(
+        Box::new(feed_type(value)),
+        Box::new(Ty::Function(
+            Box::new(request.clone()),
+            Box::new(Ty::Named("Maybe".into(), vec![output])),
+        )),
+    )
 }
 pub(super) fn rule_type(values: impl IntoIterator<Item = Ty>, request: &Ty, output: Ty) -> Ty {
     let mut states = values
@@ -99,7 +107,7 @@ pub(super) fn rule_type(values: impl IntoIterator<Item = Ty>, request: &Ty, outp
         Box::new(state),
         Box::new(Ty::Function(
             Box::new(request.clone()),
-            Box::new(Ty::Named("Maybe".into(), vec![output])),
+            Box::new(Ty::Named("Unravelled".into(), vec![output])),
         )),
     )
 }

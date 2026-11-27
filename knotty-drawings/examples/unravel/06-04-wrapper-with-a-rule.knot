@@ -22,7 +22,7 @@ scaled k nodes = map (map_circle (\c -> { c | r = c.r * k })) nodes
 
 -- A new radius on any circle becomes a new factor. The radius is then taken
 -- out of the request, so the circles themselves are left alone.
-🧶scaled :: (Feed Float, Feed (List Node)) -> Nodes -> Maybe (Maybe Float, Nodes)
+🧶scaled :: (Feed Float, Feed (List Node)) -> Nodes -> Unravelled (Maybe Float, Nodes)
 🧶scaled (_, nodes) request =
     let
         walk values wanted = case (wanted, values) of
@@ -34,7 +34,7 @@ scaled k nodes = map (map_circle (\c -> { c | r = c.r * k })) nodes
                 shared <- merge next others
                 pure (shared, Prepend residual more)
             _ -> Nothing
-    in walk nodes.value request
+    in orSnag (walk nodes.value request)
 
 scaledRequest :: Node -> NodeConstriction -> Maybe (Maybe Float, NodeConstriction)
 scaledRequest node request = case (request, node) of

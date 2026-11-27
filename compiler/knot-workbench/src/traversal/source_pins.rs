@@ -110,6 +110,7 @@ impl Walker<'_> {
                     Site {
                         recipe: None,
                         candidate_source: false,
+                        via: None,
                         synthetic: false,
                         module: entry.clone(),
                         expr: definition.body,

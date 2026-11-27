@@ -48,8 +48,8 @@ pushforward2 f left right =
       _ -> Nothing
   }
 
-🧶plus :: (Feed Float, Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
-🧶plus (left, right) target = case target of
+🧶plus :: (Feed Float, Feed Float) -> Maybe Float -> Unravelled (Maybe Float, Maybe Float)
+🧶plus (left, right) target = orSnag (case target of
   Nothing -> Just (Nothing, Nothing)
   Just wanted -> case (left.pinned, right.pinned) of
     (Nothing, _) ->
@@ -58,9 +58,10 @@ pushforward2 f left right =
     (Just a, Nothing) -> Just (Just a, Just (wanted - a))
     (Just a, Just b) ->
       if a + b == wanted then Just (Just a, Just b) else Nothing
+ )
 
-🧶times :: (Feed Float, Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
-🧶times (left, right) target = case target of
+🧶times :: (Feed Float, Feed Float) -> Maybe Float -> Unravelled (Maybe Float, Maybe Float)
+🧶times (left, right) target = orSnag (case target of
   Nothing -> Just (Nothing, Nothing)
   Just wanted -> case (left.pinned, right.pinned) of
     (Nothing, _) ->
@@ -74,6 +75,7 @@ pushforward2 f left right =
       else Just (Just a, Just (wanted / a))
     (Just a, Just b) ->
       if a * b == wanted then Just (Just a, Just b) else Nothing
+ )
 
 chooseInput :: Feed Float -> Maybe Float -> Maybe Float
 chooseInput input request =
@@ -84,9 +86,9 @@ chooseInput input request =
 
 -- Validate each argument's constraint separately: no tuple Constriction instance
 -- or implicit conversion is assumed. Then validate the forward result too.
-solvePair :: (Float -> Float -> Float) -> ((Feed Float, Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)) -> EngineInput Float -> EngineInput Float -> Maybe Float -> Maybe (Float, Float)
+solvePair :: (Float -> Float -> Float) -> ((Feed Float, Feed Float) -> Maybe Float -> Unravelled (Maybe Float, Maybe Float)) -> EngineInput Float -> EngineInput Float -> Maybe Float -> Maybe (Float, Float)
 solvePair f back left right target = do
-  (requestA, requestB) <- back (ruleInput left, ruleInput right) target
+  (requestA, requestB) <- unravelledToMaybe (back (ruleInput left, ruleInput right) target)
   a <- chooseInput (ruleInput left) requestA
   b <- chooseInput (ruleInput right) requestB
   if fits requestA a && fits requestB b && fits target (f a b)

@@ -111,6 +111,7 @@ impl Walker<'_> {
         let application = Site {
             recipe: None,
             candidate_source: false,
+            via: None,
             synthetic: true,
             projections: vec![],
             module: callback.module.clone(),
@@ -144,13 +145,16 @@ impl Walker<'_> {
             dependencies: BTreeMap::new(),
         };
         let root = compiler.emit(application, output_request)?;
-        let factory = format!("{}Factory", compiler.prefix);
+        // The solve stays in Maybe; the factory lifts it into a rule's answer.
+        let outer = format!("{}Factory", compiler.prefix);
+        let factory = format!("{outer}Solve");
+        compiler.declarations.push_str(&format!("{outer} :: ({} -> {}) -> {} -> {} -> Unravelled (Maybe {})\n{outer} actual input request = orSnag ({factory} actual input request)\n", input.source(), output.source(), candidates::feed_type(input).source(), output_request.source(), input.source()));
         compiler.declarations.push_str(&format!("{factory} :: ({} -> {}) -> {} -> {} -> Maybe (Maybe {})\n{factory} actual input request = if fits request (actual input.value) then Just Nothing else do\n  (candidate, guard) <- {} input input.value request\n  if guard candidate && fits request (actual candidate) && pinAllows input (Just candidate) then Just (Just candidate) else Nothing\n", input.source(), output.source(), candidates::feed_type(input).source(), output_request.source(), input.source(), root.unravel));
         // Check every generated signature/evidence before any reverse execution.
         compiler.walker.probes.declarations = ambient.into();
         compiler.walker.probes.check(&compiler.declarations)?;
         Ok(GeneratedBody {
-            factory,
+            factory: outer,
             declarations: compiler.declarations,
         })
     }
@@ -176,6 +180,7 @@ impl Walker<'_> {
         self.pin_source_dependencies(Site {
             recipe: None,
             candidate_source: false,
+            via: None,
             synthetic: true,
             projections: vec![],
             module: checked.canonical.name.clone(),
@@ -464,6 +469,7 @@ impl Compiler<'_, '_> {
             let body = Site {
                 recipe: None,
                 candidate_source: false,
+                via: None,
                 synthetic: true,
                 projections: vec![],
                 module: call.name.module,
@@ -524,8 +530,10 @@ impl Compiler<'_, '_> {
         let requests = (0..children.len())
             .map(|i| format!("part{i}"))
             .collect::<Vec<_>>();
+        // Generated code cannot replace the callback's shared body, so a
+        // rule's Splice is a failure here, as Snag is.
         let mut body = format!(
-            "do\n  {} <- (\n{}  ) {} request\n",
+            "do\n  {} <- unravelledToMaybe ((\n{}  ) {} request)\n",
             group(&requests),
             indent(&indent(rule)),
             group(&states)

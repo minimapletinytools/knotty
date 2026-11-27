@@ -46,6 +46,24 @@ does.
   (`DrawingUnravel`).
 - A callback's rule passed as an argument is called `rule` or `ruleF`.
 
+## What a rule answers
+
+A rule returns `Unravelled s`. The type is the past participle; its
+constructors are what to do next.
+
+| Answer | Meaning |
+| --- | --- |
+| `Unravel s` | Ask `s` of the inputs |
+| `Splice` | Replace the call itself with the printed, materialized request |
+| `Snag` | Fail the edit |
+
+- Write a rule's answers natively. Where the working-out is naturally in
+  `Maybe`, finish with `orSnag`, which turns `Nothing` into `Snag`.
+- A rule that takes a callback decides what the callback's `Splice` means.
+  `snagOnSplice` refuses it.
+- The record a higher-order rule receives for a callback is an `Unraveller`,
+  spelled with two l's like `Unravelled` and "unravelling".
+
 ## Constrictions and requests
 
 These are two different things, and the names keep them apart.
@@ -84,6 +102,8 @@ is no current value to adjust.
 | `...Back`, `back` | 🧶 for a rule, `rule` for a rule passed as an argument, `...Unravel` for a module | |
 | `...Request` as a type name | `...Constriction` | "Request" is for values |
 | seed | default | For the starting value of something being created |
+| replace, fail (as a rule's answer) | splice, snag | |
+| `Unraveler` (one l) | `Unraveller` | |
 
 ## Words held in reserve
 
@@ -95,6 +115,8 @@ settled.
 | tension, slack, taut | Evaluation order, or whether a field is under demand |
 | tug | A rope-themed replacement for "request" |
 | stock | `@stock`, a per-function override of `Default` |
+| lash, `@lasher` | Adding a call around an expression, and the mark on a function that may be added |
+| cleat, `@cleat` | The place in an expression where lashings attach |
 
 ## Annotations
 

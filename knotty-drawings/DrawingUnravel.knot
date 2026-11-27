@@ -33,18 +33,19 @@ instance Constriction ShapeAdditions (List Node) where
       (cx, cy, r) <- circleAdditionArguments { value = [], pinned = Nothing } (ShapeAdditions request)
       pure [ShapeNode defaultCommon (Circle { cx = cx, cy = cy, r = r, fill = defaultFill, stroke = defaultStroke })]
 
-🧶editableShapes :: (Feed (List Node), Feed (List Node)) -> ListConstriction NodeConstriction -> Maybe (ListConstriction NodeConstriction, ShapeAdditions)
-🧶editableShapes (generated, additions) request = do
+🧶editableShapes :: (Feed (List Node), Feed (List Node)) -> ListConstriction NodeConstriction -> Unravelled (ListConstriction NodeConstriction, ShapeAdditions)
+🧶editableShapes (generated, additions) request = orSnag (do
   (left, right) <- splitListRequest (effectiveFeed generated) request
   let wanted = ShapeAdditions right
   if pinAllows generated left && pinAllows additions wanted
   then Just (left, wanted) else Nothing
+ )
 
-unravelShapeAdditions :: (Feed Node, Feed (List Node)) -> ShapeAdditions -> Maybe (FieldConstriction NodeConstriction, FieldConstriction ShapeAdditions)
+unravelShapeAdditions :: (Feed Node, Feed (List Node)) -> ShapeAdditions -> Unravelled (FieldConstriction NodeConstriction, FieldConstriction ShapeAdditions)
 unravelShapeAdditions _ (ShapeAdditions request) = case request of
-  AnyRemainder -> Just (NoRequest, NoRequest)
-  ExactEnd -> Nothing
-  Prepend head tail -> Just (RequestField head, RequestField (ShapeAdditions tail))
+  AnyRemainder -> Unravel (NoRequest, NoRequest)
+  ExactEnd -> Snag
+  Prepend head tail -> Unravel (RequestField head, RequestField (ShapeAdditions tail))
 
 -- One new circle per creation transaction. Existing slots are decomposed above;
 -- only an empty suffix is materialized. Reuse the circle's normal reverse rule
@@ -57,7 +58,7 @@ circleAdditionArguments input (ShapeAdditions request) = case input.value of
       let x = { value = 0.0, pinned = Nothing }
       let y = { value = 0.0, pinned = Nothing }
       let radius = { value = 10.0, pinned = Nothing }
-      (rx, ry, rr) <- 🧶circle (x, y, radius) wanted
+      (rx, ry, rr) <- unravelledToMaybe (🧶circle (x, y, radius) wanted)
       cx <- chooseExact x rx
       cy <- chooseExact y ry
       r <- chooseExact radius rr
@@ -66,44 +67,45 @@ circleAdditionArguments input (ShapeAdditions request) = case input.value of
     _ -> Nothing
 
 -- Raw materialized constructors retain normal field routes on later edits.
-unravelShapeNode :: (Feed Common, Feed Shape) -> NodeConstriction -> Maybe (CommonConstriction, ShapeConstriction)
+unravelShapeNode :: (Feed Common, Feed Shape) -> NodeConstriction -> Unravelled (CommonConstriction, ShapeConstriction)
 unravelShapeNode _ request = case request of
-  AnyNode -> Just (anyCommon, AnyShape)
-  ShapeNodeRequest common shape -> Just (common, shape)
-  _ -> Nothing
+  AnyNode -> Unravel (anyCommon, AnyShape)
+  ShapeNodeRequest common shape -> Unravel (common, shape)
+  _ -> Snag
 
-unravelCircleShape :: Feed Circle -> ShapeConstriction -> Maybe CircleConstriction
+unravelCircleShape :: Feed Circle -> ShapeConstriction -> Unravelled CircleConstriction
 unravelCircleShape _ request = case request of
-  AnyShape -> Just anyCircle
-  RequestCircle circle -> Just circle
-  _ -> Nothing
+  AnyShape -> Unravel anyCircle
+  RequestCircle circle -> Unravel circle
+  _ -> Snag
 
-unravelRectShape :: Feed Rect -> ShapeConstriction -> Maybe RectConstriction
+unravelRectShape :: Feed Rect -> ShapeConstriction -> Unravelled RectConstriction
 unravelRectShape _ request = case request of
-  AnyShape -> Just anyRect
-  RequestRect rect -> Just rect
-  _ -> Nothing
+  AnyShape -> Unravel anyRect
+  RequestRect rect -> Unravel rect
+  _ -> Snag
 
-unravelEllipseShape :: Feed Ellipse -> ShapeConstriction -> Maybe EllipseConstriction
+unravelEllipseShape :: Feed Ellipse -> ShapeConstriction -> Unravelled EllipseConstriction
 unravelEllipseShape _ request = case request of
-  AnyShape -> Just anyEllipse
-  RequestEllipse ellipse -> Just ellipse
-  _ -> Nothing
+  AnyShape -> Unravel anyEllipse
+  RequestEllipse ellipse -> Unravel ellipse
+  _ -> Snag
 
 -- Rules route requests to existing source arguments. Fixed constructor defaults
 -- and pins are checked by the engine before any source is published.
 
-🧶rect :: (Feed Float, Feed Float, Feed Float, Feed Float) -> NodeConstriction -> Maybe (Maybe Float, Maybe Float, Maybe Float, Maybe Float)
-🧶rect _ request = case request of
+🧶rect :: (Feed Float, Feed Float, Feed Float, Feed Float) -> NodeConstriction -> Unravelled (Maybe Float, Maybe Float, Maybe Float, Maybe Float)
+🧶rect _ request = orSnag (case request of
   AnyNode -> Just (Nothing, Nothing, Nothing, Nothing)
   ShapeNodeRequest _ geometry -> case geometry of
     AnyShape -> Just (Nothing, Nothing, Nothing, Nothing)
     RequestRect r -> Just (r.x, r.y, r.width, r.height)
     _ -> Nothing
   _ -> Nothing
+ )
 
-🧶rounded_rect :: (Feed Float, Feed Float, Feed Float, Feed Float, Feed Float) -> NodeConstriction -> Maybe (Maybe Float, Maybe Float, Maybe Float, Maybe Float, Maybe Float)
-🧶rounded_rect _ request = case request of
+🧶rounded_rect :: (Feed Float, Feed Float, Feed Float, Feed Float, Feed Float) -> NodeConstriction -> Unravelled (Maybe Float, Maybe Float, Maybe Float, Maybe Float, Maybe Float)
+🧶rounded_rect _ request = orSnag (case request of
   AnyNode -> Just (Nothing, Nothing, Nothing, Nothing, Nothing)
   ShapeNodeRequest _ geometry -> case geometry of
     AnyShape -> Just (Nothing, Nothing, Nothing, Nothing, Nothing)
@@ -112,42 +114,47 @@ unravelEllipseShape _ request = case request of
       Just radius -> Just (r.x, r.y, r.width, r.height, radius)
     _ -> Nothing
   _ -> Nothing
+ )
 
-🧶circle :: (Feed Float, Feed Float, Feed Float) -> NodeConstriction -> Maybe (Maybe Float, Maybe Float, Maybe Float)
-🧶circle _ request = case request of
+🧶circle :: (Feed Float, Feed Float, Feed Float) -> NodeConstriction -> Unravelled (Maybe Float, Maybe Float, Maybe Float)
+🧶circle _ request = orSnag (case request of
   AnyNode -> Just (Nothing, Nothing, Nothing)
   ShapeNodeRequest _ geometry -> case geometry of
     AnyShape -> Just (Nothing, Nothing, Nothing)
     RequestCircle r -> Just (r.cx, r.cy, r.r)
     _ -> Nothing
   _ -> Nothing
+ )
 
-🧶ellipse :: (Feed Float, Feed Float, Feed Float, Feed Float) -> NodeConstriction -> Maybe (Maybe Float, Maybe Float, Maybe Float, Maybe Float)
-🧶ellipse _ request = case request of
+🧶ellipse :: (Feed Float, Feed Float, Feed Float, Feed Float) -> NodeConstriction -> Unravelled (Maybe Float, Maybe Float, Maybe Float, Maybe Float)
+🧶ellipse _ request = orSnag (case request of
   AnyNode -> Just (Nothing, Nothing, Nothing, Nothing)
   ShapeNodeRequest _ geometry -> case geometry of
     AnyShape -> Just (Nothing, Nothing, Nothing, Nothing)
     RequestEllipse r -> Just (r.cx, r.cy, r.rx, r.ry)
     _ -> Nothing
   _ -> Nothing
+ )
 
-🧶line :: (Feed Float, Feed Float, Feed Float, Feed Float) -> NodeConstriction -> Maybe (Maybe Float, Maybe Float, Maybe Float, Maybe Float)
-🧶line _ request = case request of
+🧶line :: (Feed Float, Feed Float, Feed Float, Feed Float) -> NodeConstriction -> Unravelled (Maybe Float, Maybe Float, Maybe Float, Maybe Float)
+🧶line _ request = orSnag (case request of
   AnyNode -> Just (Nothing, Nothing, Nothing, Nothing)
   ShapeNodeRequest _ geometry -> case geometry of
     AnyShape -> Just (Nothing, Nothing, Nothing, Nothing)
     RequestLine r -> Just (r.x1, r.y1, r.x2, r.y2)
     _ -> Nothing
   _ -> Nothing
+ )
 
-🧶text :: (Feed Float, Feed Float, Feed String) -> NodeConstriction -> Maybe (Maybe Float, Maybe Float, Maybe String)
-🧶text _ request = case request of
+🧶text :: (Feed Float, Feed Float, Feed String) -> NodeConstriction -> Unravelled (Maybe Float, Maybe Float, Maybe String)
+🧶text _ request = orSnag (case request of
   AnyNode -> Just (Nothing, Nothing, Nothing)
   ShapeNodeRequest _ geometry -> case geometry of
     AnyShape -> Just (Nothing, Nothing, Nothing)
     RequestText r -> Just (r.x, r.y, r.content)
     _ -> Nothing
   _ -> Nothing
+ )
 
 -- Exact list requests preserve the original number of source elements. Growth
 -- still needs the engine's prepared-draft protocol; it is not silently invented.
@@ -172,58 +179,62 @@ pointItems values = case values of
   [] -> ExactEnd
   p : ps -> Prepend { x = Just p.x, y = Just p.y } (pointItems ps)
 
-🧶polyline :: Feed (List Point) -> NodeConstriction -> Maybe (ListConstriction PointConstriction)
-🧶polyline _ request = case request of
+🧶polyline :: Feed (List Point) -> NodeConstriction -> Unravelled (ListConstriction PointConstriction)
+🧶polyline _ request = orSnag (case request of
   AnyNode -> Just AnyRemainder
   ShapeNodeRequest _ geometry -> case geometry of
     AnyShape -> Just AnyRemainder
     RequestPolyline r -> Just (pointList r.points)
     _ -> Nothing
   _ -> Nothing
+ )
 
-🧶polygon :: Feed (List Point) -> NodeConstriction -> Maybe (ListConstriction PointConstriction)
-🧶polygon _ request = case request of
+🧶polygon :: Feed (List Point) -> NodeConstriction -> Unravelled (ListConstriction PointConstriction)
+🧶polygon _ request = orSnag (case request of
   AnyNode -> Just AnyRemainder
   ShapeNodeRequest _ geometry -> case geometry of
     AnyShape -> Just AnyRemainder
     RequestPolyline r -> Just (pointList r.points)
     _ -> Nothing
   _ -> Nothing
+ )
 
-🧶path :: Feed (List PathCommand) -> NodeConstriction -> Maybe (ListConstriction (Maybe PathCommand))
-🧶path _ request = case request of
+🧶path :: Feed (List PathCommand) -> NodeConstriction -> Unravelled (ListConstriction (Maybe PathCommand))
+🧶path _ request = orSnag (case request of
   AnyNode -> Just AnyRemainder
   ShapeNodeRequest _ geometry -> case geometry of
     AnyShape -> Just AnyRemainder
     RequestPath r -> Just (exactList r.commands)
     _ -> Nothing
   _ -> Nothing
+ )
 
-🧶group :: Feed (List Node) -> NodeConstriction -> Maybe (ListConstriction NodeConstriction)
+🧶group :: Feed (List Node) -> NodeConstriction -> Unravelled (ListConstriction NodeConstriction)
 🧶group _ request = case request of
-  AnyNode -> Just AnyRemainder
-  ContainerNodeRequest r -> Just r.children
-  _ -> Nothing
+  AnyNode -> Unravel AnyRemainder
+  ContainerNodeRequest r -> Unravel r.children
+  _ -> Snag
 
-🧶svg :: (Feed Float, Feed Float, Feed (List Node)) -> ContainerConstriction -> Maybe (Maybe Float, Maybe Float, ListConstriction NodeConstriction)
+🧶svg :: (Feed Float, Feed Float, Feed (List Node)) -> ContainerConstriction -> Unravelled (Maybe Float, Maybe Float, ListConstriction NodeConstriction)
 🧶svg _ request = case request.kind of
-  AnyKind -> Just (Nothing, Nothing, request.children)
-  ViewportKind r -> Just (r.width, r.height, request.children)
-  GroupKind -> Nothing
+  AnyKind -> Unravel (Nothing, Nothing, request.children)
+  ViewportKind r -> Unravel (r.width, r.height, request.children)
+  GroupKind -> Snag
 
-🧶nested_svg :: (Feed Float, Feed Float, Feed (List Node)) -> NodeConstriction -> Maybe (Maybe Float, Maybe Float, ListConstriction NodeConstriction)
+🧶nested_svg :: (Feed Float, Feed Float, Feed (List Node)) -> NodeConstriction -> Unravelled (Maybe Float, Maybe Float, ListConstriction NodeConstriction)
 🧶nested_svg inputs request = case request of
-  AnyNode -> Just (Nothing, Nothing, AnyRemainder)
+  AnyNode -> Unravel (Nothing, Nothing, AnyRemainder)
   ContainerNodeRequest r -> 🧶svg inputs r
-  _ -> Nothing
+  _ -> Snag
 
-🧶set_view_box :: (Feed Float, Feed Float, Feed Float, Feed Float, Feed Container) -> ContainerConstriction -> Maybe (Maybe Float, Maybe Float, Maybe Float, Maybe Float, ContainerConstriction)
-🧶set_view_box _ request = case request.kind of
+🧶set_view_box :: (Feed Float, Feed Float, Feed Float, Feed Float, Feed Container) -> ContainerConstriction -> Unravelled (Maybe Float, Maybe Float, Maybe Float, Maybe Float, ContainerConstriction)
+🧶set_view_box _ request = orSnag (case request.kind of
   ViewportKind r -> case r.viewBox of
     Just (Just b) -> Just (Just b.minX, Just b.minY, Just b.width, Just b.height, { request | kind = ViewportKind { r | viewBox = Nothing } })
     Just Nothing -> Nothing
     Nothing -> Just (Nothing, Nothing, Nothing, Nothing, request)
   _ -> Just (Nothing, Nothing, Nothing, Nothing, request)
+ )
 
 -- A shared style setter can affect several descendants. Merge equal requests;
 -- reject incompatible ones instead of arbitrarily choosing one child.
@@ -262,11 +273,11 @@ fillPaint geometry = case geometry of
   RequestText r -> (r.fill.paint, RequestText { r | fill = (let s = r.fill in { s | paint = Nothing }) })
   _ -> (Nothing, geometry)
 
-🧶set_fill :: (Feed (Color), Feed Node) -> NodeConstriction -> Maybe (Maybe (Color), NodeConstriction)
+🧶set_fill :: (Feed (Color), Feed Node) -> NodeConstriction -> Unravelled (Maybe (Color), NodeConstriction)
 🧶set_fill _ request = case extract fillPaint request of
-  Just (Nothing, rest) -> Just (Nothing, rest)
-  Just (Just (Solid color), rest) -> Just (Just color, rest)
-  _ -> Nothing
+  Just (Nothing, rest) -> Unravel (Nothing, rest)
+  Just (Just (Solid color), rest) -> Unravel (Just color, rest)
+  _ -> Snag
 
 strokePaint :: ShapeConstriction -> (Maybe (Paint), ShapeConstriction)
 strokePaint geometry = case geometry of
@@ -279,17 +290,17 @@ strokePaint geometry = case geometry of
   RequestText r -> (r.stroke.paint, RequestText { r | stroke = (let s = r.stroke in { s | paint = Nothing }) })
   _ -> (Nothing, geometry)
 
-🧶set_stroke :: (Feed (Color), Feed Node) -> NodeConstriction -> Maybe (Maybe (Color), NodeConstriction)
+🧶set_stroke :: (Feed (Color), Feed Node) -> NodeConstriction -> Unravelled (Maybe (Color), NodeConstriction)
 🧶set_stroke _ request = case extract strokePaint request of
-  Just (Nothing, rest) -> Just (Nothing, rest)
-  Just (Just (Solid color), rest) -> Just (Just color, rest)
-  _ -> Nothing
+  Just (Nothing, rest) -> Unravel (Nothing, rest)
+  Just (Just (Solid color), rest) -> Unravel (Just color, rest)
+  _ -> Snag
 
-🧶set_fill_paint :: (Feed (Paint), Feed Node) -> NodeConstriction -> Maybe (Maybe (Paint), NodeConstriction)
-🧶set_fill_paint _ request = extract fillPaint request
+🧶set_fill_paint :: (Feed (Paint), Feed Node) -> NodeConstriction -> Unravelled (Maybe (Paint), NodeConstriction)
+🧶set_fill_paint _ request = orSnag (extract fillPaint request)
 
-🧶set_stroke_paint :: (Feed (Paint), Feed Node) -> NodeConstriction -> Maybe (Maybe (Paint), NodeConstriction)
-🧶set_stroke_paint _ request = extract strokePaint request
+🧶set_stroke_paint :: (Feed (Paint), Feed Node) -> NodeConstriction -> Unravelled (Maybe (Paint), NodeConstriction)
+🧶set_stroke_paint _ request = orSnag (extract strokePaint request)
 
 fillOpacity :: ShapeConstriction -> (Maybe (Float), ShapeConstriction)
 fillOpacity geometry = case geometry of
@@ -301,8 +312,8 @@ fillOpacity geometry = case geometry of
   RequestText r -> (r.fill.opacity, RequestText { r | fill = (let s = r.fill in { s | opacity = Nothing }) })
   _ -> (Nothing, geometry)
 
-🧶set_fill_opacity :: (Feed (Float), Feed Node) -> NodeConstriction -> Maybe (Maybe (Float), NodeConstriction)
-🧶set_fill_opacity _ request = extract fillOpacity request
+🧶set_fill_opacity :: (Feed (Float), Feed Node) -> NodeConstriction -> Unravelled (Maybe (Float), NodeConstriction)
+🧶set_fill_opacity _ request = orSnag (extract fillOpacity request)
 
 fillRule :: ShapeConstriction -> (Maybe (FillRule), ShapeConstriction)
 fillRule geometry = case geometry of
@@ -314,8 +325,8 @@ fillRule geometry = case geometry of
   RequestText r -> (r.fill.rule, RequestText { r | fill = (let s = r.fill in { s | rule = Nothing }) })
   _ -> (Nothing, geometry)
 
-🧶set_fill_rule :: (Feed (FillRule), Feed Node) -> NodeConstriction -> Maybe (Maybe (FillRule), NodeConstriction)
-🧶set_fill_rule _ request = extract fillRule request
+🧶set_fill_rule :: (Feed (FillRule), Feed Node) -> NodeConstriction -> Unravelled (Maybe (FillRule), NodeConstriction)
+🧶set_fill_rule _ request = orSnag (extract fillRule request)
 
 strokeWidth :: ShapeConstriction -> (Maybe (Float), ShapeConstriction)
 strokeWidth geometry = case geometry of
@@ -328,8 +339,8 @@ strokeWidth geometry = case geometry of
   RequestText r -> (r.stroke.width, RequestText { r | stroke = (let s = r.stroke in { s | width = Nothing }) })
   _ -> (Nothing, geometry)
 
-🧶set_stroke_width :: (Feed (Float), Feed Node) -> NodeConstriction -> Maybe (Maybe (Float), NodeConstriction)
-🧶set_stroke_width _ request = extract strokeWidth request
+🧶set_stroke_width :: (Feed (Float), Feed Node) -> NodeConstriction -> Unravelled (Maybe (Float), NodeConstriction)
+🧶set_stroke_width _ request = orSnag (extract strokeWidth request)
 
 strokeOpacity :: ShapeConstriction -> (Maybe (Float), ShapeConstriction)
 strokeOpacity geometry = case geometry of
@@ -342,8 +353,8 @@ strokeOpacity geometry = case geometry of
   RequestText r -> (r.stroke.opacity, RequestText { r | stroke = (let s = r.stroke in { s | opacity = Nothing }) })
   _ -> (Nothing, geometry)
 
-🧶set_stroke_opacity :: (Feed (Float), Feed Node) -> NodeConstriction -> Maybe (Maybe (Float), NodeConstriction)
-🧶set_stroke_opacity _ request = extract strokeOpacity request
+🧶set_stroke_opacity :: (Feed (Float), Feed Node) -> NodeConstriction -> Unravelled (Maybe (Float), NodeConstriction)
+🧶set_stroke_opacity _ request = orSnag (extract strokeOpacity request)
 
 strokeCap :: ShapeConstriction -> (Maybe (LineCap), ShapeConstriction)
 strokeCap geometry = case geometry of
@@ -356,8 +367,8 @@ strokeCap geometry = case geometry of
   RequestText r -> (r.stroke.cap, RequestText { r | stroke = (let s = r.stroke in { s | cap = Nothing }) })
   _ -> (Nothing, geometry)
 
-🧶set_stroke_linecap :: (Feed (LineCap), Feed Node) -> NodeConstriction -> Maybe (Maybe (LineCap), NodeConstriction)
-🧶set_stroke_linecap _ request = extract strokeCap request
+🧶set_stroke_linecap :: (Feed (LineCap), Feed Node) -> NodeConstriction -> Unravelled (Maybe (LineCap), NodeConstriction)
+🧶set_stroke_linecap _ request = orSnag (extract strokeCap request)
 
 strokeJoin :: ShapeConstriction -> (Maybe (LineJoin), ShapeConstriction)
 strokeJoin geometry = case geometry of
@@ -370,8 +381,8 @@ strokeJoin geometry = case geometry of
   RequestText r -> (r.stroke.join, RequestText { r | stroke = (let s = r.stroke in { s | join = Nothing }) })
   _ -> (Nothing, geometry)
 
-🧶set_stroke_linejoin :: (Feed (LineJoin), Feed Node) -> NodeConstriction -> Maybe (Maybe (LineJoin), NodeConstriction)
-🧶set_stroke_linejoin _ request = extract strokeJoin request
+🧶set_stroke_linejoin :: (Feed (LineJoin), Feed Node) -> NodeConstriction -> Unravelled (Maybe (LineJoin), NodeConstriction)
+🧶set_stroke_linejoin _ request = orSnag (extract strokeJoin request)
 
 strokeDashes :: ShapeConstriction -> (Maybe (List Float), ShapeConstriction)
 strokeDashes geometry = case geometry of
@@ -384,10 +395,10 @@ strokeDashes geometry = case geometry of
   RequestText r -> (r.stroke.dashes, RequestText { r | stroke = (let s = r.stroke in { s | dashes = Nothing }) })
   _ -> (Nothing, geometry)
 
-🧶set_stroke_dasharray :: (Feed (List Float), Feed Node) -> NodeConstriction -> Maybe (ListConstriction (Maybe Float), NodeConstriction)
+🧶set_stroke_dasharray :: (Feed (List Float), Feed Node) -> NodeConstriction -> Unravelled (ListConstriction (Maybe Float), NodeConstriction)
 🧶set_stroke_dasharray _ request = case extract strokeDashes request of
-  Just (value, rest) -> Just (exactList value, rest)
-  Nothing -> Nothing
+  Just (value, rest) -> Unravel (exactList value, rest)
+  Nothing -> Snag
 
 strokeDashOffset :: ShapeConstriction -> (Maybe (Float), ShapeConstriction)
 strokeDashOffset geometry = case geometry of
@@ -400,8 +411,8 @@ strokeDashOffset geometry = case geometry of
   RequestText r -> (r.stroke.dashOffset, RequestText { r | stroke = (let s = r.stroke in { s | dashOffset = Nothing }) })
   _ -> (Nothing, geometry)
 
-🧶set_stroke_dashoffset :: (Feed (Float), Feed Node) -> NodeConstriction -> Maybe (Maybe (Float), NodeConstriction)
-🧶set_stroke_dashoffset _ request = extract strokeDashOffset request
+🧶set_stroke_dashoffset :: (Feed (Float), Feed Node) -> NodeConstriction -> Unravelled (Maybe (Float), NodeConstriction)
+🧶set_stroke_dashoffset _ request = orSnag (extract strokeDashOffset request)
 
 strokeMiterLimit :: ShapeConstriction -> (Maybe (Float), ShapeConstriction)
 strokeMiterLimit geometry = case geometry of
@@ -414,52 +425,52 @@ strokeMiterLimit geometry = case geometry of
   RequestText r -> (r.stroke.miterLimit, RequestText { r | stroke = (let s = r.stroke in { s | miterLimit = Nothing }) })
   _ -> (Nothing, geometry)
 
-🧶set_stroke_miterlimit :: (Feed (Float), Feed Node) -> NodeConstriction -> Maybe (Maybe (Float), NodeConstriction)
-🧶set_stroke_miterlimit _ request = extract strokeMiterLimit request
+🧶set_stroke_miterlimit :: (Feed (Float), Feed Node) -> NodeConstriction -> Unravelled (Maybe (Float), NodeConstriction)
+🧶set_stroke_miterlimit _ request = orSnag (extract strokeMiterLimit request)
 
 fontFamily :: ShapeConstriction -> (Maybe (String), ShapeConstriction)
 fontFamily geometry = case geometry of
   RequestText r -> (r.font.family, RequestText { r | font = (let s = r.font in { s | family = Nothing }) })
   _ -> (Nothing, geometry)
 
-🧶set_font_family :: (Feed (String), Feed Node) -> NodeConstriction -> Maybe (Maybe (String), NodeConstriction)
-🧶set_font_family _ request = extract fontFamily request
+🧶set_font_family :: (Feed (String), Feed Node) -> NodeConstriction -> Unravelled (Maybe (String), NodeConstriction)
+🧶set_font_family _ request = orSnag (extract fontFamily request)
 
 fontSize :: ShapeConstriction -> (Maybe (Float), ShapeConstriction)
 fontSize geometry = case geometry of
   RequestText r -> (r.font.size, RequestText { r | font = (let s = r.font in { s | size = Nothing }) })
   _ -> (Nothing, geometry)
 
-🧶set_font_size :: (Feed (Float), Feed Node) -> NodeConstriction -> Maybe (Maybe (Float), NodeConstriction)
-🧶set_font_size _ request = extract fontSize request
+🧶set_font_size :: (Feed (Float), Feed Node) -> NodeConstriction -> Unravelled (Maybe (Float), NodeConstriction)
+🧶set_font_size _ request = orSnag (extract fontSize request)
 
 fontAnchor :: ShapeConstriction -> (Maybe (TextAnchor), ShapeConstriction)
 fontAnchor geometry = case geometry of
   RequestText r -> (r.font.anchor, RequestText { r | font = (let s = r.font in { s | anchor = Nothing }) })
   _ -> (Nothing, geometry)
 
-🧶set_text_anchor :: (Feed (TextAnchor), Feed Node) -> NodeConstriction -> Maybe (Maybe (TextAnchor), NodeConstriction)
-🧶set_text_anchor _ request = extract fontAnchor request
+🧶set_text_anchor :: (Feed (TextAnchor), Feed Node) -> NodeConstriction -> Unravelled (Maybe (TextAnchor), NodeConstriction)
+🧶set_text_anchor _ request = orSnag (extract fontAnchor request)
 
 fontBaseline :: ShapeConstriction -> (Maybe (DominantBaseline), ShapeConstriction)
 fontBaseline geometry = case geometry of
   RequestText r -> (r.font.baseline, RequestText { r | font = (let s = r.font in { s | baseline = Nothing }) })
   _ -> (Nothing, geometry)
 
-🧶set_dominant_baseline :: (Feed (DominantBaseline), Feed Node) -> NodeConstriction -> Maybe (Maybe (DominantBaseline), NodeConstriction)
-🧶set_dominant_baseline _ request = extract fontBaseline request
+🧶set_dominant_baseline :: (Feed (DominantBaseline), Feed Node) -> NodeConstriction -> Unravelled (Maybe (DominantBaseline), NodeConstriction)
+🧶set_dominant_baseline _ request = orSnag (extract fontBaseline request)
 
-🧶set_no_fill :: Feed Node -> NodeConstriction -> Maybe NodeConstriction
+🧶set_no_fill :: Feed Node -> NodeConstriction -> Unravelled NodeConstriction
 🧶set_no_fill _ request = case extract fillPaint request of
-  Just (Nothing, rest) -> Just rest
-  Just (Just NoPaint, rest) -> Just rest
-  _ -> Nothing
+  Just (Nothing, rest) -> Unravel rest
+  Just (Just NoPaint, rest) -> Unravel rest
+  _ -> Snag
 
-🧶set_no_stroke :: Feed Node -> NodeConstriction -> Maybe NodeConstriction
+🧶set_no_stroke :: Feed Node -> NodeConstriction -> Unravelled NodeConstriction
 🧶set_no_stroke _ request = case extract strokePaint request of
-  Just (Nothing, rest) -> Just rest
-  Just (Just NoPaint, rest) -> Just rest
-  _ -> Nothing
+  Just (Nothing, rest) -> Unravel rest
+  Just (Just NoPaint, rest) -> Unravel rest
+  _ -> Snag
 
 -- Common setters affect this node only, unlike recursive style setters.
 commonRequest :: NodeConstriction -> CommonConstriction
@@ -474,51 +485,57 @@ withCommon common request = case request of
   ContainerNodeRequest c -> ContainerNodeRequest { c | common = common }
   AnyNode -> AnyNode
 
-🧶set_id :: (Feed Id, Feed Node) -> NodeConstriction -> Maybe (Maybe Id, NodeConstriction)
-🧶set_id _ request =
+🧶set_id :: (Feed Id, Feed Node) -> NodeConstriction -> Unravelled (Maybe Id, NodeConstriction)
+🧶set_id _ request = orSnag (
   let r = commonRequest request in
   case r.id of
     Just Nothing -> Nothing
     Just (Just value) -> Just (Just value, withCommon { r | id = Nothing } request)
     Nothing -> Just (Nothing, request)
+ )
 
-🧶set_opacity :: (Feed Float, Feed Node) -> NodeConstriction -> Maybe (Maybe Float, NodeConstriction)
-🧶set_opacity _ request =
+🧶set_opacity :: (Feed Float, Feed Node) -> NodeConstriction -> Unravelled (Maybe Float, NodeConstriction)
+🧶set_opacity _ request = orSnag (
   let r = commonRequest request in
   Just (r.opacity, withCommon { r | opacity = Nothing } request)
+ )
 
-🧶set_visible :: (Feed Bool, Feed Node) -> NodeConstriction -> Maybe (Maybe Bool, NodeConstriction)
-🧶set_visible _ request =
+🧶set_visible :: (Feed Bool, Feed Node) -> NodeConstriction -> Unravelled (Maybe Bool, NodeConstriction)
+🧶set_visible _ request = orSnag (
   let r = commonRequest request in
   Just (r.visible, withCommon { r | visible = Nothing } request)
+ )
 
-🧶set_transform :: (Feed Transform, Feed Node) -> NodeConstriction -> Maybe (ListConstriction (Maybe TransformOp), NodeConstriction)
-🧶set_transform _ request =
+🧶set_transform :: (Feed Transform, Feed Node) -> NodeConstriction -> Unravelled (ListConstriction (Maybe TransformOp), NodeConstriction)
+🧶set_transform _ request = orSnag (
   let r = commonRequest request in
   Just (exactList r.transform, withCommon { r | transform = Nothing } request)
+ )
 
-🧶set_closed :: (Feed Bool, Feed Node) -> NodeConstriction -> Maybe (Maybe Bool, NodeConstriction)
-🧶set_closed _ request = extract takeClosed request
+🧶set_closed :: (Feed Bool, Feed Node) -> NodeConstriction -> Unravelled (Maybe Bool, NodeConstriction)
+🧶set_closed _ request = orSnag (extract takeClosed request)
 
 takeClosed :: ShapeConstriction -> (Maybe Bool, ShapeConstriction)
 takeClosed geometry = case geometry of
   RequestPolyline r -> (r.closed, RequestPolyline { r | closed = Nothing })
   _ -> (Nothing, geometry)
 
-🧶set_optional_id :: (Feed (Maybe Id), Feed Node) -> NodeConstriction -> Maybe (Maybe (Maybe Id), NodeConstriction)
-🧶set_optional_id _ request =
+🧶set_optional_id :: (Feed (Maybe Id), Feed Node) -> NodeConstriction -> Unravelled (Maybe (Maybe Id), NodeConstriction)
+🧶set_optional_id _ request = orSnag (
   let r = commonRequest request in
   Just (r.id, withCommon { r | id = Nothing } request)
+ )
 
-🧶add_transform :: (Feed TransformOp, Feed Node) -> NodeConstriction -> Maybe (Maybe TransformOp, NodeConstriction)
-🧶add_transform _ request =
+🧶add_transform :: (Feed TransformOp, Feed Node) -> NodeConstriction -> Unravelled (Maybe TransformOp, NodeConstriction)
+🧶add_transform _ request = orSnag (
   let r = commonRequest request in
   case r.transform of
     Nothing -> Just (Nothing, request)
     Just [] -> Nothing
     Just (operation : rest) -> Just (Just operation, withCommon { r | transform = Just rest } request)
+ )
 
-🧶set_optional_view_box :: (Feed (Maybe ViewBox), Feed Container) -> ContainerConstriction -> Maybe (Maybe (Maybe ViewBox), ContainerConstriction)
+🧶set_optional_view_box :: (Feed (Maybe ViewBox), Feed Container) -> ContainerConstriction -> Unravelled (Maybe (Maybe ViewBox), ContainerConstriction)
 🧶set_optional_view_box _ request = case request.kind of
-  ViewportKind r -> Just (r.viewBox, { request | kind = ViewportKind { r | viewBox = Nothing } })
-  _ -> Just (Nothing, request)
+  ViewportKind r -> Unravel (r.viewBox, { request | kind = ViewportKind { r | viewBox = Nothing } })
+  _ -> Unravel (Nothing, request)

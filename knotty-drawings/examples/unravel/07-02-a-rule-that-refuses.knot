@@ -21,10 +21,10 @@ extra = 20
 atLeast :: Float -> Float -> Float
 atLeast least more = least + more
 
-🧶atLeast :: (Feed Float, Feed Float) -> Maybe Float -> Maybe (Maybe Float, Maybe Float)
+🧶atLeast :: (Feed Float, Feed Float) -> Maybe Float -> Unravelled (Maybe Float, Maybe Float)
 🧶atLeast (least, _) wanted = case wanted of
-    Nothing -> Just (Nothing, Nothing)
+    Nothing -> Unravel (Nothing, Nothing)
     Just total ->
-        if total < least.value then Nothing else Just (Nothing, Just (total - least.value))
+        if total < least.value then Snag else Unravel (Nothing, Just (total - least.value))
 
 program = svg 240 160 [circle 120 80 (atLeast base extra) |> set_fill tomato]

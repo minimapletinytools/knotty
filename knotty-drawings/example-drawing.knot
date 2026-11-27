@@ -158,7 +158,7 @@ gradient tint nodes =
                 in if fill then set_fill color node else set_stroke color node
     in if tint == (0, 0, 0) then nodes else map recolor nodes
 
-🧶gradient :: (DrawingUnravel.Feed Tint, DrawingUnravel.Feed (List Node)) -> ListConstriction Constrictions.NodeConstriction -> Maybe (Maybe Tint, ListConstriction Constrictions.NodeConstriction)
+🧶gradient :: (DrawingUnravel.Feed Tint, DrawingUnravel.Feed (List Node)) -> ListConstriction Constrictions.NodeConstriction -> Unravelled (Maybe Tint, ListConstriction Constrictions.NodeConstriction)
 🧶gradient (tint, nodes) request =
     let
         walk values wanted = case (wanted, values) of
@@ -170,7 +170,7 @@ gradient tint nodes =
                 shared <- DrawingUnravel.merge next others
                 pure (shared, Prepend residual more)
             _ -> Nothing
-    in walk nodes.value request
+    in orSnag (walk nodes.value request)
 
 gradientRequest :: Tint -> Node -> Constrictions.NodeConstriction -> Maybe (Maybe Tint, Constrictions.NodeConstriction)
 gradientRequest (dh, ds, _) node request = case (request, gradientPaint node) of

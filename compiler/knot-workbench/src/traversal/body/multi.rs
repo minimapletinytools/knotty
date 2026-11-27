@@ -97,7 +97,9 @@ impl Walker<'_> {
             dependencies: BTreeMap::new(),
         };
         let root = compiler.emit(application, output_request)?;
-        let factory = format!("{}Factory", compiler.prefix);
+        // The solve stays in Maybe; the factory lifts it into a rule's answer.
+        let outer = format!("{}Factory", compiler.prefix);
+        let factory = format!("{outer}Solve");
         let feeds = (0..count).map(|i| format!("feed{i}")).collect::<Vec<_>>();
         let values = feeds
             .iter()
@@ -128,6 +130,13 @@ impl Walker<'_> {
             .map(|i| format!("pinAllows feed{i} request{i}"))
             .collect::<Vec<_>>()
             .join(" && ");
+        let feed_types = Ty::Tuple(types.iter().map(candidates::feed_type).collect()).source();
+        let request_types = Ty::Tuple(types.iter().cloned().map(optional).collect()).source();
+        compiler.declarations.push_str(&format!(
+            "{outer} :: ({}) -> {feed_types} -> {} -> Unravelled {request_types}\n{outer} actual feeds request = orSnag ({factory} actual feeds request)\n",
+            forward.source(),
+            output_request.source(),
+        ));
         compiler.declarations.push_str(&format!(
             "{factory} :: ({}) -> {} -> {} -> Maybe {}\n{factory} actual {} request =\n  let original = {{ arguments = {}, pins = {}, requested = {} }}\n      input = {{ value = original, pinned = Nothing }}\n  in do\n    (candidate, guard) <- {} input original request\n{}    if guard candidate && fits request (actual {}) && {checks}\n    then Just {} else Nothing\n",
             forward.source(), Ty::Tuple(types.iter().map(candidates::feed_type).collect()).source(),
@@ -138,7 +147,7 @@ impl Walker<'_> {
         compiler.walker.probes.declarations = ambient.into();
         compiler.walker.probes.check(&compiler.declarations)?;
         Ok(GeneratedBody {
-            factory,
+            factory: outer,
             declarations: compiler.declarations,
         })
     }

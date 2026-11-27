@@ -203,6 +203,7 @@ impl Walker<'_> {
                             fun = Site {
                                 recipe: None,
                                 candidate_source: false,
+                                via: None,
                                 synthetic: false,
                                 projections: vec![],
                                 module: g.module,
