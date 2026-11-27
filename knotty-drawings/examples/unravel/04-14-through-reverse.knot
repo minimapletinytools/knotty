@@ -1,9 +1,8 @@
 -- story: Through reverse
 -- group: 4. Lists
--- status: needs-work
--- try: Move a circle. It is refused.
--- note: reverse, take and drop have no unravel rules.
--- wanted: edit 0 cx 200
+-- status: works
+-- try: Move the first circle. The last number in the list changes. take and drop work the same way.
+-- check: edit 0 cx 200
 module Story exposing (..)
 
 import KnottyDrawings exposing (..)

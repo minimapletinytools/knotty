@@ -1,8 +1,9 @@
 -- story: A setter that cannot say none
 -- group: 2. Setters and optional properties
 -- status: works
--- try: Set the fill to none. set_fill takes a Color, and no colour means no fill, so it is refused.
--- reject: edit 0 fill.paint null
+-- try: Set the fill to none. set_fill takes a Color and no colour means no fill, so its rule snags.
+--   A set_no_fill is lashed onto the end of the pipeline instead, and the set_fill stays.
+-- check: edit 0 fill.paint null
 module Story exposing (..)
 
 import KnottyDrawings exposing (..)

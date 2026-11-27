@@ -44,6 +44,8 @@ pub(super) struct SourceCall {
 }
 pub(super) struct PreparedCall {
     pub call: SourceCall,
+    /// Callbacks the selected rule takes as plain functions, with no companion.
+    pub forward_only: BTreeSet<usize>,
     pub policies: BTreeMap<usize, String>,
     pub generated: String,
     pub selected: usize,
@@ -79,8 +81,19 @@ impl Walker<'_> {
         let mut generated = BTreeSet::new();
         let mut generated_declarations = String::new();
         let mut contracts = Vec::new();
+        let mut forward_only = BTreeSet::new();
         let inferred_selection = if policies.is_empty() && call.bodies.is_empty() {
             let (selected, inferred) = self.infer_companions(&call)?;
+            forward_only = call
+                .args
+                .iter()
+                .enumerate()
+                .filter(|(i, arg)| {
+                    matches!(arg.ty, Some(Ty::Function(..)))
+                        && !inferred.iter().any(|(argument, _)| argument == i)
+                })
+                .map(|(i, _)| i)
+                .collect();
             contracts = inferred;
             Some(selected)
         } else {
@@ -164,7 +177,7 @@ impl Walker<'_> {
         if policies.keys().any(|i| *i >= call.args.len()) {
             return unsupported("source callback position is outside the forward call");
         }
-        if policies.len() == call.args.len() {
+        if policies.len() + forward_only.len() == call.args.len() {
             return unsupported("source companion calls need at least one ordinary value argument");
         }
         for (i, policy) in &policies {
@@ -187,6 +200,8 @@ impl Walker<'_> {
                         forward,
                         companion: scheme(&format!("companion{i}")).ty,
                     }
+                } else if forward_only.contains(&i) {
+                    UnravelArgument::InferredCallback(forward)
                 } else {
                     UnravelArgument::Value(forward)
                 }
@@ -234,13 +249,24 @@ impl Walker<'_> {
             call.args
                 .iter()
                 .enumerate()
-                .filter(|(i, _)| !policies.contains_key(i))
+                .filter(|(i, _)| !policies.contains_key(i) && !forward_only.contains(i))
                 .map(|(_, arg)| arg.ty.clone().unwrap()),
             &call.request_type,
             input.clone(),
         );
-        for companion in companions.values().rev() {
-            rule_type = Ty::Function(Box::new(companion.clone()), Box::new(rule_type));
+        // Leading parameters, in argument order: a companion, or the callback itself.
+        for i in (0..call.args.len()).rev() {
+            let leading = if let Some(companion) = companions.get(&i) {
+                companion.clone()
+            } else if forward_only.contains(&i) {
+                call.args[i].ty.clone().unwrap()
+            } else {
+                continue;
+            };
+            rule_type = Ty::Function(Box::new(leading), Box::new(rule_type));
+        }
+        for i in &forward_only {
+            self.pin_source_dependencies(call.args[*i].clone())?;
         }
         // Freeze source dependencies, including transitive lexical/global
         // captures and factory code. This needs neither Eq nor decoding of a
@@ -265,6 +291,7 @@ impl Walker<'_> {
                 recipe: None,
                 candidate_source: false,
                 via: None,
+                lash: None,
                 synthetic: false,
                 expr: factory.body.clone(),
                 module: checked.canonical.name.clone(),
@@ -283,6 +310,7 @@ impl Walker<'_> {
         }
         Ok(PreparedCall {
             call,
+            forward_only,
             policies: policies
                 .into_iter()
                 .map(|(i, p)| (i, p.expression))
@@ -361,15 +389,27 @@ impl Walker<'_> {
         let PreparedCall {
             mut call,
             policies,
+            forward_only,
             selected,
             input,
             ..
         } = self.prepare_companions(call, "")?;
+        let leading = (0..call.args.len())
+            .filter_map(|i| {
+                if policies.contains_key(&i) {
+                    Some(format!("companion{i}"))
+                } else if forward_only.contains(&i) {
+                    Some(format!("arg{i}"))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
         let values = call
             .args
             .into_iter()
             .enumerate()
-            .filter(|(i, _)| !policies.contains_key(i))
+            .filter(|(i, _)| !policies.contains_key(i) && !forward_only.contains(i))
             .collect::<Vec<_>>();
         for (_, arg) in &values {
             self.reject_partial_solver_pin(arg)?;
@@ -401,19 +441,18 @@ impl Walker<'_> {
         ));
         // The original checked declarations already include `request`.
         self.probes.declarations = call.declarations;
-        let companions = policies
-            .keys()
-            .map(|i| format!("companion{i}"))
-            .collect::<Vec<_>>();
         let (proposal, _) = self.probes.evaluate_lazy_call(
-            &format!("rule{} {}", selected, companions.join(" ")),
+            &format!("rule{} {}", selected, leading.join(" ")),
             &[("states", state_type), ("request", call.request_type)],
             &Ty::Named("Unravelled".into(), vec![input.clone()]),
         )?;
         let request = match self.probes.unravelled_payload(&proposal, &input)? {
             RuleAnswer::Unravel(value) => value,
             RuleAnswer::Splice => return self.materialize(site, incoming, &request_type),
-            RuleAnswer::Snag => return Err(EditError::RuleFailed),
+            RuleAnswer::Snag => {
+                self.note_snag(site, incoming);
+                return Err(EditError::RuleFailed);
+            }
         };
         if values.len() == 1 {
             return self.schedule(values.into_iter().next().unwrap().1, request, input);

@@ -608,7 +608,8 @@ mod tests {
         t.begin();
         assert_eq!(t.update(json!([0, 0, 0]))["ok"], true);
         let before = t.source();
-        assert_eq!(t.update(Value::Null)["ok"], false);
+        // No fill used to be refused here; a `set_no_fill` is lashed on now.
+            assert_eq!(t.update(json!("not a colour"))["ok"], false);
         assert_eq!(t.source(), before);
         assert_eq!(t.update(json!([255, 99, 71]))["ok"], true);
         assert_eq!(t.source(), SOURCE);
@@ -628,7 +629,8 @@ mod tests {
                 assert_eq!(t.update(color)["ok"], true);
                 assert_eq!(t.source(), SOURCE);
             }
-            assert_eq!(t.update(Value::Null)["ok"], false);
+            // No fill used to be refused here; a `set_no_fill` is lashed on now.
+            assert_eq!(t.update(json!("not a colour"))["ok"], false);
             let displayed = t.drawing.last_good().unwrap();
             let candidate = displayed.snapshot.sources()[t.drawing.path()].clone();
             assert_ne!(displayed.scene, original_scene);

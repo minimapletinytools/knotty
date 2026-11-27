@@ -1,10 +1,13 @@
 -- story: A resize that changes its own frame
 -- group: 3. Moving and resizing
 -- status: needs-work
--- try: Drag a corner of the page rect on the canvas. It moves, but it will not resize.
--- note: The view box reads the same two numbers. Resizing the rect would rescale the whole view, so
---   the edge could never follow the pointer, and the canvas refuses. The properties pane can still
---   change the width.
+-- try: The pale rect is the page, and it fills the view because the view box reads the same
+--   pageWidth and pageHeight. Drag a corner of it on the canvas. It moves, but it will not resize.
+-- note: Resizing the page rect would change the view box by the same amount, so the whole view
+--   rescales and the page still fills it. That is also why editing pageWidth by hand seems to do
+--   nothing to the page while the circle changes size. The edge could never follow the pointer, so
+--   the canvas refuses. The properties pane can still change the width. The fix is a gizmo that
+--   draws both the box that was asked for and the box that resulted.
 module Story exposing (..)
 
 import KnottyDrawings exposing (..)

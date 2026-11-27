@@ -14,7 +14,7 @@ scale :: Float
 scale = 1.0
 
 dots :: List Node
-dots = map dot (intRange 0 1 2)
+dots = map dot (enumFromTo 0 2)
 
 dot :: Int -> Node
 dot i = circle (fromIntegral i * 70 + 50) 80 (14 + scale * 8) |> set_fill tomato

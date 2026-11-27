@@ -30,6 +30,7 @@ impl Compiler<'_, '_> {
         let PreparedCall {
             call,
             policies,
+            forward_only,
             generated,
             selected,
             input,
@@ -56,23 +57,32 @@ impl Compiler<'_, '_> {
         self.declarations.push_str(&identities);
         let mut bindings = format!("{} = input.value\n{locals}", self.symbol);
         let mut companions = Vec::new();
-        for (i, factory) in &policies {
+        for i in 0..call.args.len() {
+            if !policies.contains_key(&i) && !forward_only.contains(&i) {
+                continue;
+            }
             let (actual, helpers) = self
                 .walker
-                .render_site_typed(&call.args[*i], &format!("{prefix}Actual{i}Type"))?;
+                .render_site_typed(&call.args[i], &format!("{prefix}Actual{i}Type"))?;
             self.declarations.push_str(&helpers);
             let companion = format!("{prefix}{i}");
-            bindings.push_str(&format!(
-                "{companion} = {{ forward = ({}), unravel = ({factory}) ({}) }}\n",
-                actual, actual
-            ));
+            match policies.get(&i) {
+                Some(factory) => bindings.push_str(&format!(
+                    "{companion} = {{ forward = ({}), unravel = ({factory}) ({}) }}\n",
+                    actual, actual
+                )),
+                // The rule takes this callback as the plain function.
+                None => bindings.push_str(&format!("{companion} = ({actual})\n")),
+            }
             companions.push(companion);
         }
         let args = call
             .args
             .into_iter()
             .enumerate()
-            .filter_map(|(i, arg)| (!policies.contains_key(&i)).then_some(arg))
+            .filter_map(|(i, arg)| {
+                (!policies.contains_key(&i) && !forward_only.contains(&i)).then_some(arg)
+            })
             .collect();
         let body = self.unravel_apply(
             &format!("({rule}) {}", companions.join(" ")),

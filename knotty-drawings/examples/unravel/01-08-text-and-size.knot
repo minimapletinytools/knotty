@@ -1,7 +1,8 @@
 -- story: Text content and size
 -- group: 1. Editing a value in place
 -- status: works
--- try: Edit the text's content and its font size.
+-- try: Select the text and change its content and font size in the properties pane. The text cannot
+--   be typed into on the canvas yet.
 -- check: edit 0 content "knot"
 -- check: edit 0 font.size 40
 module Story exposing (..)

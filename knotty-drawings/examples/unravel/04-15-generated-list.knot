@@ -1,8 +1,9 @@
 -- story: A list that is computed
 -- group: 4. Lists
 -- status: works
--- try: Move a circle. It is refused: the positions come from a range, so there is no number for one
---   circle to change.
+-- try: Move the middle circle. It is refused: the positions come from enumFromTo 0 2, which has no
+--   number for one circle. A rule for enumFromTo could change its ends, but never one element in
+--   the middle.
 -- reject: edit 1 cx 100
 module Story exposing (..)
 
@@ -10,4 +11,4 @@ import KnottyDrawings exposing (..)
 import Types exposing (..)
 
 program = svg 240 160
-    (map (\i -> circle (fromIntegral i * 60 + 60) 80 18 |> set_fill tomato) (intRange 0 1 2))
+    (map (\i -> circle (fromIntegral i * 60 + 60) 80 18 |> set_fill tomato) (enumFromTo 0 2))

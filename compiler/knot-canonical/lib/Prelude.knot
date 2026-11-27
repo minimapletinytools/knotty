@@ -897,6 +897,7 @@ instance Foldable List where
 instance Traversable List where
   traverse f xs = foldr (\x acc -> map (:) (f x) <*> acc) (pure []) xs
 
+@unravel(🧶filter)
 filter :: (a -> Bool) -> List a -> List a
 filter p xs = foldr (\x acc -> if p x then x : acc else acc) [] xs
 
@@ -932,6 +933,7 @@ init xs =
     [] -> error "Prelude.!!: index too large"
     x : rest -> if n == 0 then x else rest !! (n - 1)
 
+@unravel(🧶reverse)
 reverse :: List a -> List a
 reverse xs = foldl (flip (:)) [] xs
 
@@ -976,6 +978,7 @@ cycle xs =
     [] -> error "Prelude.cycle: empty list"
     _ -> xs <> cycle xs
 
+@unravel(🧶take)
 take :: Int -> List a -> List a
 take n xs =
   if n <= 0 then []
@@ -984,6 +987,7 @@ take n xs =
       [] -> []
       x : rest -> x : take (n - 1) rest
 
+@unravel(🧶drop)
 drop :: Int -> List a -> List a
 drop n xs =
   if n <= 0 then xs
@@ -1025,6 +1029,7 @@ zip xs ys = zipWith (\x y -> (x, y)) xs ys
 zip3 :: List a -> List b -> List c -> List (a, b, c)
 zip3 xs ys zs = zipWith3 (\x y z -> (x, y, z)) xs ys zs
 
+@unravel(🧶zipWith)
 zipWith :: (a -> b -> c) -> List a -> List b -> List c
 zipWith f xs ys =
   case (xs, ys) of
@@ -1568,6 +1573,103 @@ materializationDraft factory unravel =
         candidate <- unravel { value = original, pinned = Nothing } request
         if fits request candidate then Just candidate else Nothing
   in { value = original, finish = finish }
+
+-- Rules for functions that rearrange a list. They keep its length: a request
+-- for a longer or shorter list is a snag, as it is for map.
+
+-- The request for each of the first n elements, with NoRequest where the
+-- request says nothing. Nothing if it asks for a different length.
+requestSlots :: Int -> ListConstriction s -> Maybe (List (FieldConstriction s))
+requestSlots n request = case request of
+  AnyRemainder -> Just (replicate n NoRequest)
+  ExactEnd -> if n == 0 then Just [] else Nothing
+  Prepend s more ->
+    if n <= 0 then Nothing
+    else do
+      rest <- requestSlots (n - 1) more
+      pure (RequestField s : rest)
+
+slotsRequest :: List (FieldConstriction s) -> ListConstriction (FieldConstriction s)
+slotsRequest slots = foldr Prepend AnyRemainder slots
+
+-- The same request, with every element's request marked as present.
+requestedFields :: ListConstriction s -> ListConstriction (FieldConstriction s)
+requestedFields request = case request of
+  AnyRemainder -> AnyRemainder
+  ExactEnd -> ExactEnd
+  Prepend s more -> Prepend (RequestField s) (requestedFields more)
+
+🧶reverse :: Constriction s a => { value : List a, pinned : Maybe (List a) } -> ListConstriction s -> Unravelled (ListConstriction (FieldConstriction s))
+🧶reverse input request = do
+  slots <- orSnag (requestSlots (length (effectiveFeed input)) request)
+  let wanted = slotsRequest (reverse slots)
+  if pinAllows input wanted then Unravel wanted else Snag
+
+-- The count stays as it is; the request lands on the elements that were kept.
+🧶take :: Constriction s a => ({ value : Int, pinned : Maybe Int }, { value : List a, pinned : Maybe (List a) }) -> ListConstriction s -> Unravelled (Maybe Int, ListConstriction s)
+🧶take (count, input) request =
+  let walk kept wanted = case wanted of
+        AnyRemainder -> Unravel AnyRemainder
+        ExactEnd -> if kept == 0 then Unravel AnyRemainder else Snag
+        Prepend s more ->
+          if kept <= 0 then Snag
+          else do
+            rest <- walk (kept - 1) more
+            pure (Prepend s rest)
+  in do
+    wanted <- walk (length (take (effectiveFeed count) (effectiveFeed input))) request
+    if pinAllows input wanted then Unravel (Nothing, wanted) else Snag
+
+-- The count stays as it is; the request lands after the elements that were dropped.
+🧶drop :: Constriction s a => ({ value : Int, pinned : Maybe Int }, { value : List a, pinned : Maybe (List a) }) -> ListConstriction s -> Unravelled (Maybe Int, ListConstriction (FieldConstriction s))
+🧶drop (count, input) request =
+  let skipped = take (effectiveFeed count) (effectiveFeed input)
+      wanted = foldr (\_ rest -> Prepend NoRequest rest) (requestedFields request) skipped
+  in if pinAllows input wanted then Unravel (Nothing, wanted) else Snag
+
+-- Each output element came from one input element that passed the test. The
+-- rule takes the test as a plain function: a filter never reverses it.
+-- An edit that would make an element fail the test changes the output's
+-- length, and the final check refuses it.
+🧶filter :: Constriction s a => (a -> Bool) -> { value : List a, pinned : Maybe (List a) } -> ListConstriction s -> Unravelled (ListConstriction (FieldConstriction s))
+🧶filter test input request =
+  let walk values wanted = case values of
+        [] -> case wanted of
+          Prepend _ _ -> Snag
+          _ -> Unravel AnyRemainder
+        x : rest ->
+          if test x then case wanted of
+            AnyRemainder -> Unravel AnyRemainder
+            ExactEnd -> Snag
+            Prepend s more -> do
+              others <- walk rest more
+              pure (Prepend (RequestField s) others)
+          else do
+            others <- walk rest wanted
+            pure (Prepend NoRequest others)
+  in do
+    wanted <- walk (effectiveFeed input) request
+    if pinAllows input wanted then Unravel wanted else Snag
+
+-- Each output element goes back through the callback to its pair of inputs.
+-- Which side changes is the callback's rule to decide.
+🧶zipWith :: (Constriction sA a, Constriction sB b) => { forward : a -> b -> c, unravel : ({ value : a, pinned : Maybe a }, { value : b, pinned : Maybe b }) -> sOut -> Unravelled (sA, sB) } -> ({ value : List a, pinned : Maybe (List a) }, { value : List b, pinned : Maybe (List b) }) -> ListConstriction sOut -> Unravelled (ListConstriction sA, ListConstriction sB)
+🧶zipWith combine (left, right) request =
+  let walk xs ys wanted = case wanted of
+        AnyRemainder -> Unravel (AnyRemainder, AnyRemainder)
+        ExactEnd -> case (xs, ys) of
+          (_ : _, _ : _) -> Snag
+          _ -> Unravel (AnyRemainder, AnyRemainder)
+        Prepend r more -> case (xs, ys) of
+          (x : xs', y : ys') -> do
+            (a, b) <- snagOnSplice (combine.unravel ({ value = x, pinned = Nothing }, { value = y, pinned = Nothing }) r)
+            (lefts, rights) <- walk xs' ys' more
+            pure (Prepend a lefts, Prepend b rights)
+          _ -> Snag
+  in do
+    (wantedLeft, wantedRight) <- walk (effectiveFeed left) (effectiveFeed right) request
+    if pinAllows left wantedLeft && pinAllows right wantedRight
+    then Unravel (wantedLeft, wantedRight) else Snag
 
 -- Opt-in positional growth; ordinary map stays shape preserving. Forward,
 -- growMap is map. When unravelled, a request longer than the input adds elements.

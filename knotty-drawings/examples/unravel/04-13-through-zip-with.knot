@@ -1,9 +1,9 @@
 -- story: Through zipWith
 -- group: 4. Lists
--- status: needs-work
--- try: Move a circle. It is refused.
--- note: zipWith has no unravel rule.
--- wanted: edit 1 cx 100
+-- status: works
+-- try: Move a circle or change its radius. Each goes back to its own list.
+-- check: edit 1 cx 100
+-- check: edit 1 r 30
 module Story exposing (..)
 
 import KnottyDrawings exposing (..)

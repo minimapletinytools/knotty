@@ -142,9 +142,8 @@ A splice throws the expression away. A lash keeps the expression and adds a call
 
 To lash a function on, the engine inserts the call with `default` arguments and then unravels the request through it as usual. e.g. `e |> set_stroke default`, then `🧶set_stroke` sends the stroke to its argument (a literal, so it is spliced) and the rest to `e`.
 
-Creating a value with a library function is the same thing with nothing to wrap, e.g. insert `circle default default default` and unravel through `🧶circle`.
 
-A function that can be lashed on is marked with `@lasher`. The expression being wrapped is its last argument (the one `|>` feeds).
+A function that can be lashed on is annotated with `@lasher`. The type being lashed onto is its last argument (the one `|>` feeds) which must match the result type.
 
 ```knot
 @lasher
@@ -154,11 +153,26 @@ set_stroke :: Color -> Node -> Node
 
 The engine picks the first lasher whose rule, given the request, returns a request for the last argument that already `fits` the current value of `e`. If part of the request is still unmet it repeats with what remains. The application can also name the function to lash.
 
-By default a lash goes at the very end, on the outermost expression that produces the value. A `@cleat` on an expression moves it there
+By default a lash goes at the very end, on the outermost expression that produces the value. A `@cleat` can flag other expressions that produce the value as places to lash onto. Where the lashing happens depends on teh unravel strategy.
 
 ```knot
-circle 120 80 30 |> @cleat set_fill tomato |> rotate 30
+
+@cleat (circle 120 80 30 |> set_fill tomato) |> rotate 30
 ```
+
+Creating a value with a library function is similar. Only the result type of the lasher must match type of the expression being created.  e.g.
+
+```knot
+@lasher
+@unravel(🧶circle)
+circle :: Float -> Float -> Float -> Node
+```
+
+the engine creates `circle default default default` if possible and then unravels onto that expression to produce the final source candidate.
+
+- every argument type needs a `Default`, otherwise that lasher can not be used to create
+- the engine picks the first lasher whose rule answers `Unravel` for the request, e.g. for a circle request `🧶rect` snags and `🧶circle` answers
+
 
 FUTURE named cleats e.g. `@cleat("style")` so that a request can aim at one of several
 FUTURE named lashers e.g. `@lasher("meowmeow")` so that a request can aim at a specific lasher, although is this actually useful in practice?
@@ -167,8 +181,8 @@ FUTURE named lashers e.g. `@lasher("meowmeow")` so that a request can aim at a s
 
 The application sends a strategy along with its request:
 
-- unravel first (default): unravel all the way back. If that snags, lash at the nearest cleat that was passed, or at the very end
-- lash first: at the first cleat reached try the lashers. If none takes the request, carry on unravelling
+- unravel first (default): unravel all the way back. If that snags, lash at the first cleat that was passed (the outermost one), or at the very end if there is none
+- lash first: at the first cleat reached (or at the very end if there is none) try the lashers. If none takes the request, carry on unravelling
 - splice here: replace the expression the request lands on
 
 Lash first can leave 2 setters behind, e.g. with `set_fill red` inside the cleat, asking for blue adds a `set_fill blue` at the cleat and keeps the red one. A setter outside the cleat is reached first and is edited as usual.

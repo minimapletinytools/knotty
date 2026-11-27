@@ -204,6 +204,7 @@ impl Walker<'_> {
                                 recipe: None,
                                 candidate_source: false,
                                 via: None,
+                                lash: None,
                                 synthetic: false,
                                 projections: vec![],
                                 module: g.module,

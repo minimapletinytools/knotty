@@ -1,10 +1,10 @@
 -- story: Through filter
 -- group: 4. Lists
--- status: needs-work
--- try: Move a circle. It is refused.
--- note: filter has no unravel rule. A rule would also have to refuse edits that push an element out
---   of the filter.
--- wanted: edit 0 cx 100
+-- status: works
+-- try: Move a circle. Its number in the list changes; 30 is filtered out and is skipped. Moving a
+--   circle to the left of 60 is refused: it would drop out of the filter.
+-- check: edit 0 cx 100
+-- reject: edit 0 cx 40
 module Story exposing (..)
 
 import KnottyDrawings exposing (..)

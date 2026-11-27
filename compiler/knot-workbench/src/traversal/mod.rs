@@ -9,6 +9,7 @@ pub use body::CallbackBody;
 mod callbacks;
 mod candidates;
 mod higher_order;
+mod lash;
 mod list_route;
 mod locks;
 mod materialization;
@@ -346,6 +347,18 @@ impl SourceEditor {
         roots: &[std::path::PathBuf],
         limits: EditLimits,
     ) -> Result<SourceEdit, EditError> {
+        self.prepare_lashing(snapshot, context, requests, argument, roots, limits, 0, None)
+    }
+    fn prepare_requests_once(
+        &self,
+        snapshot: &ProjectSnapshot,
+        context: &PreparedContext,
+        requests: &[OutputRequest<'_>],
+        argument: Option<&Request>,
+        roots: &[std::path::PathBuf],
+        limits: EditLimits,
+        snag: &lash::SnagSlot,
+    ) -> Result<SourceEdit, EditError> {
         if requests.is_empty() {
             return unsupported("a source transaction needs at least one output request");
         }
@@ -400,6 +413,7 @@ impl SourceEditor {
             obligations: vec![],
             spliced: Default::default(),
             patch_via: BTreeMap::new(),
+            snag: snag.clone(),
             guards: vec![],
         };
         if context.reuse_route
@@ -673,6 +687,8 @@ struct Walker<'a> {
     spliced: std::collections::BTreeSet<(u32, u32)>,
     /// The call each literal patch was reached through, if any.
     patch_via: BTreeMap<(u32, u32), Arc<syntax::Caller>>,
+    /// Where a lasher could be added after the first snag of this attempt.
+    snag: lash::SnagSlot,
 }
 /// A rule's answer, read from its `Unravelled` value.
 pub(in crate::traversal) enum RuleAnswer {
@@ -836,6 +852,7 @@ impl Walker<'_> {
             recipe: None,
             candidate_source: false,
             via: None,
+            lash: None,
             synthetic: false,
             projections: vec![],
             module: entry.clone(),
@@ -946,6 +963,7 @@ impl Walker<'_> {
                 CExpr::Annotated(_, e) => {
                     s = Site {
                         ty: s.ty.clone(),
+                        lash: Some(s.lash_root()),
                         ..s.child(e)
                     };
                     continue;
@@ -959,6 +977,11 @@ impl Walker<'_> {
                         next.ty = s.ty.clone();
                     }
                     next.fixed |= s.fixed;
+                    // The name stands for the same value as the expression
+                    // it is bound to, so it continues the use's chain.
+                    if s.lash.is_some() {
+                        next.lash = s.lash.clone();
+                    }
                     s = next;
                     continue;
                 }
@@ -975,6 +998,7 @@ impl Walker<'_> {
                                 recipe: None,
                                 candidate_source: false,
                                 via: s.via.clone(),
+                                lash: Some(s.lash_root()),
                                 synthetic: false,
                                 projections: vec![],
                                 module: g.module,
@@ -994,6 +1018,7 @@ impl Walker<'_> {
                     let taken = self.condition(&condition)?;
                     let mut selected = s.child(if taken { yes } else { no });
                     selected.ty = s.ty.clone();
+                    selected.lash = Some(s.lash_root());
                     s = selected;
                     continue;
                 }
@@ -1050,11 +1075,15 @@ impl Walker<'_> {
                 CExpr::List(_) => self.list(&s, r, t),
                 CExpr::App(_, _) | CExpr::BinOp(_, _, _) => self.call(s, r, t),
                 CExpr::Let(bs, b) => {
+                    let root = s.lash_root();
                     s = self.let_site(&s, bs, b)?;
+                    s.lash = Some(root);
                     continue;
                 }
                 CExpr::Case(value, arms) => {
+                    let root = s.lash_root();
                     s = self.case_site(&s, value, arms)?;
+                    s.lash = Some(root);
                     continue;
                 }
                 CExpr::FieldAccess(base, name) => {
@@ -1292,6 +1321,7 @@ impl Walker<'_> {
                     recipe: None,
                     candidate_source: false,
                     via: Some(caller),
+                    lash: Some(s.lash_root()),
                     synthetic: false,
                     projections: vec![],
                     module: name.module,
@@ -1307,6 +1337,14 @@ impl Walker<'_> {
         }
         let (selected, input) = selection.unwrap();
         let expression = self.source(&rules[selected])?;
+        // A call that passes its last argument on as the same type of value
+        // (a setter in a pipeline) continues that value's chain.
+        let mut args = args;
+        if let Some(last) = args.last_mut() {
+            if last.ty.is_some() && last.ty == Some(output_type.clone()) {
+                last.lash = Some(s.lash_root());
+            }
+        }
         self.apply_rule(&s, &t, args, r, input, &expression)
     }
 
@@ -1371,7 +1409,10 @@ impl Walker<'_> {
         let input_value = match self.probes.unravelled_payload(&proposal, &input)? {
             RuleAnswer::Unravel(value) => value,
             RuleAnswer::Splice => return self.materialize(site, &r, request_type),
-            RuleAnswer::Snag => return Err(EditError::RuleFailed),
+            RuleAnswer::Snag => {
+                self.note_snag(site, &r);
+                return Err(EditError::RuleFailed);
+            }
         };
         if args.len() == 1 {
             return self.schedule(args.pop().unwrap(), input_value, input);

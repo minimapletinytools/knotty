@@ -17,7 +17,7 @@ async function open(source, directory, filename = 'MakersFair.knot') {
   fs.mkdirSync(folder);
   const file = path.join(folder, filename);
   fs.writeFileSync(file, source);
-  const p = spawn(path.join(app, 'target/release/knottydrawings'), [
+  const p = require('./reap.cjs')(spawn(path.join(app, 'target/release/knottydrawings'), [
     file,
     '--library',
     library,
@@ -26,7 +26,7 @@ async function open(source, directory, filename = 'MakersFair.knot') {
     '--no-open',
     '--port',
     '0',
-  ]);
+  ]));
   processes.push(p);
   const url = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(Error('Startup timeout')), 30000);

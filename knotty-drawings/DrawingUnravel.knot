@@ -65,6 +65,26 @@ circleAdditionArguments input (ShapeAdditions request) = case input.value of
       then Just (cx, cy, r) else Nothing
     _ -> Nothing
 
+-- A colour back to hue, saturation and lightness. A grey has no hue, so the
+-- hue is left as it is and the saturation becomes zero.
+🧶hsl :: (Feed Float, Feed Float, Feed Float) -> Maybe Color -> Unravelled (Maybe Float, Maybe Float, Maybe Float)
+🧶hsl _ request = case request of
+  Nothing -> Unravel (Nothing, Nothing, Nothing)
+  Just (Rgb red green blue) ->
+    let r = fromIntegral red / 255
+        g = fromIntegral green / 255
+        b = fromIntegral blue / 255
+        high = max r (max g b)
+        low = min r (min g b)
+        chroma = high - low
+        lightness = (high + low) / 2
+        turn = if high == r then (g - b) / chroma
+               else if high == g then (b - r) / chroma + 2
+               else (r - g) / chroma + 4
+        hue = 60 * (if turn < 0 then turn + 6 else turn)
+    in if chroma == 0 then Unravel (Nothing, Just 0, Just lightness)
+       else Unravel (Just hue, Just (chroma / (1 - abs (2 * lightness - 1))), Just lightness)
+
 -- Raw materialized constructors retain normal field routes on later edits.
 unravelShapeNode :: (Feed Common, Feed Shape) -> NodeConstriction -> Unravelled (CommonConstriction, ShapeConstriction)
 unravelShapeNode _ request = case request of
@@ -93,12 +113,21 @@ unravelEllipseShape _ request = case request of
 -- Rules route requests to existing source arguments. Fixed constructor defaults
 -- and pins are checked by the engine before any source is published.
 
+-- A shape function answers for its own arguments only. Anything else a request
+-- asks for (a fill, a stroke, an id) has to hold already for the plain node the
+-- function makes; if it does not, the rule snags, and a setter can be lashed on.
+-- `rest` is the request with the function's own arguments left open.
+plainEnough :: CommonConstriction -> ShapeConstriction -> Shape -> Bool
+plainEnough common rest plain = fits (ShapeNodeRequest common rest) (ShapeNode defaultCommon plain)
+
 🧶rect :: (Feed Float, Feed Float, Feed Float, Feed Float) -> NodeConstriction -> Unravelled (Maybe Float, Maybe Float, Maybe Float, Maybe Float)
 🧶rect _ request = case request of
   AnyNode -> Unravel (Nothing, Nothing, Nothing, Nothing)
-  ShapeNodeRequest _ geometry -> case geometry of
+  ShapeNodeRequest common geometry -> case geometry of
     AnyShape -> Unravel (Nothing, Nothing, Nothing, Nothing)
-    RequestRect r -> Unravel (r.x, r.y, r.width, r.height)
+    RequestRect r ->
+      if plainEnough common (RequestRect { r | x = Nothing, y = Nothing, width = Nothing, height = Nothing }) (Rect { x = 0, y = 0, width = 0, height = 0, rx = 0, ry = 0, fill = defaultFill, stroke = defaultStroke })
+      then Unravel (r.x, r.y, r.width, r.height) else Snag
     _ -> Snag
   _ -> Snag
 
@@ -116,36 +145,44 @@ unravelEllipseShape _ request = case request of
 🧶circle :: (Feed Float, Feed Float, Feed Float) -> NodeConstriction -> Unravelled (Maybe Float, Maybe Float, Maybe Float)
 🧶circle _ request = case request of
   AnyNode -> Unravel (Nothing, Nothing, Nothing)
-  ShapeNodeRequest _ geometry -> case geometry of
+  ShapeNodeRequest common geometry -> case geometry of
     AnyShape -> Unravel (Nothing, Nothing, Nothing)
-    RequestCircle r -> Unravel (r.cx, r.cy, r.r)
+    RequestCircle r ->
+      if plainEnough common (RequestCircle { r | cx = Nothing, cy = Nothing, r = Nothing }) (Circle { cx = 0, cy = 0, r = 0, fill = defaultFill, stroke = defaultStroke })
+      then Unravel (r.cx, r.cy, r.r) else Snag
     _ -> Snag
   _ -> Snag
 
 🧶ellipse :: (Feed Float, Feed Float, Feed Float, Feed Float) -> NodeConstriction -> Unravelled (Maybe Float, Maybe Float, Maybe Float, Maybe Float)
 🧶ellipse _ request = case request of
   AnyNode -> Unravel (Nothing, Nothing, Nothing, Nothing)
-  ShapeNodeRequest _ geometry -> case geometry of
+  ShapeNodeRequest common geometry -> case geometry of
     AnyShape -> Unravel (Nothing, Nothing, Nothing, Nothing)
-    RequestEllipse r -> Unravel (r.cx, r.cy, r.rx, r.ry)
+    RequestEllipse r ->
+      if plainEnough common (RequestEllipse { r | cx = Nothing, cy = Nothing, rx = Nothing, ry = Nothing }) (Ellipse { cx = 0, cy = 0, rx = 0, ry = 0, fill = defaultFill, stroke = defaultStroke })
+      then Unravel (r.cx, r.cy, r.rx, r.ry) else Snag
     _ -> Snag
   _ -> Snag
 
 🧶line :: (Feed Float, Feed Float, Feed Float, Feed Float) -> NodeConstriction -> Unravelled (Maybe Float, Maybe Float, Maybe Float, Maybe Float)
 🧶line _ request = case request of
   AnyNode -> Unravel (Nothing, Nothing, Nothing, Nothing)
-  ShapeNodeRequest _ geometry -> case geometry of
+  ShapeNodeRequest common geometry -> case geometry of
     AnyShape -> Unravel (Nothing, Nothing, Nothing, Nothing)
-    RequestLine r -> Unravel (r.x1, r.y1, r.x2, r.y2)
+    RequestLine r ->
+      if plainEnough common (RequestLine { r | x1 = Nothing, y1 = Nothing, x2 = Nothing, y2 = Nothing }) (Line { x1 = 0, y1 = 0, x2 = 0, y2 = 0, stroke = defaultStroke })
+      then Unravel (r.x1, r.y1, r.x2, r.y2) else Snag
     _ -> Snag
   _ -> Snag
 
 🧶text :: (Feed Float, Feed Float, Feed String) -> NodeConstriction -> Unravelled (Maybe Float, Maybe Float, Maybe String)
 🧶text _ request = case request of
   AnyNode -> Unravel (Nothing, Nothing, Nothing)
-  ShapeNodeRequest _ geometry -> case geometry of
+  ShapeNodeRequest common geometry -> case geometry of
     AnyShape -> Unravel (Nothing, Nothing, Nothing)
-    RequestText r -> Unravel (r.x, r.y, r.content)
+    RequestText r ->
+      if plainEnough common (RequestText { r | x = Nothing, y = Nothing, content = Nothing }) (Text { x = 0, y = 0, content = "", font = defaultFont, fill = defaultFill, stroke = defaultStroke })
+      then Unravel (r.x, r.y, r.content) else Snag
     _ -> Snag
   _ -> Snag
 

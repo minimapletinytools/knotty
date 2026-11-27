@@ -40,66 +40,51 @@ Still open on splice:
 - **Your own functions are not bubbled.** Only read-only source bubbles. A
   literal inside your own function is edited in place, for every caller.
 
-### Lash (designed, to implement next)
+### Lash (first part implemented)
 
-Splice throws an expression away and prints a value. Lashing keeps the
-expression and adds a call around it: `e` becomes `e |> set_stroke blue`. It is
-how a property with no setter in the source gets one (`02-02-no-setter`), and
-how a created value is written with the library's own functions and not as raw
-data (`04-09-tidy-source-after-growth`).
+The design is in unravel-design.md §3. Splice throws an expression away and
+prints a value; lashing keeps the expression and adds a call around it.
 
-**How.** Insert the call with `default` arguments, then unravel the request
-through it in the ordinary way. `🧶set_stroke` routes the stroke to its
-argument, whose literal is then spliced; the rest goes to `e`, which already
-fits. `growMap` does the same with a callback. Creating `circle 160 80 25` is
-the same step with nothing wrapped: insert `circle default default default`
-and unravel through `🧶circle`.
+Implemented (`tests/lash.rs` in the engine, stories `02-02-no-setter` and
+`02-04-setter-cannot-clear`):
 
-**Which function.** A library marks the functions that may be lashed on with
-`@lasher`. For each, in the order marked, the engine:
+- `@lasher` marks a function that may be added. A bare `@name` annotation now
+  parses, with arguments only when `(` follows the name directly.
+- When a rule snags, the engine finds the outermost expression of that value's
+  pipeline, inserts `|> lasher default ...` there, and unravels the whole
+  request again through the new call. Lashers are tried in the order they are
+  declared.
+- A lasher that leaves the same request to snag again took nothing, and the
+  next one is tried. Several missing parts take several lashers, up to four.
+- The lashing and the unravel through it are reported as one edit.
+- The drawing library marks fifteen setters, and its shape rules now snag when
+  a request asks for style the shape function cannot provide. Before, they
+  answered for their geometry and the edit failed later in the final check.
 
-1. calls its rule with default arguments, the current value of `e` as the last
-   argument, and the request;
-2. calls `fits` on the request the rule returns for that last argument and the
-   current value of `e`.
+How it differs from the design text:
 
-The first function for which that holds absorbs what was missing. If it leaves
-part of the request unmet, repeat with what remains. An application may also
-name the function outright for one edit.
+- **Choosing a lasher.** The design says: the first whose rule leaves the
+  wrapped expression a request it already fits. The engine tries each in turn
+  and keeps the first for which the whole edit succeeds. The result is the
+  same where both apply; the engine's way costs a re-check of the program per
+  lasher tried.
+- **Only a snag triggers it.** A rule that answers `Unravel` but ignores part
+  of its request fails in the final check, and nothing is lashed. Rules have to
+  snag honestly for lashing to help.
 
-Conventions and limits: the wrapped expression is the last argument, as `|>`
-feeds it. The rule is run on a default argument, the same assumption `growMap`
-makes. A rule that asks nothing of the wrapped argument passes for any request,
-so marking and ordering lashers is the library author's care. The test only
-picks the function; the final check still decides whether the edit is right.
+Not built yet:
 
-**Where.** The very end by default: the outermost expression that produces the
-value. An author moves it with `@cleat` on an expression:
-
-```knot
-circle 120 80 30 |> @cleat set_fill tomato |> rotate 30
-```
-
-Later, perhaps: named cleats such as `@cleat("style")`, so a whip can aim at
-one of several.
-
-**When: the caller's strategy.** An edit from the application carries a
-request and a strategy. A whip's control is data the application reads, so it
-can carry the strategy, as in `@whip(LashFirst (ColourPicker "Outline"))`; the
-canvas and the properties pane choose per property or gesture.
-
-| Strategy | Meaning |
-| --- | --- |
-| Unravel first (default) | Go all the way back. On a snag, lash at the nearest cleat passed on the way, or at the very end. |
-| Lash first | At the first cleat reached, try the lashers. If none absorbs the request, carry on unravelling. |
-| Splice here | Replace the expression the edit lands on with the printed value. |
-
-Lash first can duplicate a setter: with `set_fill red` inside the cleat, a blue
-fill adds a second `set_fill` and leaves the red one. Setters outside the cleat
-are reached first and edited as usual.
-
-Build splice-at-an-expression in the engine so that both a rule's outcome and
-a caller's strategy can invoke it.
+- `@cleat`. It parses, and the engine ignores it: a lash always goes at the
+  very end.
+- The strategy an application sends (unravel first, lash first, splice here).
+  Only unravel first exists.
+- Creating a value with a lasher (`circle default default default`), which is
+  what `04-09-tidy-source-after-growth` needs.
+- Lashers whose arguments have no `Default` are skipped. In the drawing
+  library that leaves out `set_fill_paint`, the enum setters and the
+  transforms.
+- An unqualified name is used when the entry module exposes it; otherwise the
+  module's name or alias is written in front.
 
 ### The same fork, still decided by fixed policy
 
@@ -108,6 +93,24 @@ a caller's strategy can invoke it.
   above.
 - `if` always follows the branch that ran (§6, branch choice).
 - Replacement throws away the argument expressions (§7, wrapping).
+
+### Converging requests inside one request (not implemented)
+
+unravel-design.md §3, "Branching and converging", describes one request whose
+branches reach the same input with different demands. The engine only handles
+this when both branches ask for the same value. With `base = 10`:
+
+| Program | Request | Result |
+| --- | --- | --- |
+| `(base * 2, base + 5)` | `(22, 16)` | Works: both want `base = 11` |
+| `(base * 2, base + 5)` | `(22, 20)` | Conflicting requests. Should work: `base = 11`, and the `5` becomes 9 |
+| `scaled = base * 2`, then `scaled + base` | `33` | Rule failed. Should work: `base = 11` |
+
+The engine does have the mechanism the design asks for: satisfy one request,
+re-evaluate, pin what it decided, unravel the next against the new values, and
+try the other order once. It is applied between separate output requests, which
+an application never needs, and not between the branches of one request. The
+work is to move it.
 
 ### Requests that may be missed
 
@@ -257,18 +260,16 @@ contract compatibility and bounded generation.
 
 ## 4. Rules the standard library still lacks
 
-The stories show these as the most visible gaps. None needs new engine work
-unless noted.
+`reverse`, `take`, `drop`, `filter`, `zipWith` and the drawing library's `hsl`
+have rules now. `filter`'s rule takes its test as a plain function, so the test
+needs no reverse rule (see unravel-design.md §4). Still missing:
 
 | Function | Story | Note |
 | --- | --- | --- |
-| `zipWith` | `04-13-through-zip-with` | Binary callbacks are supported; the rule is not written. Which side changes is the rule's policy, informed by pins. It keeps both list shapes and leaves unpaired suffixes unconstrained. |
 | `foldl` and other accumulators | | A request on the accumulator routes to the preceding call, and in the end to the initial value; a request on an element routes to that element. The rule must keep obligations across repeated calls. |
-| `filter` | `04-12-through-filter` | The rule must refuse an edit that pushes an element out of the filter. |
-| `reverse`, `take`, `drop` | `04-14-through-reverse` | |
 | `Map` | `05-04-map-value`, `05-05-map-insert`, `05-06-map-delete`, `05-07-map-retarget` | No rules at all. Insert and delete share the list gaps in §6. Nothing chooses between editing a value and editing the key that reads it. |
-| `hsl` | `01-07-colour-through-hsl` | |
-| Ranges such as `[0..n]` | `06-06-the-bezier-shapes` | A range's elements cannot be edited one by one. |
+| `enumFromTo` and other ranges | `04-15-generated-list`, `06-06-the-bezier-shapes` | A rule could change the ends, never one element in the middle. |
+| `take` and `drop` changing their count | | Asking for a longer or shorter result could change the count. Today it is a snag. |
 
 ## 5. Whips
 
@@ -310,14 +311,8 @@ Open:
   default spelling, and a naming scheme for "same function, different unravel".
   Making plain `map` grow needs the engine to look up `Default` optionally, so
   that element types without one still unravel.
-- **Insertion in the middle** (`04-05-insert-in-the-middle`). A list grows only
-  at its end. Insertion needs a request that says where, and a way to choose it
-  in the editor.
-- **Deletion** (`04-06-delete-an-element`). Rules keep or grow a list's length;
-  a request cannot ask for a shorter list.
-- **Reordering** (`04-07-reorder-elements`). Elements are matched by position.
-  Reordering needs matching by identity, so a moved element keeps its source
-  expression.
+- **Insertion, deletion and reordering** (`04-05-insert-in-the-middle`,
+  `04-06-delete-an-element`, `04-07-reorder-elements`). See the proposal below.
 - **Branch choice** (`08-04-create-the-other-branch`). The default value fixes
   which branch of a callback runs, so creation only reaches outputs on that
   branch. Lifting this needs the engine to try other branches, not a different
@@ -329,6 +324,53 @@ Open:
   annotation, so the two would disagree. Open questions if revisited: a wrapper
   such as `\d -> f d` loses the inner function's stock; what the expression may
   refer to on a local lambda; several arguments take a tuple.
+
+### Proposal: a list request that says where each element came from
+
+A `ListConstriction` describes the new list position by position. That is
+enough to say what the list should be, and `fits` only needs that. It is not
+enough to edit source well: asking `[a, b, c]` to become `[a, c]` reads as
+"change `b` into `c`, then drop the last element", so `b`'s expression is
+rewritten to look like `c` and `c`'s own expression is thrown away.
+
+Keep `ListConstriction` as it is and add a second request type that names the
+origin of each element:
+
+```knot
+type Placed s = From Int s | New s
+type ListArrangement s = Arranged (List (Placed s)) | Unarranged
+```
+
+- `From i s` is the element that was at index `i`, now fitting `s`.
+- `New s` is an element that did not exist.
+- An old index that appears nowhere is deleted. An index may appear once.
+- `fits` checks only the result: the new list has one element per entry, each
+  fitting its `s`. So it is an ordinary `Constriction`.
+
+`[a, b, c]` to `[a, c]` is `Arranged [From 0 any, From 2 any]`. Swapping two
+elements is `Arranged [From 1 any, From 0 any]`. Inserting in the middle is
+`Arranged [From 0 any, New s, From 1 any]`.
+
+What each piece does with it:
+
+| Where | Behaviour |
+| --- | --- |
+| A list literal | The engine rebuilds the literal: each `From i` keeps expression `i` and unravels `s` into it; each `New s` is created (with a lasher, §0); the rest are removed. |
+| `map` | `From i s` runs the callback's rule on element `i`; the arrangement of the input is the same shape. `New s` needs growth, so plain `map` snags and `growMap` creates from `default`. |
+| `<>` | Split by old index: entries from the left list stay left. A `New` between the two goes to the side the rule prefers, informed by pins. |
+| `filter` | `From i` maps back to the input index it came from. Deleting removes the input element. `New` snags: the rule cannot know the element would pass. |
+| A range or other computed list | Snags, as now. |
+
+Open questions:
+
+- Whether `ListArrangement` replaces `ListConstriction` or sits beside it with
+  a conversion. Positional requests are still the natural thing for "the third
+  element's radius is 6".
+- How the application identifies elements. The drawing app keys nodes by
+  position today, which is what makes a reorder look like two edits.
+- `Map`: deleting or inserting a key is the same idea keyed by key instead of
+  index. Decide lists first.
+- Editor gestures: delete, reorder in the layers view, insert at a position.
 
 ## 7. Source edits
 
@@ -352,3 +394,18 @@ The engine generates the default rules for records and tuples because Knot
 cannot write a transformation over an arbitrary record's fields, or a tuple of
 any length, that produces the matching request shape. That needs type-level
 mapping over rows. Prefer Knot-authored definitions if the language gains it.
+
+## 9. Editor work the stories asked for
+
+None of this needs unravel changes.
+
+| What | Story |
+| --- | --- |
+| Type into text on the canvas | `01-08-text-and-size` |
+| Edit an id in the layers view, not only in properties | `02-05-optional-id` |
+| A rotate gizmo | `03-02-inside-a-rotated-group` |
+| Add and remove points on a polyline or path | `03-04-polyline-points`, `04-08-add-a-point` |
+| Gizmos that show both the box asked for and the box that resulted | `03-06-resize-changes-the-frame`, `03-08-scale-about-the-centre` |
+| One name for a rect's corner radius in place of `rx` and `ry` | `03-03-shared-corner-radius` |
+| One `set_fill` taking a paint, in place of `set_fill` and `set_fill_paint` | `02-04-setter-cannot-clear` |
+| Grown lists printed as plain lists, not a `twineConstruction` `let` | `04-03-append-a-record` |

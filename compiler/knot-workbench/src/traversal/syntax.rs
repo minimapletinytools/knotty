@@ -13,6 +13,10 @@ pub(super) struct Caller {
 pub(super) struct Site {
     /// The innermost bodied call this expression was reached through.
     pub via: Option<Arc<Caller>>,
+    /// The outermost expression producing the same value as this one: the
+    /// start of the chain of calls that each pass the value on as their last
+    /// argument. A lasher is added there. `None` when this is that expression.
+    pub lash: Option<Arc<Site>>,
     /// Synthesized aggregate shell with original child spans, never a patch target.
     pub synthetic: bool,
     /// Candidate AST spans belong to the checked new revision. Original lexical
@@ -29,9 +33,13 @@ pub(super) struct Site {
     pub ty: Option<Ty>,
 }
 impl Site {
+    pub fn lash_root(&self) -> Arc<Site> {
+        self.lash.clone().unwrap_or_else(|| Arc::new(self.clone()))
+    }
     pub fn child(&self, expr: &Spanned<CExpr>) -> Self {
         Self {
             synthetic: false,
+            lash: None,
             via: self.via.clone(),
             candidate_source: self.candidate_source,
             recipe: None,

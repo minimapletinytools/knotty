@@ -46,11 +46,17 @@ impl<'a> ParseState<'a> {
             .collect())
     }
 
-    /// `name(arg, arg, ...)`, with the `@` already consumed. A single
+    /// `name` or `name(arg, arg, ...)`, with the `@` already consumed. A single
     /// argument desugars to a bare value; more than one desugars to a tuple
     /// (spec §13.1's desugaring rule).
     fn annotation_single(&mut self) -> Result<(String, Spanned<Expr>), ParseError> {
-        let key = self.lower_ident()?.node;
+        let name = self.lower_ident()?;
+        let key = name.node;
+        // A bare `@name` is a mark with no value. Arguments must follow the
+        // name directly, so `@cleat (e)` marks the expression `(e)`.
+        if self.peek() != Some(b'(') {
+            return Ok((key, Spanned::new(name.span, Expr::Unit)));
+        }
         self.expect_byte(b'(')?;
         self.skip_trivia()?;
         let args = self.with_no_nested_annotations(|state| {

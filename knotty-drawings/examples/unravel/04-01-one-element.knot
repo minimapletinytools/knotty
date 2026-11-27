@@ -1,7 +1,9 @@
 -- story: Edit one element
 -- group: 4. Lists
 -- status: works
--- try: Move the middle circle. Its number in the list changes.
+-- try: Move the middle circle sideways. Its number in the list changes. It will not move up or
+--   down: the 80 is inside the callback, which every circle shares, and a callback's own code stays
+--   fixed.
 -- check: edit 1 cx 100
 module Story exposing (..)
 

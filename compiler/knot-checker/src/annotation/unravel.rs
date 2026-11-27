@@ -74,14 +74,18 @@ pub struct RegistrationError {
     pub message: String,
 }
 
-/// Whether a rule declares a structural callback-package prefix.
+/// Whether a rule's first parameter is for a callback: a companion record, or
+/// the callback itself as a plain function.
 pub fn has_companion_prefix(sub: &Substitution, scheme: &Scheme) -> bool {
     let mut sub = sub.clone();
     let Some(Structure::Fn(parameter, _)) = sub.head_normal(scheme.ty) else {
         return false;
     };
-    let Some(Structure::Record(fields, extension)) = sub.head_normal(parameter) else {
-        return false;
+    let (fields, extension) = match sub.head_normal(parameter) {
+        Some(Structure::Record(fields, extension)) => (fields, extension),
+        // A callback taken as the plain function. Feeds are never functions.
+        Some(Structure::Fn(..)) => return true,
+        _ => return false,
     };
     let (fields, _) = crate::interface::instance::flatten_record(&mut sub, fields, extension);
     fields.contains_key("forward") && fields.contains_key("unravel")
@@ -236,13 +240,17 @@ pub fn register_and_select_with_companions(
                 let callbacks = contract
                     .callbacks
                     .iter()
-                    .zip(&parameters)
-                    .map(|(callback, (_, forward, _))| {
+                    .map(|callback| {
+                        let forward = parameters
+                            .iter()
+                            .find(|(index, _, _)| *index == callback.argument)
+                            .map(|(_, forward, _)| *forward)
+                            .expect("a callback contract has a callback argument");
                         check_companion(
                             &mut matched,
                             table,
                             callback.argument,
-                            *forward,
+                            forward,
                             callback.companion,
                             false,
                         )
@@ -292,6 +300,14 @@ fn register(
         let Some(Structure::Fn(parameter, rest)) = sub.head_normal(body) else {
             return Err("unravel rule must accept its callback companions first".into());
         };
+        // A rule may take a callback as the plain function. It then gets the
+        // forward function only, and the callback needs no reverse rule.
+        if companion.is_none() && matches!(sub.head_normal(parameter), Some(Structure::Fn(..))) {
+            unify(&mut sub, parameter, forward)
+                .map_err(|_| format!("callback type mismatch for argument {argument}"))?;
+            body = rest;
+            continue;
+        }
         if let Some(companion) = companion {
             unify(&mut sub, parameter, companion)
                 .map_err(|_| format!("incompatible unravel companion for argument {argument}"))?;
@@ -328,7 +344,11 @@ fn register(
     // After fixing forward types, request types must determine the remaining
     // polymorphism. Never choose an upstream sensitivity by instance search.
     let request_vars: HashSet<_> = free_vars(&mut sub, output_constraint).into_iter().collect();
-    for ((_, forward, companion), (_, _, explicit)) in callbacks.iter().zip(parameters) {
+    for (argument, forward, companion) in callbacks.iter() {
+        let explicit = parameters
+            .iter()
+            .find(|(index, _, _)| index == argument)
+            .and_then(|(_, _, explicit)| *explicit);
         if explicit.is_none() {
             if let Some(Structure::Record(fields, _)) = sub.head_normal(*companion) {
                 default_callback_requests(

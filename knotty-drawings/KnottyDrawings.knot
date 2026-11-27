@@ -32,6 +32,7 @@ rgb :: Int -> Int -> Int -> Color
 rgb red green blue = Rgb red green blue
 
 -- Hue in degrees; saturation and lightness from 0 to 1. Produces an RGB color.
+@unravel(DrawingUnravel.🧶hsl)
 hsl :: Float -> Float -> Float -> Color
 hsl hue saturation lightness =
     let
@@ -308,6 +309,7 @@ map_text update =
 
 -- Style setters (reach every shape that has the property) ---------------------
 
+@lasher
 @unravel(DrawingUnravel.🧶set_fill)
 set_fill :: Color -> Node -> Node
 set_fill color = map_fill (\fill -> { fill | paint = Solid color })
@@ -316,10 +318,12 @@ set_fill color = map_fill (\fill -> { fill | paint = Solid color })
 set_fill_paint :: Paint -> Node -> Node
 set_fill_paint paint = map_fill (\fill -> { fill | paint = paint })
 
+@lasher
 @unravel(DrawingUnravel.🧶set_no_fill)
 set_no_fill :: Node -> Node
 set_no_fill = map_fill (\fill -> { fill | paint = NoPaint })
 
+@lasher
 @unravel(DrawingUnravel.🧶set_fill_opacity)
 set_fill_opacity :: Float -> Node -> Node
 set_fill_opacity opacity = map_fill (\fill -> { fill | opacity = opacity })
@@ -328,6 +332,7 @@ set_fill_opacity opacity = map_fill (\fill -> { fill | opacity = opacity })
 set_fill_rule :: FillRule -> Node -> Node
 set_fill_rule rule = map_fill (\fill -> { fill | rule = rule })
 
+@lasher
 @unravel(DrawingUnravel.🧶set_stroke)
 set_stroke :: Color -> Node -> Node
 set_stroke color = map_stroke (\stroke -> { stroke | paint = Solid color })
@@ -336,14 +341,17 @@ set_stroke color = map_stroke (\stroke -> { stroke | paint = Solid color })
 set_stroke_paint :: Paint -> Node -> Node
 set_stroke_paint paint = map_stroke (\stroke -> { stroke | paint = paint })
 
+@lasher
 @unravel(DrawingUnravel.🧶set_no_stroke)
 set_no_stroke :: Node -> Node
 set_no_stroke = map_stroke (\stroke -> { stroke | paint = NoPaint })
 
+@lasher
 @unravel(DrawingUnravel.🧶set_stroke_opacity)
 set_stroke_opacity :: Float -> Node -> Node
 set_stroke_opacity opacity = map_stroke (\stroke -> { stroke | opacity = opacity })
 
+@lasher
 @unravel(DrawingUnravel.🧶set_stroke_width)
 set_stroke_width :: Float -> Node -> Node
 set_stroke_width width = map_stroke (\stroke -> { stroke | width = width })
@@ -356,22 +364,27 @@ set_stroke_linecap cap = map_stroke (\stroke -> { stroke | cap = cap })
 set_stroke_linejoin :: LineJoin -> Node -> Node
 set_stroke_linejoin join = map_stroke (\stroke -> { stroke | join = join })
 
+@lasher
 @unravel(DrawingUnravel.🧶set_stroke_dasharray)
 set_stroke_dasharray :: List Float -> Node -> Node
 set_stroke_dasharray dashes = map_stroke (\stroke -> { stroke | dashes = dashes })
 
+@lasher
 @unravel(DrawingUnravel.🧶set_stroke_dashoffset)
 set_stroke_dashoffset :: Float -> Node -> Node
 set_stroke_dashoffset offset = map_stroke (\stroke -> { stroke | dashOffset = offset })
 
+@lasher
 @unravel(DrawingUnravel.🧶set_stroke_miterlimit)
 set_stroke_miterlimit :: Float -> Node -> Node
 set_stroke_miterlimit limit = map_stroke (\stroke -> { stroke | miterLimit = limit })
 
+@lasher
 @unravel(DrawingUnravel.🧶set_font_family)
 set_font_family :: String -> Node -> Node
 set_font_family family = map_font (\font -> { font | family = family })
 
+@lasher
 @unravel(DrawingUnravel.🧶set_font_size)
 set_font_size :: Float -> Node -> Node
 set_font_size size = map_font (\font -> { font | size = size })
@@ -384,6 +397,7 @@ set_text_anchor anchor = map_font (\font -> { font | anchor = anchor })
 set_dominant_baseline :: DominantBaseline -> Node -> Node
 set_dominant_baseline baseline = map_font (\font -> { font | baseline = baseline })
 
+@lasher
 @unravel(DrawingUnravel.🧶set_closed)
 set_closed :: Bool -> Node -> Node
 set_closed closed = map_polyline (\p -> { p | closed = closed })
@@ -406,10 +420,12 @@ set_transform transform = map_common (\common -> { common | transform = transfor
 add_transform :: TransformOp -> Node -> Node
 add_transform operation = map_common (\common -> { common | transform = operation : common.transform })
 
+@lasher
 @unravel(DrawingUnravel.🧶set_opacity)
 set_opacity :: Float -> Node -> Node
 set_opacity opacity = map_common (\common -> { common | opacity = opacity })
 
+@lasher
 @unravel(DrawingUnravel.🧶set_visible)
 set_visible :: Bool -> Node -> Node
 set_visible visible = map_common (\common -> { common | visible = visible })

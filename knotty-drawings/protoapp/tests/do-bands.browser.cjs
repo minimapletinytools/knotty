@@ -22,8 +22,8 @@ steps mx = do
 program = svg 100 100 []
 `;
 fs.writeFileSync(file, original);
-const server = spawn(path.join(app, 'target/release/knottydrawings'),
-  [file, '--library', library, '--renderer', 'direct', '--no-open', '--port', '0']);
+const server = require('./reap.cjs')(spawn(path.join(app, 'target/release/knottydrawings'),
+  [file, '--library', library, '--renderer', 'direct', '--no-open', '--port', '0']));
 
 (async () => {
   const url = await new Promise((resolve, reject) => {

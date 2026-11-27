@@ -27,4 +27,4 @@ star index =
     in filled
         (polygon [point x (80 - size), point (x + size) (80 + size), point (x - size) (80 + size)])
 
-program = svg 240 160 (map star (intRange 0 1 3))
+program = svg 240 160 (map star (enumFromTo 0 3))

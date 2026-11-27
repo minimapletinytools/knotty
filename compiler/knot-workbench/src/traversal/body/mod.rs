@@ -60,8 +60,8 @@ impl Walker<'_> {
         output_request: &Ty,
         ambient: &str,
     ) -> Result<GeneratedBody, EditError> {
-        if self.body_depth >= 16 {
-            return unsupported("callback body compilation exceeded 16 nested companions");
+        if self.body_depth >= 8 {
+            return unsupported("callback body compilation exceeded 8 nested companions");
         }
         self.body_depth += 1;
         let result = self.compile_body(callback, output_request, ambient);
@@ -112,6 +112,7 @@ impl Walker<'_> {
             recipe: None,
             candidate_source: false,
             via: None,
+            lash: None,
             synthetic: true,
             projections: vec![],
             module: callback.module.clone(),
@@ -181,6 +182,7 @@ impl Walker<'_> {
             recipe: None,
             candidate_source: false,
             via: None,
+            lash: None,
             synthetic: true,
             projections: vec![],
             module: checked.canonical.name.clone(),
@@ -470,6 +472,7 @@ impl Compiler<'_, '_> {
                 recipe: None,
                 candidate_source: false,
                 via: None,
+                lash: None,
                 synthetic: true,
                 projections: vec![],
                 module: call.name.module,
