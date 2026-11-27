@@ -1274,35 +1274,26 @@ unravelledToMaybe answer = case answer of
 
 -- Used by identity and by supported literal/constructor materializers. This
 -- translates a constriction; it does not print source or synthesize a candidate.
-🧶id :: Constriction s a => { value : a, pinned : Maybe a } -> s -> Unravelled s
-🧶id input request =
-  if pinAllows input request then Unravel request else Snag
+🧶id :: Constriction s a => a -> s -> Unravelled s
+🧶id _ request = Unravel request
 
-🧶fst :: (Constriction s a, Eq b) => { value : (a, b), pinned : Maybe (a, b) } -> s -> Unravelled (s, Maybe b)
-🧶fst input request = case input.pinned of
-  Just (a, _) -> if fits request a then Unravel (request, Nothing) else Snag
-  Nothing -> Unravel (request, Nothing)
+🧶fst :: (Constriction s a, Eq b) => (a, b) -> s -> Unravelled (s, Maybe b)
+🧶fst _ request = Unravel (request, Nothing)
 
-🧶snd :: (Eq a, Constriction s b) => { value : (a, b), pinned : Maybe (a, b) } -> s -> Unravelled (Maybe a, s)
-🧶snd input request = case input.pinned of
-  Just (_, b) -> if fits request b then Unravel (Nothing, request) else Snag
-  Nothing -> Unravel (Nothing, request)
+🧶snd :: (Eq a, Constriction s b) => (a, b) -> s -> Unravelled (Maybe a, s)
+🧶snd _ request = Unravel (Nothing, request)
 
-🧶const :: (Constriction s a, Eq b) => ({ value : a, pinned : Maybe a }, { value : b, pinned : Maybe b }) -> s -> Unravelled (s, Maybe b)
-🧶const (input, _) request =
-  if pinAllows input request then Unravel (request, Nothing) else Snag
+🧶const :: (Constriction s a, Eq b) => (a, b) -> s -> Unravelled (s, Maybe b)
+🧶const _ request = Unravel (request, Nothing)
 
-unravelUnary :: (Eq a, Eq b) => (a -> b) -> (b -> Maybe a) -> { value : a, pinned : Maybe a } -> Maybe b -> Unravelled (Maybe a)
+unravelUnary :: (Eq a, Eq b) => (a -> b) -> (b -> Maybe a) -> a -> Maybe b -> Unravelled (Maybe a)
 unravelUnary forward inverse input request = case request of
   Nothing -> Unravel Nothing
   Just target ->
-    let old = effectiveFeed input
-    in if forward old == target then Unravel (Just old)
-       else case input.pinned of
-         Just _ -> Snag
-         Nothing -> do
-           candidate <- orSnag (inverse target)
-           if forward candidate == target then Unravel (Just candidate) else Snag
+    if forward input == target then Unravel (Just input)
+    else do
+      candidate <- orSnag (inverse target)
+      if forward candidate == target then Unravel (Just candidate) else Snag
 
 unravelBinary :: Eq a => (a -> a -> a) -> (a -> a -> a -> Maybe a) -> (a -> a -> a -> Maybe a) -> (a -> Bool) -> ({ value : a, pinned : Maybe a }, { value : a, pinned : Maybe a }) -> Maybe a -> Unravelled (Maybe a, Maybe a)
 unravelBinary forward solveLeft solveRight valid (left, right) request = case request of
@@ -1376,10 +1367,10 @@ solveIntegralProductInput old target other =
 🧶timesIntegral :: Integral a => ({ value : a, pinned : Maybe a }, { value : a, pinned : Maybe a }) -> Maybe a -> Unravelled (Maybe a, Maybe a)
 🧶timesIntegral = unravelBinary (*) solveIntegralProductInput solveIntegralProductInput (\_ -> True)
 
-🧶negate :: (Num a, Eq a) => { value : a, pinned : Maybe a } -> Maybe a -> Unravelled (Maybe a)
+🧶negate :: (Num a, Eq a) => a -> Maybe a -> Unravelled (Maybe a)
 🧶negate = unravelUnary negate (\target -> Just (negate target))
 
-🧶negateFloat :: { value : Float, pinned : Maybe Float } -> Maybe Float -> Unravelled (Maybe Float)
+🧶negateFloat :: Float -> Maybe Float -> Unravelled (Maybe Float)
 🧶negateFloat input request = case request of
   Nothing -> Unravel Nothing
   Just target -> if isFinite target then 🧶negate input request else Snag
@@ -1393,22 +1384,22 @@ integralCandidate target =
       candidate = fromInteger n
   in if denominator ratio == 1 && toInteger candidate == n then Just candidate else Nothing
 
-🧶fromIntegral :: (Integral a, Real b) => { value : a, pinned : Maybe a } -> Maybe b -> Unravelled (Maybe a)
+🧶fromIntegral :: (Integral a, Real b) => a -> Maybe b -> Unravelled (Maybe a)
 🧶fromIntegral input request = case request of
   Nothing -> Unravel Nothing
   Just target ->
     if target - target == 0 then unravelUnary fromIntegral integralCandidate input request
     else Snag
 
-🧶integralToFloat :: Integral a => { value : a, pinned : Maybe a } -> Maybe Float -> Unravelled (Maybe a)
+🧶integralToFloat :: Integral a => a -> Maybe Float -> Unravelled (Maybe a)
 🧶integralToFloat input request = case request of
   Nothing -> Unravel Nothing
   Just target -> if isFinite target then 🧶fromIntegral input request else Snag
 
-🧶integerToInt :: { value : Integer, pinned : Maybe Integer } -> Maybe Int -> Unravelled (Maybe Integer)
+🧶integerToInt :: Integer -> Maybe Int -> Unravelled (Maybe Integer)
 🧶integerToInt = unravelUnary fromInteger (\target -> Just (toInteger target))
 
-🧶intToInteger :: { value : Int, pinned : Maybe Int } -> Maybe Integer -> Unravelled (Maybe Int)
+🧶intToInteger :: Int -> Maybe Integer -> Unravelled (Maybe Int)
 🧶intToInteger = 🧶fromIntegral
 
 -- Split only the demanded prefix. ExactEnd cannot delete an existing cell;
@@ -1482,16 +1473,9 @@ solveStringRight _ target prefix =
       tailRequest <- 🧶mapWith ruleF xs more
       pure (Prepend inputRequest tailRequest)
 
-🧶mapListWith :: Constriction sIn a => ({ value : a, pinned : Maybe a } -> sOut -> Unravelled sIn) -> { value : List a, pinned : Maybe (List a) } -> ListConstriction sOut -> Unravelled (ListConstriction sIn)
-🧶mapListWith ruleF input request =
-  let rule x r =
-        let state = { value = x, pinned = case input.pinned of
-                      Nothing -> Nothing
-                      Just _ -> Just x }
-        in do
-          proposed <- snagOnSplice (ruleF state r)
-          if pinAllows state proposed then Unravel proposed else Snag
-  in 🧶mapWith rule (effectiveFeed input) request
+🧶mapListWith :: Constriction sIn a => (a -> sOut -> Unravelled sIn) -> (List a) -> ListConstriction sOut -> Unravelled (ListConstriction sIn)
+🧶mapListWith ruleF values request =
+  🧶mapWith (\x r -> snagOnSplice (ruleF x r)) values request
 
 🧶concatMapWith :: (a -> List b) -> (a -> ListConstriction sOut -> Unravelled sIn) -> List a -> ListConstriction sOut -> Unravelled (ListConstriction sIn)
 🧶concatMapWith forward ruleF values request = case request of
@@ -1506,16 +1490,9 @@ solveStringRight _ target prefix =
       tailRequest <- 🧶concatMapWith forward ruleF xs rest
       pure (Prepend inputRequest tailRequest)
 
-🧶concatMapListWith :: Constriction sIn a => (a -> List b) -> ({ value : a, pinned : Maybe a } -> ListConstriction sOut -> Unravelled sIn) -> { value : List a, pinned : Maybe (List a) } -> ListConstriction sOut -> Unravelled (ListConstriction sIn)
-🧶concatMapListWith forward ruleF input request =
-  let rule x r =
-        let state = { value = x, pinned = case input.pinned of
-                      Nothing -> Nothing
-                      Just _ -> Just x }
-        in do
-          proposed <- snagOnSplice (ruleF state r)
-          if pinAllows state proposed then Unravel proposed else Snag
-  in 🧶concatMapWith forward rule (effectiveFeed input) request
+🧶concatMapListWith :: Constriction sIn a => (a -> List b) -> (a -> ListConstriction sOut -> Unravelled sIn) -> (List a) -> ListConstriction sOut -> Unravelled (ListConstriction sIn)
+🧶concatMapListWith forward ruleF values request =
+  🧶concatMapWith forward (\x r -> snagOnSplice (ruleF x r)) values request
 
 -- Candidate selection for exact requests at editable leaves/reference sites.
 -- Printing constructors, escaping strings and choosing a writable span remain
@@ -1539,7 +1516,7 @@ applyListRequest update values request = case request of
       ys <- applyListRequest update xs tail
       pure (y : ys)
 
-🧶not :: { value : Bool, pinned : Maybe Bool } -> Maybe Bool -> Unravelled (Maybe Bool)
+🧶not :: Bool -> Maybe Bool -> Unravelled (Maybe Bool)
 🧶not = unravelUnary not (\target -> Just (not target))
 
 -- Ordinary cons rule; the engine supplies separate head and tail feeds.
@@ -1550,17 +1527,17 @@ unravelListCons _ request = case request of
   Prepend head tail -> Unravel (RequestField head, RequestField tail)
 
 -- Companion contracts are inferred from these generic rule signatures.
-🧶mapList :: Constriction sIn a => { forward : a -> b, unravel : { value : a, pinned : Maybe a } -> sOut -> Unravelled sIn } -> { value : List a, pinned : Maybe (List a) } -> ListConstriction sOut -> Unravelled (ListConstriction sIn)
+🧶mapList :: Constriction sIn a => { forward : a -> b, unravel : a -> sOut -> Unravelled sIn } -> (List a) -> ListConstriction sOut -> Unravelled (ListConstriction sIn)
 🧶mapList unraveler = 🧶mapListWith unraveler.unravel
 
 -- Check each proposed input's chunk before returning its ordinary constriction.
 -- Changed custom input constrictions need an instance-owned candidate.
-🧶concatMap :: Constriction sIn a => { forward : a -> List b, unravel : { value : a, pinned : Maybe a } -> ListConstriction sOut -> Unravelled sIn } -> { value : List a, pinned : Maybe (List a) } -> ListConstriction sOut -> Unravelled (ListConstriction sIn)
+🧶concatMap :: Constriction sIn a => { forward : a -> List b, unravel : a -> ListConstriction sOut -> Unravelled sIn } -> (List a) -> ListConstriction sOut -> Unravelled (ListConstriction sIn)
 🧶concatMap unraveler =
   let rule input request = do
         proposed <- unraveler.unravel input request
-        candidate <- orSnag (if fits proposed input.value then Just input.value else materialize proposed)
-        if fits proposed candidate && length (unraveler.forward candidate) == length (unraveler.forward input.value)
+        candidate <- orSnag (if fits proposed input then Just input else materialize proposed)
+        if fits proposed candidate && length (unraveler.forward candidate) == length (unraveler.forward input)
         then Unravel proposed else Snag
   in 🧶concatMapListWith unraveler.forward rule
 
@@ -1599,11 +1576,10 @@ requestedFields request = case request of
   ExactEnd -> ExactEnd
   Prepend s more -> Prepend (RequestField s) (requestedFields more)
 
-🧶reverse :: Constriction s a => { value : List a, pinned : Maybe (List a) } -> ListConstriction s -> Unravelled (ListConstriction (FieldConstriction s))
+🧶reverse :: Constriction s a => (List a) -> ListConstriction s -> Unravelled (ListConstriction (FieldConstriction s))
 🧶reverse input request = do
-  slots <- orSnag (requestSlots (length (effectiveFeed input)) request)
-  let wanted = slotsRequest (reverse slots)
-  if pinAllows input wanted then Unravel wanted else Snag
+  slots <- orSnag (requestSlots (length input) request)
+  pure (slotsRequest (reverse slots))
 
 -- The count stays as it is; the request lands on the elements that were kept.
 🧶take :: Constriction s a => ({ value : Int, pinned : Maybe Int }, { value : List a, pinned : Maybe (List a) }) -> ListConstriction s -> Unravelled (Maybe Int, ListConstriction s)
@@ -1631,7 +1607,7 @@ requestedFields request = case request of
 -- rule takes the test as a plain function: a filter never reverses it.
 -- An edit that would make an element fail the test changes the output's
 -- length, and the final check refuses it.
-🧶filter :: Constriction s a => (a -> Bool) -> { value : List a, pinned : Maybe (List a) } -> ListConstriction s -> Unravelled (ListConstriction (FieldConstriction s))
+🧶filter :: Constriction s a => (a -> Bool) -> (List a) -> ListConstriction s -> Unravelled (ListConstriction (FieldConstriction s))
 🧶filter test input request =
   let walk values wanted = case values of
         [] -> case wanted of
@@ -1647,9 +1623,7 @@ requestedFields request = case request of
           else do
             others <- walk rest wanted
             pure (Prepend NoRequest others)
-  in do
-    wanted <- walk (effectiveFeed input) request
-    if pinAllows input wanted then Unravel wanted else Snag
+  in walk input request
 
 -- Each output element goes back through the callback to its pair of inputs.
 -- Which side changes is the callback's rule to decide.
@@ -1683,22 +1657,20 @@ growMap f values = map f values
 -- unraveler: the callback, as its forward function and its reverse rule.
 -- input: the current list and its pin. request: the wanted output list.
 -- Returns the wanted input list, with an exact value for each new element.
-🧶growMap :: (Eq a, Default a) => { forward : a -> b, unravel : { value : a, pinned : Maybe a } -> s -> Unravelled (Maybe a) } -> { value : List a, pinned : Maybe (List a) } -> ListConstriction s -> Unravelled (ListConstriction (Maybe a))
+🧶growMap :: (Eq a, Default a) => { forward : a -> b, unravel : a -> s -> Unravelled (Maybe a) } -> (List a) -> ListConstriction s -> Unravelled (ListConstriction (Maybe a))
 🧶growMap unraveler input request =
   let walk values wanted = case wanted of
         AnyRemainder -> Unravel AnyRemainder
         ExactEnd -> Unravel ExactEnd
         Prepend head tail -> case values of
           old : rest -> do
-            chosen <- snagOnSplice (unraveler.unravel { value = old, pinned = Nothing } head)
+            chosen <- snagOnSplice (unraveler.unravel old head)
             more <- walk rest tail
             pure (Prepend chosen more)
           [] -> do
             let draft = materializationDraft (\_ -> default) chooseExact
-            wanted <- snagOnSplice (unraveler.unravel { value = draft.value, pinned = Nothing } head)
+            wanted <- snagOnSplice (unraveler.unravel draft.value head)
             candidate <- orSnag (draft.finish wanted)
             more <- walk [] tail
             pure (Prepend (Just candidate) more)
-  in do
-    result <- walk input.value request
-    if pinAllows input result then Unravel result else Snag
+  in walk input request

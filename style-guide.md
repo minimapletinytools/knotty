@@ -46,6 +46,16 @@ does.
   (`DrawingUnravel`).
 - A callback's rule passed as an argument is called `rule` or `ruleF`.
 
+## What a rule takes
+
+- A rule with one input takes the plain value: `🧶not :: Bool -> Maybe Bool -> ...`.
+  It never takes a feed. With one input there is nowhere else to send a
+  request, so a pin tells it nothing.
+- A rule with several inputs takes a tuple of plain values, or a tuple of
+  feeds (`{ value, pinned }`) when it wants to send its request away from an
+  input that is pinned. Use feeds only when the rule reads `pinned`.
+- The same holds for the `unravel` field of a callback's `Unraveller`.
+
 ## What a rule answers
 
 A rule returns `Unravelled s`. The type is the past participle; its

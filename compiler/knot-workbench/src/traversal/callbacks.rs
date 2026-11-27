@@ -65,7 +65,9 @@ impl Walker<'_> {
                 .is_none_or(|a| self.is_pinned(a, depth + 1));
         }
         if !s.locked && s.module == self.snapshot.graph.entry().program.canonical.name {
-            return false;
+            // Solving in passes: an input is pinned once every source value
+            // it depends on has been decided.
+            return self.stepping && self.all_decided(s, depth + 1);
         }
         let pinned = |e: &Spanned<CExpr>| self.is_pinned(&s.child(e), depth + 1);
         match &s.expr.node {

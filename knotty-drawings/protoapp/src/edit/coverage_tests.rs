@@ -1144,10 +1144,31 @@ fn unravel_stories_behave_as_their_headers_say() {
         };
         let mut wanted = 0;
         for (kind, spec) in header.iter().filter(|(k, _)| ["check", "reject", "wanted"].contains(&k.as_str())) {
-            let words: Vec<&str> = spec.splitn(4, ' ').collect();
+            let limit = if spec.starts_with("geometry ") { 3 } else { 4 };
+            let words: Vec<&str> = spec.splitn(limit, ' ').collect();
             let optional = |w: &str| (w != "-").then(|| w.to_owned());
             let result = match words.as_slice() {
                 ["edit", key, name, value] => f.apply(key, name, serde_json::from_str(value).unwrap()),
+                // One drag: every geometry field of the shape at once.
+                ["geometry", key, value] => {
+                    let begin = PreviewRequest::BeginGeometry {
+                        session: "story".into(),
+                        snapshot: f.snapshot(),
+                        key: (*key).into(),
+                    };
+                    let mut result = f.editor.preview(&mut f.drawing, begin);
+                    if result["ok"] == true {
+                        let update = PreviewRequest::Update {
+                            session: "story".into(),
+                            snapshot: f.snapshot(),
+                            value: serde_json::from_str(value).unwrap(),
+                        };
+                        result = f.editor.preview(&mut f.drawing, update);
+                    }
+                    let accept = PreviewRequest::Accept { session: "story".into() };
+                    f.editor.preview(&mut f.drawing, accept);
+                    result
+                }
                 ["create", "circle", parent, rest] => {
                     let n: Vec<f64> = rest.split(' ').map(|n| n.parse().unwrap()).collect();
                     let request = CreateCircleRequest {
@@ -1197,4 +1218,31 @@ fn unravel_stories_behave_as_their_headers_say() {
         }
     }
     assert!(failures.is_empty(), "\n{}", failures.join("\n"));
+}
+
+#[test]
+fn a_drag_on_one_axis_is_allowed_when_another_value_can_hold_the_other_axis() {
+    // x and y share `centre`. Moving along x alone asks y to stay, which only
+    // `drop` can arrange once `centre` has moved.
+    let mut f = Fixture::source(
+        "module Story exposing (..)\nimport KnottyDrawings exposing (..)\nimport Types exposing (..)\ncentre :: Float\ncentre = 80\ndrop :: Float\ndrop = 0\nprogram = svg 240 160 [circle centre (centre + drop) 30 |> set_fill tomato]\n".into(),
+    );
+    let snapshot = f.snapshot();
+    let probes = [
+        ("moveX", json!({"cx":81.0,"cy":80.0,"r":30.0})),
+        ("moveY", json!({"cx":80.0,"cy":81.0,"r":30.0})),
+        ("sizeX", json!({"cx":80.0,"cy":80.0,"r":31.5})),
+        ("sizeY", json!({"cx":80.0,"cy":80.0,"r":31.5})),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), v))
+    .collect();
+    let result = f.editor.geometry_check(
+        &mut f.drawing,
+        GeometryCheck { snapshot, key: "0".into(), probes },
+    );
+    for capability in ["moveX", "moveY"] {
+        assert_eq!(result["capabilities"][capability]["editable"], true, "{result}");
+    }
+    assert_eq!(std::fs::read_to_string(f.drawing.path()).unwrap(), f.original);
 }

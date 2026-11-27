@@ -43,6 +43,8 @@ pub(super) struct SourceCall {
     pub bodies: Vec<CallbackBody>,
 }
 pub(super) struct PreparedCall {
+    /// The selected rule takes its value inputs plain, not as feeds.
+    pub plain: bool,
     pub call: SourceCall,
     /// Callbacks the selected rule takes as plain functions, with no companion.
     pub forward_only: BTreeSet<usize>,
@@ -138,14 +140,17 @@ impl Walker<'_> {
             let Ty::Function(output_request, result) = &**rest else {
                 return unsupported("body unravel contract needs an output request");
             };
-            let (expected_state, expected_request) = if inputs.len() == 1 {
+            // One argument: its plain value. Several: plain values, or feeds.
+            let (plain_state, feed_state, expected_request) = if inputs.len() == 1 {
                 (
-                    candidates::feed_type(&inputs[0]),
+                    inputs[0].clone(),
+                    None,
                     Ty::Named("Maybe".into(), vec![inputs[0].clone()]),
                 )
             } else {
                 (
-                    Ty::Tuple(inputs.iter().map(candidates::feed_type).collect()),
+                    Ty::Tuple(inputs.clone()),
+                    Some(Ty::Tuple(inputs.iter().map(candidates::feed_type).collect())),
                     Ty::Tuple(
                         inputs
                             .iter()
@@ -154,7 +159,8 @@ impl Walker<'_> {
                     ),
                 )
             };
-            if **state != expected_state
+            let takes_feeds = Some(&**state) == feed_state.as_ref();
+            if !(takes_feeds || **state == plain_state)
                 || **result != Ty::Named("Unravelled".into(), vec![expected_request])
             {
                 return unsupported(
@@ -164,12 +170,31 @@ impl Walker<'_> {
             let body = self.generate_body_in(arg, output_request, ambient)?;
             generated_declarations.push_str(&body.declarations);
             call.declarations.push_str(&body.declarations);
+            // Generated code works on feeds throughout. For a companion that
+            // takes plain values, wrap each value as a feed with no pin.
+            let expression = if takes_feeds {
+                body.factory
+            } else {
+                let names = (0..inputs.len())
+                    .map(|n| format!("value{n}"))
+                    .collect::<Vec<_>>();
+                let feeds = names
+                    .iter()
+                    .map(|n| format!("{{ value = {n}, pinned = Nothing }}"))
+                    .collect::<Vec<_>>();
+                format!(
+                    "(\\actual {} request -> {} actual {} request)",
+                    group(&names),
+                    body.factory,
+                    group(&feeds)
+                )
+            };
             policies.insert(
                 i,
                 CallbackFactory {
                     function: call.name.clone(),
                     argument: i,
-                    expression: body.factory,
+                    expression,
                 },
             );
             generated.insert(i);
@@ -238,6 +263,7 @@ impl Walker<'_> {
         .ok_or_else(|| {
             EditError::Unsupported("no compatible higher-order unravel annotation".into())
         })?;
+        let plain = selected.plain;
         let mut sub = selected.substitution;
         let input = Ty::read(&mut sub, selected.input_constraint)?;
         let companions = selected
@@ -245,7 +271,7 @@ impl Walker<'_> {
             .iter()
             .map(|c| Ok((c.argument, Ty::read(&mut sub, c.companion)?)))
             .collect::<Result<BTreeMap<_, _>, EditError>>()?;
-        let mut rule_type = candidates::rule_type(
+        let mut rule_type = candidates::written_rule_type(
             call.args
                 .iter()
                 .enumerate()
@@ -253,6 +279,7 @@ impl Walker<'_> {
                 .map(|(_, arg)| arg.ty.clone().unwrap()),
             &call.request_type,
             input.clone(),
+            plain,
         );
         // Leading parameters, in argument order: a companion, or the callback itself.
         for i in (0..call.args.len()).rev() {
@@ -309,6 +336,7 @@ impl Walker<'_> {
             })?;
         }
         Ok(PreparedCall {
+            plain,
             call,
             forward_only,
             policies: policies
@@ -392,6 +420,7 @@ impl Walker<'_> {
             forward_only,
             selected,
             input,
+            plain,
             ..
         } = self.prepare_companions(call, "")?;
         let leading = (0..call.args.len())
@@ -425,9 +454,20 @@ impl Walker<'_> {
             };
             states.push(format!("{{ value = arg{i}, pinned = {pin} }}"));
         }
+        if plain {
+            // The rule takes values. Pins are still retained above and
+            // checked at the end; the rule just does not see them.
+            states = values.iter().map(|(i, _)| format!("arg{i}")).collect();
+        }
         let state_types = values
             .iter()
-            .map(|(_, arg)| candidates::feed_type(arg.ty.as_ref().unwrap()))
+            .map(|(_, arg)| {
+                if plain {
+                    arg.ty.clone().unwrap()
+                } else {
+                    candidates::feed_type(arg.ty.as_ref().unwrap())
+                }
+            })
             .collect::<Vec<_>>();
         let state_type = if state_types.len() == 1 {
             state_types[0].clone()

@@ -157,6 +157,7 @@ impl Walker<'_> {
         }
         self.changed_spans
             .insert((recipe.affected.start, recipe.affected.end));
+        self.stepped = true;
         self.recipes.insert(key, PendingRecipe { recipe, value });
         Ok(())
     }

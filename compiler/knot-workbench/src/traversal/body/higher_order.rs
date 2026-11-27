@@ -35,6 +35,7 @@ impl Compiler<'_, '_> {
             selected,
             input,
             rule_type,
+            plain,
         } = self.walker.prepare_companions(
             SourceCall {
                 name: call.name,
@@ -84,8 +85,13 @@ impl Compiler<'_, '_> {
                 (!policies.contains_key(&i) && !forward_only.contains(&i)).then_some(arg)
             })
             .collect();
+        let args: Vec<Site> = args;
         let body = self.unravel_apply(
-            &format!("({rule}) {}", companions.join(" ")),
+            &call_frame::feeds_rule(
+                &format!("({rule}) {}", companions.join(" ")),
+                args.len(),
+                plain,
+            ),
             args,
             input,
             forward,

@@ -65,22 +65,47 @@ impl PreparedUnravelCall {
         };
         let mut sub = module.substitution.clone();
         let state_ty = scheme(call.state)?.ty;
-        let states = match sub.head_normal(state_ty) {
-            Some(Structure::Record(_, _)) => vec![state_ty],
-            Some(Structure::Tuple(states)) => states,
-            _ => {
-                return Err(
-                    "unravel state must be one Feed record or a tuple of Feed records".into(),
-                )
+        // How many value arguments the call has: the forward function's
+        // arguments that are not callbacks.
+        let mut forward_arity = 0usize;
+        let mut rest = scheme(call.forward)?.ty;
+        while let Some(Structure::Fn(_, output)) = sub.head_normal(rest) {
+            forward_arity += 1;
+            rest = output;
+        }
+        let mut positions = std::collections::BTreeSet::new();
+        if call
+            .callbacks
+            .iter()
+            .any(|c| c.argument >= forward_arity || !positions.insert(c.argument))
+        {
+            return Err("callback positions must be distinct valid forward-argument indexes".into());
+        }
+        let value_count = forward_arity - call.callbacks.len();
+        // One value: the state is that value. Several: a tuple of values, or
+        // a tuple of feeds for a rule that reads pins.
+        let values = if value_count == 1 {
+            vec![state_ty]
+        } else {
+            let Some(Structure::Tuple(states)) = sub.head_normal(state_ty) else {
+                return Err("unravel state must be a tuple with one entry per value argument".into());
+            };
+            let mut as_feeds = sub.clone();
+            let feeds = states
+                .iter()
+                .map(|s| state_input(&mut as_feeds, *s))
+                .collect::<Result<Vec<_>, _>>();
+            match feeds {
+                Ok(values) => {
+                    sub = as_feeds;
+                    values
+                }
+                Err(_) => states,
             }
         };
-        if states.is_empty() {
+        if values.is_empty() {
             return Err("unravel call needs editable value arguments".into());
         }
-        let values = states
-            .into_iter()
-            .map(|s| state_input(&mut sub, s))
-            .collect::<Result<Vec<_>, _>>()?;
         let arity = values.len() + call.callbacks.len();
         let mut callback_types = BTreeMap::new();
         for callback in call.callbacks {

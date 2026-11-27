@@ -29,6 +29,9 @@ pub enum UnravelArgument {
 /// Type IDs belong to the owning registered/selected rule's substitution.
 #[derive(Clone, Debug)]
 pub struct CallbackContract {
+    /// The companion takes plain values, not `{ value, pinned }` feeds. Always
+    /// so for a callback of one argument.
+    pub plain: bool,
     pub argument: usize,
     /// Invocation arity from the companion's feed shape, checked against forward.
     pub arity: usize,
@@ -41,6 +44,10 @@ pub struct CallbackContract {
 
 #[derive(Debug)]
 pub struct RegisteredRule {
+    /// The rule takes plain values, not `{ value, pinned }` feeds. Always so
+    /// for a rule with one input: a single input has no other input to route
+    /// around a pin to.
+    pub plain: bool,
     pub substitution: Substitution,
     pub rule_type: TypeVarId,
     pub input_constraint: TypeVarId,
@@ -52,6 +59,8 @@ pub struct RegisteredRule {
 }
 #[derive(Debug)]
 pub struct SelectedRule {
+    /// See `RegisteredRule::plain`.
+    pub plain: bool,
     /// Index in attachment order, independent of helper-definition order.
     pub index: usize,
     pub exact: bool,
@@ -210,6 +219,7 @@ pub fn register_and_select_with_companions(
             input,
             output,
             expected_state,
+            inputs.len(),
             &parameters,
         )
         .map_err(|message| RegistrationError {
@@ -261,6 +271,7 @@ pub fn register_and_select_with_companions(
                 {
                     if selected.is_none() {
                         selected = Some(SelectedRule {
+                            plain: contract.plain,
                             index,
                             exact,
                             substitution: matched,
@@ -290,6 +301,7 @@ fn register(
     input: TypeVarId,
     output: TypeVarId,
     expected_state: TypeVarId,
+    arity: usize,
     parameters: &[(usize, TypeVarId, Option<TypeVarId>)],
 ) -> Result<RegisteredRule, String> {
     let mut sub = sub.clone();
@@ -337,10 +349,31 @@ fn register(
         return Err("unravel rule must return Unravelled sIn".into());
     }
     let input_constraint = args[0];
-    unify(&mut sub, state, expected_state).map_err(|_| {
-        "rule input must accept one { value : a, pinned : Maybe a } state per forward argument"
-            .to_string()
-    })?;
+    // One input: the plain value. Several: a tuple of plain values, or a
+    // tuple of feeds when the rule wants to see which inputs are pinned.
+    let plain = if arity == 1 {
+        unify(&mut sub, state, input)
+            .map_err(|_| "a rule with one input takes its value, not a feed".to_string())?;
+        true
+    } else {
+        // Decide by how the rule is written, before unifying: a type
+        // variable would unify with a feed as readily as with a value.
+        let written_as_feeds = match sub.head_normal(state) {
+            Some(Structure::Tuple(parts)) => parts.iter().all(|part| {
+                matches!(sub.head_normal(*part), Some(Structure::Record(fields, _))
+                    if fields.contains_key("value") && fields.contains_key("pinned"))
+            }),
+            // Not written out at all (a rule that ignores its inputs).
+            None => true,
+            _ => false,
+        };
+        let wanted = if written_as_feeds { expected_state } else { input };
+        unify(&mut sub, state, wanted).map_err(|_| {
+            "rule input must be a tuple with one value, or one { value : a, pinned : Maybe a } feed, per forward argument"
+                .to_string()
+        })?;
+        !written_as_feeds
+    };
     // After fixing forward types, request types must determine the remaining
     // polymorphism. Never choose an upstream sensitivity by instance search.
     let request_vars: HashSet<_> = free_vars(&mut sub, output_constraint).into_iter().collect();
@@ -399,6 +432,7 @@ fn register(
     let output_validation = resolve(&mut sub, table, &given, "Constriction", out_pair)
         .map_err(|e| format!("output validator: {e:?}"))?;
     Ok(RegisteredRule {
+        plain,
         substitution: sub,
         rule_type,
         input_constraint,
@@ -489,13 +523,18 @@ fn check_companion(
         return Err("companion forward type does not match the callback argument".into());
     }
     let Some(Structure::Fn(state, rest)) = sub.head_normal(fields["unravel"]) else {
-        return Err("companion unravel field must accept a Feed state".into());
+        return Err("companion unravel field must accept the callback's inputs".into());
     };
-    let arity = match sub.head_normal(state) {
-        Some(Structure::Record(..)) => 1,
-        Some(Structure::Tuple(states)) if states.len() >= 2 => states.len(),
-        _ => return Err("companion needs one Feed per callback argument".into()),
-    };
+    // The callback's own type says how many arguments one call takes.
+    let mut arity = 0;
+    let mut rest_of_forward = forward;
+    while let Some(Structure::Fn(_, more)) = sub.head_normal(rest_of_forward) {
+        arity += 1;
+        rest_of_forward = more;
+    }
+    if arity == 0 {
+        return Err("a callback must be a function".into());
+    }
     let mut output = forward;
     let mut inputs = Vec::with_capacity(arity);
     let mut states = Vec::with_capacity(arity);
@@ -525,9 +564,19 @@ fn check_companion(
             sub.fresh_bound(Structure::Tuple(states)),
         )
     };
-    if !predicate::same(sub, state, expected) {
-        return Err("companion input states must match its forward arguments in order".into());
-    }
+    // One argument: the plain value. Several: plain values or feeds.
+    let plain = if arity == 1 {
+        if !predicate::same(sub, state, input) {
+            return Err("a companion for one argument takes its value, not a feed".into());
+        }
+        true
+    } else if predicate::same(sub, state, expected) {
+        false
+    } else if predicate::same(sub, state, input) {
+        true
+    } else {
+        return Err("companion inputs must match its forward arguments in order".into());
+    };
     let Some(Structure::Fn(output_constraint, result)) = sub.head_normal(rest) else {
         return Err("companion unravel field must accept an output constraint".into());
     };
@@ -564,6 +613,7 @@ fn check_companion(
         )?
     };
     Ok(CallbackContract {
+        plain,
         argument,
         arity,
         companion,

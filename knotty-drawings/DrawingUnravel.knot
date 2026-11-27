@@ -92,19 +92,19 @@ unravelShapeNode _ request = case request of
   ShapeNodeRequest common shape -> Unravel (common, shape)
   _ -> Snag
 
-unravelCircleShape :: Feed Circle -> ShapeConstriction -> Unravelled CircleConstriction
+unravelCircleShape :: Circle -> ShapeConstriction -> Unravelled CircleConstriction
 unravelCircleShape _ request = case request of
   AnyShape -> Unravel anyCircle
   RequestCircle circle -> Unravel circle
   _ -> Snag
 
-unravelRectShape :: Feed Rect -> ShapeConstriction -> Unravelled RectConstriction
+unravelRectShape :: Rect -> ShapeConstriction -> Unravelled RectConstriction
 unravelRectShape _ request = case request of
   AnyShape -> Unravel anyRect
   RequestRect rect -> Unravel rect
   _ -> Snag
 
-unravelEllipseShape :: Feed Ellipse -> ShapeConstriction -> Unravelled EllipseConstriction
+unravelEllipseShape :: Ellipse -> ShapeConstriction -> Unravelled EllipseConstriction
 unravelEllipseShape _ request = case request of
   AnyShape -> Unravel anyEllipse
   RequestEllipse ellipse -> Unravel ellipse
@@ -209,7 +209,7 @@ pointItems values = case values of
   [] -> ExactEnd
   p : ps -> Prepend { x = Just p.x, y = Just p.y } (pointItems ps)
 
-🧶polyline :: Feed (List Point) -> NodeConstriction -> Unravelled (ListConstriction PointConstriction)
+🧶polyline :: List Point -> NodeConstriction -> Unravelled (ListConstriction PointConstriction)
 🧶polyline _ request = case request of
   AnyNode -> Unravel AnyRemainder
   ShapeNodeRequest _ geometry -> case geometry of
@@ -218,7 +218,7 @@ pointItems values = case values of
     _ -> Snag
   _ -> Snag
 
-🧶polygon :: Feed (List Point) -> NodeConstriction -> Unravelled (ListConstriction PointConstriction)
+🧶polygon :: List Point -> NodeConstriction -> Unravelled (ListConstriction PointConstriction)
 🧶polygon _ request = case request of
   AnyNode -> Unravel AnyRemainder
   ShapeNodeRequest _ geometry -> case geometry of
@@ -227,7 +227,7 @@ pointItems values = case values of
     _ -> Snag
   _ -> Snag
 
-🧶path :: Feed (List PathCommand) -> NodeConstriction -> Unravelled (ListConstriction (Maybe PathCommand))
+🧶path :: List PathCommand -> NodeConstriction -> Unravelled (ListConstriction (Maybe PathCommand))
 🧶path _ request = case request of
   AnyNode -> Unravel AnyRemainder
   ShapeNodeRequest _ geometry -> case geometry of
@@ -236,7 +236,7 @@ pointItems values = case values of
     _ -> Snag
   _ -> Snag
 
-🧶group :: Feed (List Node) -> NodeConstriction -> Unravelled (ListConstriction NodeConstriction)
+🧶group :: List Node -> NodeConstriction -> Unravelled (ListConstriction NodeConstriction)
 🧶group _ request = case request of
   AnyNode -> Unravel AnyRemainder
   ContainerNodeRequest r -> Unravel r.children
@@ -486,13 +486,13 @@ fontBaseline geometry = case geometry of
 🧶set_dominant_baseline :: (Feed (DominantBaseline), Feed Node) -> NodeConstriction -> Unravelled (Maybe (DominantBaseline), NodeConstriction)
 🧶set_dominant_baseline _ request = orSnag (extract fontBaseline request)
 
-🧶set_no_fill :: Feed Node -> NodeConstriction -> Unravelled NodeConstriction
+🧶set_no_fill :: Node -> NodeConstriction -> Unravelled NodeConstriction
 🧶set_no_fill _ request = case extract fillPaint request of
   Just (Nothing, rest) -> Unravel rest
   Just (Just NoPaint, rest) -> Unravel rest
   _ -> Snag
 
-🧶set_no_stroke :: Feed Node -> NodeConstriction -> Unravelled NodeConstriction
+🧶set_no_stroke :: Node -> NodeConstriction -> Unravelled NodeConstriction
 🧶set_no_stroke _ request = case extract strokePaint request of
   Just (Nothing, rest) -> Unravel rest
   Just (Just NoPaint, rest) -> Unravel rest

@@ -1,0 +1,16 @@
+-- story: Nothing else to change
+-- group: 10. Shared values
+-- status: works
+-- try: Drag the circle along the diagonal and it follows: x and y agree about centre. Drag it
+--   anywhere else and it is refused. Both coordinates are centre and nothing else can give.
+-- check: geometry 0 {"cx":100,"cy":100,"r":30}
+-- reject: geometry 0 {"cx":100,"cy":120,"r":30}
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+centre :: Float
+centre = 80
+
+program = svg 240 160 [circle centre centre 30 |> set_fill tomato]

@@ -487,13 +487,14 @@ impl Compiler<'_, '_> {
         }
         let (selected, input_requests) = call.select()?;
         let mut selected_rule = call.rules[selected].clone();
-        selected_rule.ty = Some(candidates::rule_type(
+        selected_rule.ty = Some(candidates::written_rule_type(
             call.args.iter().map(|arg| arg.ty.clone().unwrap()),
             request,
             input_requests.clone(),
+            call.shape().1,
         ));
         self.walker.pin_source_dependencies(selected_rule)?;
-        let rule = self.walker.source(&call.rules[selected])?;
+        let rule = call.with_feeds(&self.walker.source(&call.rules[selected])?);
         self.unravel_apply(&rule, call.args, input_requests, forward)
     }
     fn unravel_apply(

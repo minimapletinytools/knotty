@@ -1,0 +1,35 @@
+-- story: Shared all the way down
+-- group: 10. Shared values
+-- status: works
+-- try: Drag a corner of the rect. All four of its numbers reach unit, some by several routes.
+--   Each is settled in turn: unit from x, rise from y, pad from the width and tall from the height.
+-- check: geometry 0 {"x":40,"y":60,"width":130,"height":90}
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+unit :: Float
+unit = 30
+
+rise :: Float
+rise = 10
+
+pad :: Float
+pad = 20
+
+tall :: Float
+tall = 10
+
+-- top reaches unit. width reaches unit directly and again through top.
+-- height reaches it through top and through width.
+top :: Float
+top = unit + rise
+
+width :: Float
+width = unit + top + pad
+
+height :: Float
+height = width - top + tall
+
+program = svg 240 160 [rect unit top width height |> set_fill tomato]

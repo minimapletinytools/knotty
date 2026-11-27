@@ -93,6 +93,30 @@ pub(super) fn policy_type(value: &Ty, request: &Ty, output: Ty) -> Ty {
         )),
     )
 }
+/// The type of a rule as its author wrote it: over plain values, or feeds.
+pub(super) fn written_rule_type(
+    values: impl IntoIterator<Item = Ty>,
+    request: &Ty,
+    output: Ty,
+    plain: bool,
+) -> Ty {
+    if !plain {
+        return rule_type(values, request, output);
+    }
+    let mut values = values.into_iter().collect::<Vec<_>>();
+    let state = if values.len() == 1 {
+        values.pop().unwrap()
+    } else {
+        Ty::Tuple(values)
+    };
+    Ty::Function(
+        Box::new(state),
+        Box::new(Ty::Function(
+            Box::new(request.clone()),
+            Box::new(Ty::Named("Unravelled".into(), vec![output])),
+        )),
+    )
+}
 pub(super) fn rule_type(values: impl IntoIterator<Item = Ty>, request: &Ty, output: Ty) -> Ty {
     let mut states = values
         .into_iter()

@@ -1,0 +1,21 @@
+-- story: One number behind both coordinates
+-- group: 10. Shared values
+-- status: works
+-- try: Drag the circle. Its x decides centre. Its y is centre + drop, and centre is already decided
+--   by then, so the drag's y goes to drop.
+-- check: geometry 0 {"cx":100,"cy":120,"r":30}
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+centre :: Float
+centre = 80
+
+drop :: Float
+drop = 0
+
+-- One drag asks for a new x and a new y together. Both reach centre and ask it
+-- for different things. The first to arrive decides it; the second sees it
+-- pinned and has to be met another way.
+program = svg 240 160 [circle centre (centre + drop) 30 |> set_fill tomato]

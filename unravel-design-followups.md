@@ -94,23 +94,55 @@ Not built yet:
 - `if` always follows the branch that ran (§6, branch choice).
 - Replacement throws away the argument expressions (§7, wrapping).
 
-### Converging requests inside one request (not implemented)
+### Converging requests inside one request (implemented)
 
-unravel-design.md §3, "Branching and converging", describes one request whose
-branches reach the same input with different demands. The engine only handles
-this when both branches ask for the same value. With `base = 10`:
+unravel-design.md §3, "Branching and converging". `tests/converge.rs` in the
+engine and the stories in group 10 show it.
 
-| Program | Request | Result |
-| --- | --- | --- |
-| `(base * 2, base + 5)` | `(22, 16)` | Works: both want `base = 11` |
-| `(base * 2, base + 5)` | `(22, 20)` | Conflicting requests. Should work: `base = 11`, and the `5` becomes 9 |
-| `scaled = base * 2`, then `scaled + base` | `33` | Rule failed. Should work: `base = 11` |
+How it is built:
 
-The engine does have the mechanism the design asks for: satisfy one request,
-re-evaluate, pin what it decided, unravel the next against the new values, and
-try the other order once. It is applied between separate output requests, which
-an application never needs, and not between the branches of one request. The
-work is to move it.
+- The ordinary single traversal runs first. The passes start when it fails
+  with a conflict (two different demands on one source value) or in the final
+  check (a part of the request that held when visited was broken by a later
+  change, as when a drag moves x and asks y to stay).
+- Within a pass, an exact request that already fits holds the source values
+  under it until the pass ends, so a later request cannot break it.
+- Each pass unravels from the output and stops at the first value it changes.
+  That value, and each expression on the way whose request now fits, is
+  frozen. The program is evaluated again and the next pass starts over.
+- An input is pinned when every source value under it is frozen. A literal
+  that has not been frozen keeps its input unpinned.
+- If the passes fail, they are tried once deciding values in the other order.
+- Branch guards from every pass are kept to the end.
+
+Open:
+
+- **A free literal inside a shared expression defeats the pin.** In
+  `(tens * 10 + ones, tens)` asked for `(47, 4)`, `tens * 10` still contains
+  the free `10`, so `+` is not told its left side is pinned. It asks that side
+  for 45, which fails, and nothing goes back to try `ones`. A rule would have
+  to be offered its inputs in turn.
+- **A value neither branch asks for.** `base * 2 + base` asked for 36 needs
+  `base = 12`; left first gives 13, right first gives 16.
+- **Requests the passes drop.** Only frozen values and branch guards carry
+  from one pass to the next. A demand the first traversal placed on a value
+  the request never mentioned is not carried. `(make shared).x` asked for 10
+  with `make x = { x = x * 2, keep = x }` used to be refused because `keep`
+  would change; it is accepted now, since `keep` is not in the output.
+- **A rule's wrong proposal can be made up for.** A rule that proposes a bad
+  value for one input is not accepted as it stands, but the passes freeze that
+  value and the rule, seeing it pinned, may reach the request through another
+  input. The result fits the request and keeps the odd value.
+- **A pinned single input still runs its rule.** A rule with one input takes
+  the plain value and never sees a pin. The design says the engine need not
+  call it when that input is pinned; it still does, and holds the pin
+  afterwards, which gives the same result.
+- **Plain or feeds is decided by how the rule is written.** For several
+  inputs, a tuple of `{ value, pinned }` records means feeds and anything else
+  means plain values. A rule over plain values whose inputs are themselves
+  such records would be misread.
+- Frozen is by source node. A value reached in two activations of one function
+  is one node.
 
 ### Requests that may be missed
 

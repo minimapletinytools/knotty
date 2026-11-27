@@ -48,17 +48,21 @@ for any `sOut` and `sIn` where `Constriction sIn a` and `Constriction sOut out` 
 
 ```knot
 f :: a -> out
-some_valid_unravel_for_f :: Feed a -> sOut -> Unravelled sIn
+some_valid_unravel_for_f :: a -> sOut -> Unravelled sIn
 ```
 
 similarly
 
 ```
 g :: a -> b -> out
+some_valid_unravel_for_g :: (a, b) -> sOut -> Unravelled (sA, sB)
+-- or, when the rule wants to know which inputs are pinned (see below)
 some_valid_unravel_for_g :: (Feed a, Feed b) -> sOut -> Unravelled (sA, sB)
 ```
 
 Requires `Constriction sA a`, `Constriction sB b` and `Constriction sOut out`.
+
+The rule is given the current value of each input.
 
 The result type
 
@@ -73,16 +77,22 @@ type Unravelled s = Unravel s | Splice | Snag
 `Unravelled` is a monad, `Splice` and `Snag` both end a `do` block.
 
 
-The type
+### Pins
+
+An input is "pinned" when it can no longer change in this edit: every source value it depends on has already been decided (§3 Branching and Converging), or is locked or read only.
+
+A rule with several inputs can ask to see the pins by taking a `Feed` for each input in place of the plain value
 
 ```knot
 type alias Feed a = { value : a, pinned : Maybe a }
 ```
 
-describes the current input value, refreshed after speculative edits.
-If `pinned = Just p`, the returned input request `s` must satisfy `fits s p`.
-The engine must also preserve the actual pinned input. No condition on
-`materialize s` is needed: it may choose another acceptable value or return `Nothing`.
+`value` is the current input value. If `pinned = Just p` the input is pinned at `p`, and the rule should send its request to the other inputs.
+
+- pins are optional. A rule that takes plain values works the same, it just can not route around a pinned input
+- the engine enforces pins either way. If a rule requests `s` of a pinned input then `fits s p` must hold, otherwise it is a snag
+- a rule with one input never takes a `Feed`. If its only input is pinned nothing can change, so the engine does not call the rule: the request must already fit
+- TODO the pinned type should be Sensitivy type rather than Maybe for more granularity
 
 Attach rules using `@unravel(🧶rule)` on functions or data constructors. A rule is named 🧶 plus the name of the function it unravels.
 
@@ -193,23 +203,40 @@ TODO what are other unravel startegies we might want? e.g. no lash strategy, no 
 
 ### Braching and Converging
 
-A request may eventually "branch" and "converge" producing 2 potentially conflicting requests. A conservative reconciliation algorithm is as follows:
+A request may "branch" (a rule with several inputs sends a request to each) and later "converge" (2 branches reach the same source value, e.g. a variable that is used twice). The 2 branches may ask that value for different things.
 
-On a given expression if the engine sees 2 or more result requests:
+e.g.
+```knot
+base = 10
+program = (base * 2, base + 5)
+-- request: (Just 22, Just 20)
+```
 
-1. check if they conflict (see below)
-2. pick one Constriction to satisfy first producing a new value at the merge node
-3. "push forward" the value through the unravel chain at that node evaluating until we hit a branch node, refreshing affected values.
-4. unravel using the changed input as a "pinned" value and see if the output Constriction is still satisfied
-5. if not, repeat 3-4 from this node until a program output node is reached; fail if its request is still unsatisfied.
+the first branch wants `base = 11`, the second wants `base = 15`. `base = 11` with the `5` changed to `9` satisfies both.
 
-Keep all requests and explicit locks. Stop on no progress or exhausted shared budgets,
-roll back failed attempts, and apply only after every request and pin passes final validation.
+The engine unravels in passes. Each pass decides one source value:
 
-A failed candidate does not prove the requests conflict. For example, ranges
-`[0, 10]` and `[5, 15]` overlap even if materialization chooses 0 and 15.
-Checking a candidate against all requests proves success, but its rejection does
-not prove impossibility. Arbitrary `fits` predicates provide no general conflict test.
+1. evaluate the program with the edits made so far ("push forward"). If the output fits the request we are done
+2. unravel from the output using the current values. A request that already fits stops there
+3. the first source value that needs to change is changed and frozen. Go to 1
+4. if a request reaches a frozen value that it does not fit, the pass fails
+
+An input whose source values are all frozen is pinned (§2 Pins), so a rule with several inputs can send its request the other way.
+
+In the example
+- pass 1: the first branch sets `base = 11` and freezes it
+- pass 2: the first branch fits. For `base + 5` to be `20`, `+` sees its left input pinned at `11` and requests `9` of the `5`
+- pass 3: the output fits
+
+Every rule always runs on fresh values because each pass starts again from the output. There is no need to track which branch a value came from.
+
+If a pass fails the engine tries once more deciding values in the other order.
+
+This is not complete:
+- a frozen value is never revisited. `base * 2 + base` requested to be `36` needs `base = 12`, but going left first gives `13` and going right first gives `16`, and both fail. Only a rule for the whole expression can solve this
+- a failed candidate does not prove the requests conflict. For example, ranges `[0, 10]` and `[5, 15]` overlap even if materialization chooses 0 and 15. Arbitrary `fits` predicates provide no general conflict test
+
+Any edit that is accepted is correct, the output is always checked against the request at the end.
 
 Better rules for producing more liekly shared candidates can be added in the future, the above is sufficient for now.
 

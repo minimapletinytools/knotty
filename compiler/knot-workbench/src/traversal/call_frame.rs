@@ -11,6 +11,8 @@ pub(super) struct CallPlan {
     inputs: Vec<TypeVarId>,
     output_id: TypeVarId,
     selected: std::sync::OnceLock<(usize, Ty)>,
+    /// Whether the selected rule takes plain values, not feeds.
+    plain: std::sync::atomic::AtomicBool,
 }
 impl CallPlan {
     pub(super) fn new(checked: Arc<TypedProgram>, arity: usize) -> Result<Self, EditError> {
@@ -45,6 +47,7 @@ impl CallPlan {
             inputs,
             output_id: frame[0],
             selected: Default::default(),
+            plain: Default::default(),
         })
     }
 }
@@ -74,6 +77,36 @@ impl CheckedCall {
     pub fn select(&self) -> Result<(usize, Ty), EditError> {
         self.plan.select(self.rules.len())
     }
+    /// The number of inputs, and whether the selected rule takes plain values.
+    pub fn shape(&self) -> (usize, bool) {
+        (
+            self.plan.inputs.len(),
+            self.plan.plain.load(std::sync::atomic::Ordering::Relaxed),
+        )
+    }
+    /// The selected rule's source, made to take feeds. See `feeds_rule`.
+    pub fn with_feeds(&self, rule: &str) -> String {
+        self.plan.with_feeds(rule)
+    }
+}
+
+/// The engine hands every rule one feed per input. A rule that takes plain
+/// values (always so with one input) is wrapped to be called the same way.
+pub(super) fn feeds_rule(rule: &str, arity: usize, plain: bool) -> String {
+    if !plain {
+        return rule.to_owned();
+    }
+    let feeds = (0..arity).map(|i| format!("feed{i}")).collect::<Vec<_>>();
+    let values = feeds
+        .iter()
+        .map(|f| format!("{f}.value"))
+        .collect::<Vec<_>>();
+    format!(
+        "(\\{} request -> (\n{}\n) {} request)",
+        group(&feeds),
+        indent(rule),
+        group(&values)
+    )
 }
 impl CallPlan {
     fn scheme(&self, name: &str) -> Scheme {
@@ -112,8 +145,18 @@ impl CallPlan {
             selected.input_constraint,
         )?;
         let result = (selected.index, input);
+        self.plain
+            .store(selected.plain, std::sync::atomic::Ordering::Relaxed);
         let _ = self.selected.set(result.clone());
         Ok(Some(result))
+    }
+    /// Only meaningful after a rule has been selected.
+    pub(super) fn with_feeds(&self, rule: &str) -> String {
+        feeds_rule(
+            rule,
+            self.inputs.len(),
+            self.plain.load(std::sync::atomic::Ordering::Relaxed),
+        )
     }
 }
 impl Walker<'_> {

@@ -24,6 +24,12 @@ impl Walker<'_> {
         self.unravel_cache.clear_wave();
         self.schedule(site, request, ty)?;
         while let Some(work) = self.pending.pop() {
+            // A pass ends at the first value it changes: everything still
+            // pending was worked out from values that are now stale.
+            if self.stepping && self.stepped {
+                self.pending.clear();
+                break;
+            }
             if self
                 .probes
                 .limits
@@ -39,7 +45,9 @@ impl Walker<'_> {
                 Work::ListRemainder(rest) => self.resume_list_route(*rest)?,
                 Work::Complete(entries) => self.unravel_cache.complete(entries),
             }
-            self.pending[siblings..].reverse();
+            if !(self.stepping && self.reversed) {
+                self.pending[siblings..].reverse();
+            }
         }
         Ok(())
     }

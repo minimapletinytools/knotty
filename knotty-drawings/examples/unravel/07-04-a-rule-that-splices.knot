@@ -20,7 +20,7 @@ tens n = n * 10
 
 -- Unravel asks something of the argument. Splice gives up on the argument and
 -- has the whole call rewritten as the value that was asked for.
-🧶tens :: Feed Int -> Maybe Int -> Unravelled (Maybe Int)
+🧶tens :: Int -> Maybe Int -> Unravelled (Maybe Int)
 🧶tens _ wanted = case wanted of
     Nothing -> Unravel Nothing
     Just size -> if mod size 10 == 0 then Unravel (Just (div size 10)) else Splice

@@ -14,6 +14,9 @@ type ProjectedPin = (TypedValue, Vec<projections::Projection>);
 
 #[derive(Default)]
 pub(super) struct Pins {
+    /// Source nodes under a request that already fitted during this pass.
+    /// They are left alone until the pass ends. Keyed without the type.
+    pub(super) held: HashSet<(NodeRef, usize, String)>,
     assignments: HashMap<Identity, TypedValue>,
     pub(super) user: HashMap<Identity, TypedValue>,
     pub(super) repairing: Option<Identity>,
@@ -172,6 +175,39 @@ impl Walker<'_> {
     }
     pub(super) fn solver_pinned(&self, site: &Site) -> bool {
         self.assignment(site, 0).0.is_some()
+    }
+    /// Whether this source node was frozen, whatever type the site carries.
+    /// A site reached by walking syntax, not by unravelling, has no type yet.
+    pub(super) fn frozen_node(&self, site: &Site) -> bool {
+        let Some(id) = self.source_identity(site) else {
+            return false;
+        };
+        self.solver_pins
+            .held
+            .contains(&(id.node.clone(), id.activation, id.projection.clone()))
+            || self.solver_pins.assignments.keys().any(|key| {
+                key.node == id.node
+                    && key.activation == id.activation
+                    && key.projection == id.projection
+            })
+    }
+    /// Hold a source node for the rest of this pass.
+    pub(super) fn hold_node(&mut self, site: &Site) {
+        if let Some(id) = self.source_identity(site) {
+            self.solver_pins
+                .held
+                .insert((id.node, id.activation, id.projection));
+        }
+    }
+    pub(super) fn release_held(&mut self) {
+        self.solver_pins.held.clear();
+    }
+    pub(super) fn is_held(&self, site: &Site) -> bool {
+        self.source_identity(site).is_some_and(|id| {
+            self.solver_pins
+                .held
+                .contains(&(id.node, id.activation, id.projection))
+        })
     }
     pub(super) fn pin_source(&mut self, site: &Site, current: &str) -> Result<String, EditError> {
         if let Some(value) = self.solver_pin_value(site)? {

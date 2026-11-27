@@ -29,13 +29,12 @@ impl Walker<'_> {
             let Some(knot_checker::ty::Structure::Fn(state, _)) = sub.head_normal(scheme.ty) else {
                 return unsupported("constructor rule needs field feeds");
             };
-            if !valid_feed_shape(&mut sub, state, arity) {
-                return unsupported("constructor rule needs one valid Feed per field");
-            }
+            // One field: its plain value. Several: plain values or feeds.
+            let plain = arity == 1 || !valid_feed_shape(&mut sub, state, arity);
             let feeds = (0..arity).map(|i| format!("feed{i}")).collect::<Vec<_>>();
             let values = feeds
                 .iter()
-                .map(|f| format!("{f}.value"))
+                .map(|f| if plain { f.clone() } else { format!("{f}.value") })
                 .collect::<Vec<_>>();
             let requests = (0..arity)
                 .map(|i| format!("request{i}"))
@@ -82,7 +81,15 @@ impl Walker<'_> {
             .iter()
             .map(|a| candidates::feed_type(a.ty.as_ref().unwrap()).source())
             .collect::<Vec<_>>();
-        let mut declarations = format!("states :: {}\nstates = undefined\n", group(&feeds));
+        let plain = args
+            .iter()
+            .map(|a| a.ty.as_ref().unwrap().source())
+            .collect::<Vec<_>>();
+        let mut declarations = format!(
+            "states :: {}\nstates = undefined\nvalues :: {}\nvalues = undefined\n",
+            group(&feeds),
+            group(&plain)
+        );
         for (i, rule) in rules.iter().enumerate() {
             declarations.push_str(&format!("rule{i} =\n{}", indent(rule)));
         }
@@ -91,6 +98,11 @@ impl Walker<'_> {
         let states = checked
             .schemes
             .get(&knot_checker::solve::SchemeKey::TopLevel("states".into()))
+            .unwrap()
+            .ty;
+        let values = checked
+            .schemes
+            .get(&knot_checker::solve::SchemeKey::TopLevel("values".into()))
             .unwrap()
             .ty;
         rules = rules
@@ -108,10 +120,13 @@ impl Walker<'_> {
                 let Some(knot_checker::ty::Structure::Fn(state, _)) = sub.head_normal(ty) else {
                     return Some(rule);
                 };
-                if !valid_feed_shape(&mut sub, state, args.len()) {
-                    return Some(rule); // Let normal registration report malformed contracts.
-                }
-                if knot_checker::unify::unify(&mut sub, state, states).is_ok() {
+                // Keep a rule whose inputs match this specialization, as
+                // plain values or (for several fields) as feeds.
+                let mut as_values = sub.clone();
+                if knot_checker::unify::unify(&mut as_values, state, values).is_ok()
+                    || (args.len() > 1
+                        && knot_checker::unify::unify(&mut sub, state, states).is_ok())
+                {
                     Some(rule)
                 } else {
                     None
@@ -177,7 +192,7 @@ impl Walker<'_> {
         let plan = call_frame::CallPlan::new(checked, args.len())?;
         Ok(plan
             .try_select(rules.len())?
-            .map(|(selected, input)| (rules[selected].clone(), input)))
+            .map(|(selected, input)| (plan.with_feeds(&rules[selected]), input)))
     }
 }
 

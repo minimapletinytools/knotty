@@ -11,6 +11,7 @@ mod candidates;
 mod higher_order;
 mod lash;
 mod list_route;
+mod passes;
 mod locks;
 mod materialization;
 mod recipes;
@@ -414,6 +415,10 @@ impl SourceEditor {
             spliced: Default::default(),
             patch_via: BTreeMap::new(),
             snag: snag.clone(),
+            stepping: false,
+            stepped: false,
+            reversed: false,
+            step_proposals: vec![],
             guards: vec![],
         };
         if context.reuse_route
@@ -447,6 +452,7 @@ impl SourceEditor {
             return unsupported("source solving needs at least one attempt");
         }
         let mut accepted = None;
+        let mut failure = None;
         for attempt in 0..attempts {
             if attempt > 0 {
                 w.restart_attempt(&self.libraries)?;
@@ -498,10 +504,44 @@ impl SourceEditor {
                     | EditError::ValidationFailed
                     | EditError::ConflictingRequests,
                 ) if attempt + 1 < attempts => {}
-                Err(error) => return Err(error),
+                Err(error) => {
+                    failure = Some(error);
+                    break;
+                }
             }
         }
-        let (candidate, patches) = accepted.ok_or(EditError::ValidationFailed)?;
+        let (candidate, patches) = match accepted {
+            Some(accepted) => accepted,
+            None => {
+                let failure = failure.unwrap_or(EditError::ValidationFailed);
+                // Branches of one request may have converged on a shared
+                // value with different demands. Solve again one value at a
+                // time. If that fails too, report the original failure.
+                // It shows up two ways. Two demands on one literal are a
+                // conflict. A part of the request that held when it was
+                // visited and was broken by a later change (a drag that moves
+                // x and asks y to stay) only fails the final check.
+                let converged = outputs.len() == 1
+                    && w.user_locks.is_empty()
+                    && matches!(
+                        failure,
+                        EditError::ConflictingRequests | EditError::ValidationFailed
+                    );
+                if !converged {
+                    return Err(failure);
+                }
+                match w.solve_in_passes(&outputs[0], roots, &self.libraries) {
+                    Ok(solved) => solved,
+                    Err(
+                        EditError::RuleFailed
+                        | EditError::ValidationFailed
+                        | EditError::ConflictingRequests
+                        | EditError::Unsupported(_),
+                    ) => return Err(failure),
+                    Err(error) => return Err(error),
+                }
+            }
+        };
         let source_change = context
             .edit_domain
             .certify(snapshot, &candidate, &patches)?;
@@ -689,6 +729,12 @@ struct Walker<'a> {
     patch_via: BTreeMap<(u32, u32), Arc<syntax::Caller>>,
     /// Where a lasher could be added after the first snag of this attempt.
     snag: lash::SnagSlot,
+    /// Solving in passes: each pass stops at the first source value it
+    /// changes, so the next starts from fresh values. See `passes.rs`.
+    stepping: bool,
+    stepped: bool,
+    reversed: bool,
+    step_proposals: Vec<(Site, TypedValue, Ty)>,
 }
 /// A rule's answer, read from its `Unravelled` value.
 pub(in crate::traversal) enum RuleAnswer {
@@ -701,6 +747,18 @@ impl Walker<'_> {
         &mut self,
         roots: &[std::path::PathBuf],
         libraries: &knot_core::Program,
+    ) -> Result<(Arc<ProjectSnapshot>, Vec<LiteralPatch>, f64, f64), EditError> {
+        self.install_candidate(roots, libraries, true)
+    }
+    /// Check the source with the edits so far and evaluate it, so values read
+    /// from here on are the new ones. `check` also holds every retained
+    /// request against it; a pass that is not the last skips that, because its
+    /// requests were worked out from the old values.
+    fn install_candidate(
+        &mut self,
+        roots: &[std::path::PathBuf],
+        libraries: &knot_core::Program,
+        check: bool,
     ) -> Result<(Arc<ProjectSnapshot>, Vec<LiteralPatch>, f64, f64), EditError> {
         let recipes::Construction { patches, locations } = self.finish_recipes()?;
         self.validate_source_pins()?;
@@ -741,7 +799,9 @@ impl Walker<'_> {
         self.probes
             .install_candidate(self.snapshot, &updated, libraries)?;
         self.begin_candidate_values();
-        self.validate_obligations(true)?;
+        if check {
+            self.validate_obligations(true)?;
+        }
         Ok((
             Arc::new(updated),
             patches,
@@ -921,7 +981,22 @@ impl Walker<'_> {
             self.visit_site()?;
             self.obligations.push((s.clone(), r.clone(), t.clone()));
             if self.fits(&s, &r, &t)? {
+                // An exact request that already fits is left alone for the
+                // rest of this pass, so a later request cannot break it. A
+                // request that asks for nothing (`Nothing`) holds nothing.
+                if self.stepping
+                    && matches!(&t, Ty::Named(name, _) if name == "Maybe")
+                    && self
+                        .probes
+                        .constructor_live(&r)
+                        .is_ok_and(|(name, _)| name.name == "Just")
+                {
+                    self.hold_values(&s, 0);
+                }
                 return Ok(());
+            }
+            if self.stepping && self.is_held(&s) {
+                return Err(EditError::ValidationFailed);
             }
             if s.fixed {
                 return unsupported("captured callback value is pinned");
@@ -931,6 +1006,9 @@ impl Walker<'_> {
             }
             if self.collect_proposals {
                 self.proposals.push(s.clone());
+            }
+            if self.stepping {
+                self.step_proposals.push((s.clone(), r.clone(), t.clone()));
             }
             if let Some((request, ty)) = self.adapt_request(&s, &r, &t)? {
                 r = request;
@@ -1163,6 +1241,7 @@ impl Walker<'_> {
                 return unsupported("overlapping source patches");
             }
             self.changed_spans.insert(key);
+            self.stepped = true;
             if let Some(via) = &s.via {
                 self.patch_via.insert(key, via.clone());
             }
@@ -1290,6 +1369,7 @@ impl Walker<'_> {
         } else {
             Some(call.select()?)
         };
+        let shape = call.shape();
         let call_frame::CheckedCall {
             fun,
             args,
@@ -1336,7 +1416,7 @@ impl Walker<'_> {
             );
         }
         let (selected, input) = selection.unwrap();
-        let expression = self.source(&rules[selected])?;
+        let expression = call_frame::feeds_rule(&self.source(&rules[selected])?, shape.0, shape.1);
         // A call that passes its last argument on as the same type of value
         // (a setter in a pipeline) continues that value's chain.
         let mut args = args;
