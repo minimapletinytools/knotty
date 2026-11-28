@@ -19,6 +19,8 @@ pub struct ProjectSnapshot {
     sources: BTreeMap<PathBuf, String>,
     entry: PathBuf,
     extension: EntryExtension,
+    /// Entry-file definitions marked `@belay`: read, never edited.
+    belayed: Vec<Span>,
 }
 impl ProjectSnapshot {
     pub fn load(
@@ -70,7 +72,27 @@ impl ProjectSnapshot {
             )
         });
         let id = format!("{process}-{}", NEXT.fetch_add(1, Ordering::Relaxed));
+        let decls = &graph.entry().program.canonical.decls;
+        let functions = || {
+            decls.iter().filter_map(|d| match &d.node {
+                knot_canonical::ast::CDecl::Fn(f) => Some((d.span, f)),
+                _ => None,
+            })
+        };
+        // Every clause of a marked function, wherever the mark is written.
+        let belayed = functions()
+            .filter(|(_, f)| {
+                functions().any(|(_, marked)| {
+                    marked.name == f.name && marked.annotations.iter().any(|a| a.key == "belay")
+                })
+            })
+            .map(|(span, f)| Span {
+                start: span.start.min(f.body.span.start),
+                end: span.end.max(f.body.span.end),
+            })
+            .collect();
         Ok(Self {
+            belayed,
             graph,
             id,
             sources,
@@ -137,10 +159,16 @@ impl ProjectSnapshot {
             .iter()
             .all(|(path, source)| std::fs::read_to_string(path).is_ok_and(|now| now == *source))
     }
+    /// The span lies in an entry-file definition marked `@belay`.
+    pub fn belayed(&self, span: Span) -> bool {
+        self.belayed
+            .iter()
+            .any(|b| b.start <= span.start && span.end <= b.end)
+    }
     /// A frozen definition does not pin its value at an editable reference site.
     /// Span ownership is checked at the reference expression, not its definition.
     pub fn editable_source(&self, path: &Path, span: Span) -> Option<&str> {
-        if path != self.entry {
+        if path != self.entry || self.belayed(span) {
             return None;
         }
         self.sources

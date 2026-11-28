@@ -37,8 +37,9 @@ Still open on splice:
 - **A partial request cannot be spliced.** `Splice` prints the materialized
   request, so "second element is 7, rest anything" has nothing to print. If
   that matters, `Splice` would carry a value.
-- **Your own functions are not bubbled.** Only read-only source bubbles. A
-  literal inside your own function is edited in place, for every caller.
+- **Your own functions are not bubbled** unless marked `@belay`. Only
+  read-only source bubbles. A literal inside your own function is edited in
+  place, for every caller.
 
 ### Lash (implemented)
 
@@ -63,6 +64,14 @@ Implemented (`tests/lash.rs` in the engine; stories `02-02-no-setter`,
   definition the value comes from. Without a cleat the lasher goes at the very
   end. A setter lashed after a cleat is met first by the next request and is
   edited like any other, so setters do not pile up behind a cleat.
+- `@cleat` on a definition makes every use of it a cleat: a call to the
+  function, or the name of a value with no parameters. The Prelude's `cleat`
+  is `cleat x = x` with that mark, so `e |> cleat` is `@cleat (e)` written as
+  a pipeline stage, in plain Knot. It has no unravel rule on purpose.
+- A cleat in source that cannot be edited is ignored. A lash does not bubble
+  up to the call as a splice does.
+- Lash first with no cleat writes `|> cleat` and then the setter, so the next
+  request edits that setter.
 - The strategy is set on the engine (`SourceEditor::with_strategy`). With lash
   first the engine stops at the first cleat reached, or at the end of the
   first pipeline reached, and tries the lashers there before anything is
@@ -91,10 +100,23 @@ How it differs from the design text:
   inside the marked expression. A setter written after a cleat is therefore
   never protected: lash first edits it, and whatever it shares.
 - **A pipeline with a cleat is lashed at the cleat or not at all** under lash
-  first. The engine decides this by looking for `@cleat` in the text of the
-  pipeline, so a cleat in a nested argument counts too.
-- **Lash first without a cleat piles up setters.** Every edit adds another at
-  the very end. Open: have the engine write the cleat itself the first time.
+  first. The engine decides this by looking for the word `cleat` in the text
+  of the pipeline, so a cleat in a nested argument counts too.
+- **A cleat in your own function lashes inside that function**, for every
+  caller, because the body can be edited. To lash at the call instead, put
+  `@cleat` on the function; add `@belay` to keep its body from being edited.
+- **A cleat inside a belayed or library function is ignored**, wherever it
+  is in the body. The lash goes to the next cleat out or the very end.
+- **`@belay` is per definition.** It goes on a function or value definition of
+  the entry file, not on an expression. A belayed value with no parameters is
+  not read through, as for a library value: it is replaced where it is used,
+  and a cleat inside it is not seen.
+- **A setter inside a belayed function does not lash at the call.** Its
+  literal cannot change, which is a splice of the whole call; with a partial
+  request that fails, and a failed splice is not a snag. Open: whether it
+  should become one.
+- **Belayed code is still open to other tools.** Only unravel edits respect
+  the mark; the edit domain does not reject a patch inside it.
 - **Lash first without a cleat** looks past up to four places where no lasher
   has the right type (a list, say) before it gives up and unravels.
 - **Makers do not decide whether a list may grow.** A maker is tried only

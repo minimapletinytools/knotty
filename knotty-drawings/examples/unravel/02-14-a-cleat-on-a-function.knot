@@ -1,0 +1,20 @@
+-- story: A cleat on a function
+-- group: 2. Setters and optional properties
+-- status: works
+-- try: Both circles are made by dot. Change the stroke width of the left one. @cleat on dot makes
+--   each call a cleat, so the set_stroke_width is added right after the call and only the left
+--   circle gets it. @belay keeps dot itself from being edited.
+-- check: edit 0 stroke.width 4
+-- source: [dot 24 |> set_stroke_width (4.0) |> set_transform [Translate 70 80], dot 30 |> set_transform
+-- source: dot r = circle 0 0 r |> set_fill tomato
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+@cleat
+@belay
+dot :: Float -> Node
+dot r = circle 0 0 r |> set_fill tomato
+
+program = svg 240 160 [dot 24 |> set_transform [Translate 70 80], dot 30 |> set_transform [Translate 170 80]]

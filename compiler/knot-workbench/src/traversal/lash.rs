@@ -32,7 +32,8 @@ pub enum Strategy {
     UnravelFirst,
     /// At the first cleat reached, or at the very end of the first pipeline
     /// reached when there is none, try the lashers. If none takes the
-    /// request, unravel as usual.
+    /// request, unravel as usual. Where there was no cleat `|> cleat` is
+    /// written, so the next request edits the setter that was added.
     LashFirst,
 }
 
@@ -58,6 +59,23 @@ impl Walker<'_> {
                 .snapshot
                 .editable_source(self.snapshot.entry_path(), site.expr.span)
                 .is_some()
+    }
+
+    /// The expression at `site` is a cleat: a lasher goes right after it and
+    /// it stays as written. A cleat in source that cannot be edited is
+    /// ignored. The first cleat passed on a chain is the outermost one.
+    pub(super) fn cleat(
+        &mut self,
+        site: &Site,
+        outermost: &mut Option<Arc<Site>>,
+    ) -> Result<(), EditError> {
+        if self.lashable(site) {
+            self.halt_at(site, true)?;
+            if outermost.is_none() {
+                *outermost = Some(Arc::new(site.clone()));
+            }
+        }
+        Ok(())
     }
 
     /// Where a lasher for the value at `site` goes: right after the outermost
@@ -137,7 +155,7 @@ impl Walker<'_> {
             && self
                 .snapshot
                 .editable_source(self.snapshot.entry_path(), point.expr.span)
-                .is_some_and(|text| text.contains("@cleat"))
+                .is_some_and(|text| text.contains("cleat"))
         {
             return Ok(());
         }
@@ -417,7 +435,7 @@ impl SourceEditor {
             return Err(failure);
         }
         self.try_lashers(
-            snapshot, context, requests, argument, roots, &limits, depth, &point, false,
+            snapshot, context, requests, argument, roots, &limits, depth, &point, false, false,
         )?
         .edit
         .ok_or(failure)
@@ -470,8 +488,19 @@ impl SourceEditor {
                 }
                 return Ok(None);
             };
+            // With no cleat there, one is written around the expression, so
+            // the setter added now is the one edited next time.
             let tried = self.try_lashers(
-                snapshot, context, requests, argument, roots, limits, 0, &point, true,
+                snapshot,
+                context,
+                requests,
+                argument,
+                roots,
+                limits,
+                0,
+                &point,
+                true,
+                !halt.cleats,
             )?;
             if tried.edit.is_some() || tried.checked || halt.cleats {
                 return Ok(tried.edit);
@@ -594,6 +623,8 @@ impl SourceEditor {
         depth: usize,
         point: &LashPoint,
         first: bool,
+        // Write `|> cleat` after the expression and lash after that.
+        mark: bool,
     ) -> Result<Tried, EditError> {
         let mut tried = Tried {
             edit: None,
@@ -605,6 +636,8 @@ impl SourceEditor {
         let inner = unwrapped(original, point.span);
         let expression = &original[inner.start as usize..inner.end as usize];
         let bare = inner == point.span && stands_alone(original, point.span);
+        // With no cleat there, `|> cleat` is written first.
+        let marked = mark.then(|| format!("{expression} |> cleat"));
         for lasher in lashers(snapshot).into_iter().filter(|l| l.wraps) {
             if limits
                 .runtime
@@ -614,7 +647,8 @@ impl SourceEditor {
                 return Err(twine::Outcome::Cancelled.into());
             }
             let call = format!(
-                "{expression} |> {}{}",
+                "{} |> {}{}",
+                marked.as_deref().unwrap_or(expression),
                 lasher.reference,
                 " default".repeat(lasher.leading)
             );

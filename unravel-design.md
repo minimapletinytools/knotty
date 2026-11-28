@@ -176,6 +176,27 @@ By default a lash goes at the very end, on the outermost expression that produce
 - cleats can be nested, the outermost one on the way back is the one used
 - a cleat in a definition the value comes from counts, e.g. `base = @cleat (circle 120 80 30)` and `program = [base |> rotate 30]`
 
+`@cleat` can also go on a definition. Then every use of it is a cleat, i.e. `f a b` is the same as `@cleat (f a b)` wherever it is called. For example, prelude defines
+
+```knot
+@cleat
+cleat :: a -> a
+cleat x = x
+```
+
+so `e |> cleat` is the same as `@cleat (e)` and the lash goes right after it, e.g. `e |> cleat |> set_fill blue`.
+
+- the body of the function is not looked at for this, the cleat is the call
+- `@cleat` on a definition with no parameters makes each place it is used a cleat, e.g. `@cleat` on `base = circle 120 80 30` gives `base |> set_fill blue |> rotate 30`. Compare with `base = @cleat (circle 120 80 30)` where the lash goes in the definition
+- a cleat in read-only source is ignored since nothing can be written after it, the lash goes to the next cleat out or the very end. Unlike a splice a lash does not bubble up
+
+`@belay` on a definition flags your own code as read-only. Nothing inside will be edited during unravels--like read only libraries. So splices bubble up out of it and cleats inside it are ignored. 
+
+- a belayed definition with no parameters, e.g. `@belay` on `shared = 1`, is replaced where it is used
+- a literal inside a belayed function is a splice of the whole call, not a snag, so asking for a new fill above does not lash a `set_fill` after the call
+
+TODO should a splice that can not be printed (partial request) turn into a snag so that it can lash at the call?
+
 Creating a value with a library function is similar. Only the result type of the lasher must match type of the expression being created.  e.g.
 
 ```knot
@@ -205,7 +226,7 @@ The application sends a strategy along with its request:
 
 Lash first leaves 2 setters behind, e.g. with `set_fill red` inside the cleat, asking for blue adds a `set_fill blue` after the cleat and keeps the red one. A setter outside the cleat is reached first and is edited as usual, so the next request edits the `set_fill blue`.
 
-TODO lash first with no cleat adds another setter at the very end every time. Should the engine write the cleat itself the first time? e.g. `e |> set_fill paint` becomes `@cleat (e |> set_fill paint) |> set_fill blue`
+If lash first finds no cleat it writes one, e.g. `e |> set_fill paint` becomes `e |> set_fill paint |> cleat |> set_fill blue`. The next request edits the `set_fill blue`.
 
 TODO what is "Splice here" do we need/want that?
 TODO what are other unravel startegies we might want? e.g. no lash strategy, no bubbling up splices in reda onyl libraries, etc

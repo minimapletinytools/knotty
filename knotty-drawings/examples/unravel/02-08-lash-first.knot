@@ -2,11 +2,14 @@
 -- group: 2. Setters and optional properties
 -- status: works
 -- try: Both rects read paint. Open the fill of the first rect and tick "Add a new setter" before
---   picking a colour. A set_fill is added to that rect alone and paint stays as it is. Without the
---   tick the same edit changes paint, and both rects with it.
+--   picking a colour. The rect gets `|> cleat |> set_fill …` and paint stays as it is. Everything
+--   before cleat is left as written. Pick another colour the same way: the set_fill that was added
+--   is edited, and no second one appears. Without the tick the same edit changes paint, and both
+--   rects with it.
 -- check: lash 0 fill.paint [10,120,200]
+-- check: lash 0 fill.paint [20,160,90]
 -- source: paint = tomato
--- source: |> set_fill paint |> set_fill
+-- source: [rect 20 40 90 80 |> set_fill paint |> cleat |> set_fill (Types.Rgb (20) (160) (90)), rect
 module Story exposing (..)
 
 import KnottyDrawings exposing (..)

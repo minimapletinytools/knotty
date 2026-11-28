@@ -124,6 +124,13 @@ uncurry f p =
 id :: a -> a
 id x = x
 
+-- Marks the value so far as a cleat: `e |> cleat` is `@cleat (e)`. A lasher
+-- is added right after it and `e` stays as written. `@cleat` on a function
+-- makes every call to it a cleat.
+@cleat
+cleat :: a -> a
+cleat x = x
+
 @unravel(🧶const)
 const :: a -> b -> a
 const x _ = x

@@ -1,0 +1,14 @@
+-- story: cleat as a pipeline stage
+-- group: 2. Setters and optional properties
+-- status: works
+-- try: Change the stroke width. `e |> cleat` means the same as `@cleat (e)`, without the
+--   parentheses: what comes before it stays as written and the set_stroke_width is added right
+--   after it, before set_opacity.
+-- check: edit 0 stroke.width 6
+-- source: |> set_fill tomato |> cleat |> set_stroke_width (6.0) |> set_opacity 0.8
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 [rect 40 40 160 80 |> set_fill tomato |> cleat |> set_opacity 0.8]

@@ -64,7 +64,10 @@ impl Walker<'_> {
                 .get(n)
                 .is_none_or(|a| self.is_pinned(a, depth + 1));
         }
-        if !s.locked && s.module == self.snapshot.graph.entry().program.canonical.name {
+        if !s.locked
+            && s.module == self.snapshot.graph.entry().program.canonical.name
+            && !self.snapshot.belayed(s.expr.span)
+        {
             // Solving in passes: an input is pinned once every source value
             // it depends on has been decided.
             return self.stepping && self.all_decided(s, depth + 1);

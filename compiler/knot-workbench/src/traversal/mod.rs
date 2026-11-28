@@ -1066,13 +1066,7 @@ impl Walker<'_> {
                         ..s.child(e)
                     };
                     if annotations.iter().any(|a| a.key == "cleat") {
-                        // A lasher goes right after the marked expression,
-                        // which itself stays as written.
-                        self.halt_at(&s, true)?;
-                        // The first cleat passed is the outermost one.
-                        if inner.cleat.is_none() {
-                            inner.cleat = Some(Arc::new(s.clone()));
-                        }
+                        self.cleat(&s, &mut inner.cleat)?;
                     }
                     s = inner;
                     continue;
@@ -1098,8 +1092,15 @@ impl Walker<'_> {
                 CExpr::Var(reference_) => {
                     let g = reference(reference_, &s.module);
                     if let Some(f) = self.definition(&g) {
+                        // A value marked `@cleat` is a cleat where it is used.
+                        if f.params.is_empty() && f.annotations.iter().any(|a| a.key == "cleat") {
+                            let mut cleat = s.cleat.clone();
+                            self.cleat(&s, &mut cleat)?;
+                            s.cleat = cleat;
+                        }
                         if f.params.is_empty()
                             && g.module == self.snapshot.graph.entry().program.canonical.name
+                            && !self.snapshot.belayed(f.body.span)
                         {
                             if self.shared_global(&s, &g, &r, &t, completions)? {
                                 return Ok(());
@@ -1374,10 +1375,20 @@ impl Walker<'_> {
         self.route_constructor(site, ctor, fields.into(), request, request_type)
     }
 
-    fn call(&mut self, s: Site, r: TypedValue, t: Ty) -> Result<(), EditError> {
+    fn call(&mut self, mut s: Site, r: TypedValue, t: Ty) -> Result<(), EditError> {
         let (fun, args) = self.application_parts(&s, "")?;
         let request_name = self.probes.reference(&r)?;
         let call = self.checked_call(&s, fun, args, &t, &request_name, "")?;
+        // A call to a function marked `@cleat` is a cleat.
+        if call
+            .definition
+            .as_ref()
+            .is_some_and(|f| f.annotations.iter().any(|a| a.key == "cleat"))
+        {
+            let mut cleat = s.cleat.clone();
+            self.cleat(&s, &mut cleat)?;
+            s.cleat = cleat;
+        }
         if call.definition.is_none() {
             return self.constructor(&s, call.name, call.args, r, t, call.output);
         }
