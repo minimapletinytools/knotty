@@ -32,6 +32,9 @@ pub struct EditRequest {
     pub key: String,
     pub field: String,
     pub value: Value,
+    /// Lash first: add a new setter in preference to changing what is written.
+    #[serde(default)]
+    pub lash: bool,
 }
 
 pub struct Editor {
@@ -113,6 +116,14 @@ pub fn new_engine() -> Result<SourceEditor, EditError> {
     ]))
 }
 
+pub(crate) fn strategy(lash: bool) -> knot_workbench::traversal::Strategy {
+    if lash {
+        knot_workbench::traversal::Strategy::LashFirst
+    } else {
+        knot_workbench::traversal::Strategy::UnravelFirst
+    }
+}
+
 impl Editor {
     pub fn new(preview: bool) -> Self {
         Editor {
@@ -154,7 +165,7 @@ impl Editor {
     }
 
     pub fn apply(&mut self, drawing: &mut Drawing, edit: &EditRequest) -> Value {
-        let result = self.apply_request(drawing, &edit.snapshot, |render| {
+        let result = self.apply_request(drawing, &edit.snapshot, edit.lash, |render| {
             let key = render.source_key(&edit.key)?;
             let node = crate::find_node(&render.scene, &edit.key).ok_or("unknown scene element")?;
             if node["props"].get(&edit.field).is_none() {
@@ -176,7 +187,7 @@ impl Editor {
     }
 
     pub fn apply_whip(&mut self, drawing: &mut Drawing, edit: &crate::whips::WhipEdit) -> Value {
-        let result = self.apply_request(drawing, &edit.snapshot, |render| {
+        let result = self.apply_request(drawing, &edit.snapshot, false, |render| {
             let whip = render
                 .whips
                 .get(edit.index)
@@ -194,6 +205,7 @@ impl Editor {
         &mut self,
         drawing: &mut Drawing,
         revision: &str,
+        lash: bool,
         resolve: impl FnOnce(&crate::drawing::Render) -> Result<(String, Request), String>,
     ) -> Result<(), String> {
         if self.active_preview.is_some() {
@@ -208,6 +220,7 @@ impl Editor {
         if self.engine.is_none() {
             self.engine = Some(new_engine().map_err(|e| e.to_string())?);
         }
+        self.engine.as_mut().unwrap().set_strategy(strategy(lash));
         let before = render.snapshot.sources()[render.snapshot.entry_path()].clone();
         let prepared = self
             .engine
@@ -420,6 +433,7 @@ mod integration_tests {
         let mut editor = Editor::new(false);
         let first = drawing.last_good().unwrap().snapshot.id().to_string();
         let edit = EditRequest {
+            lash: false,
             snapshot: first.clone(),
             key: "1".into(),
             field: "cx".into(),
@@ -435,6 +449,7 @@ mod integration_tests {
         assert!(after_position.contains("circle (150.0) 130 70"));
         assert_eq!(editor.apply(&mut drawing, &edit)["ok"], false);
         let edit = EditRequest {
+            lash: false,
             snapshot: drawing.last_good().unwrap().snapshot.id().into(),
             key: "1".into(),
             field: "fill.paint".into(),
@@ -473,6 +488,7 @@ mod integration_tests {
         let mut drawing = Drawing::new(path.clone(), &library, None).unwrap();
         let mut editor = Editor::new(false);
         let edit = EditRequest {
+            lash: false,
             snapshot: drawing.last_good().unwrap().snapshot.id().into(),
             key: "1".into(),
             field: "cx".into(),
@@ -515,6 +531,7 @@ mod integration_tests {
             for value in [json!([0, 0, 0]), json!([53, 45, 44]), json!([53, 45, 200])] {
                 before.push(std::fs::read_to_string(&path).unwrap());
                 let edit = EditRequest {
+                    lash: false,
                     snapshot: drawing.last_good().unwrap().snapshot.id().into(),
                     key: "0".into(),
                     field: field.into(),
@@ -533,6 +550,7 @@ mod integration_tests {
         // Reload the saved constructor expressions in a fresh app instance too.
         let mut reloaded = Drawing::new(path.clone(), &library, None).unwrap();
         let edit = EditRequest {
+            lash: false,
             snapshot: reloaded.last_good().unwrap().snapshot.id().into(),
             key: "0".into(),
             field: "stroke.paint".into(),

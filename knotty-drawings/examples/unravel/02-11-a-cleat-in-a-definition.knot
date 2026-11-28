@@ -1,0 +1,16 @@
+-- story: A cleat in a shared definition
+-- group: 2. Setters and optional properties
+-- status: works
+-- try: Both circles are dot, moved to different places. Change the stroke width of either one. The
+--   cleat is in dot, so the set_stroke_width is added there and both circles get it.
+-- check: edit 0 stroke.width 4
+-- source: dot = @cleat (circle 0 0 24 |> set_fill tomato) |> set_stroke_width (4.0)
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+dot :: Node
+dot = @cleat (circle 0 0 24 |> set_fill tomato)
+
+program = svg 240 160 [dot |> set_transform [Translate 70 80], dot |> set_transform [Translate 170 80]]

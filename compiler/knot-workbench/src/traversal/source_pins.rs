@@ -112,6 +112,7 @@ impl Walker<'_> {
                         candidate_source: false,
                         via: None,
                         lash: None,
+                        cleat: None,
                         synthetic: false,
                         module: entry.clone(),
                         expr: definition.body,

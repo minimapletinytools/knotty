@@ -1080,7 +1080,7 @@ function openPropertyEditor(key, field) {
   const session = crypto.randomUUID(), dialog = document.createElement("dialog");
   dialog.className = "paint-dialog property-dialog";
   dialog.setAttribute("aria-labelledby", "property-title");
-  dialog.innerHTML = '<h2 id="property-title"></h2><label class="property-input-label"></label><p class="property-help"></p><p class="paint-status" role="status" aria-live="polite"></p><div class="paint-actions"><button type="button" data-action="cancel">Cancel</button><button type="button" data-action="ok">OK</button></div>';
+  dialog.innerHTML = '<h2 id="property-title"></h2><label class="property-input-label"></label><p class="property-help"></p><label class="lash-first-label" title="Lash first: add a new call around the shape and leave what is written, and anything it shares, as it is."><input class="lash-first" type="checkbox"> Add a new setter</label><p class="paint-status" role="status" aria-live="polite"></p><div class="paint-actions"><button type="button" data-action="cancel">Cancel</button><button type="button" data-action="ok">OK</button></div>';
   dialog.querySelector("h2").textContent = field.name;
   const input = document.createElement(field.type === "json" || field.name === "content" ? "textarea" : field.type === "enum" ? "select" : "input");
   input.id = "property-value"; input.setAttribute("aria-label", field.name);
@@ -1130,6 +1130,7 @@ function openPropertyEditor(key, field) {
       for (const control of dialog.querySelectorAll("input, textarea, select, button")) control.disabled = false;
     }
   }
+  dialog.querySelector(".lash-first").addEventListener("input", event => controller.setLash(event.target.checked));
   dialog.querySelector('[data-action="ok"]').addEventListener("click", () => finish(true));
   dialog.querySelector('[data-action="cancel"]').addEventListener("click", () => finish(false));
   dialog.addEventListener("cancel", event => { event.preventDefault(); finish(false); });
@@ -1162,6 +1163,7 @@ function openPaintPicker(key, field) {
     </div>
     <label class="paint-hex-label"><span class="paint-sample"></span> Hex <input class="paint-hex" type="text" maxlength="7" pattern="#[0-9a-fA-F]{6}" spellcheck="false" required></label>
     <label><input class="paint-none" type="checkbox"> No paint</label>
+    <label class="lash-first-label" title="Lash first: add a new call around the shape and leave what is written, and anything it shares, as it is."><input class="lash-first" type="checkbox"> Add a new setter</label>
     <p class="paint-status" role="status" aria-live="polite"></p>
     <div class="paint-actions"><button type="button" data-action="cancel">Cancel</button><button type="button" data-action="ok">OK</button></div>`;
   dialog.querySelector("h2").textContent = field.name === "stroke.paint" ? "Stroke color" : "Fill color";
@@ -1229,6 +1231,7 @@ function openPaintPicker(key, field) {
       for (const control of dialog.querySelectorAll("input, button")) control.disabled = false;
     }
   }
+  dialog.querySelector(".lash-first").addEventListener("input", event => controller.setLash(event.target.checked));
   dialog.querySelector('[data-action="ok"]').addEventListener("click", () => finish(true));
   dialog.querySelector('[data-action="cancel"]').addEventListener("click", () => finish(false));
   dialog.addEventListener("cancel", event => { event.preventDefault(); finish(false); });

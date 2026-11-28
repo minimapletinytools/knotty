@@ -1,11 +1,10 @@
--- story: Tidy source after a list grows
+-- story: A new shape is written as a call
 -- group: 4. Lists
--- status: needs-work
--- try: Draw a circle. It works, but look at the source: the new element is written as raw
---   constructors, and a grown list may be rebuilt with a let.
--- note: New values are printed from their data, not as the code a person would write: `circle 160
---   80 25`, appended to the list literal.
+-- status: works
+-- try: Draw a circle. It is appended to the list literal as `circle 160 80 25`, the code a person
+--   would write. circle is marked @lasher, so the engine may write a call to it for a new value.
 -- check: create circle - 160 80 25
+-- source: , circle (160.0) (80.0) (25.0)]
 module Story exposing (..)
 
 import KnottyDrawings exposing (..)

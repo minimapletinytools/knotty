@@ -113,26 +113,31 @@ point x y = { x = x, y = y }
 shape :: Shape -> Node
 shape geometry = ShapeNode defaultCommon geometry
 
+@lasher
 @unravel(DrawingUnravel.🧶rect)
 rect :: Float -> Float -> Float -> Float -> Node
 rect x y width height =
     shape (Rect { x = x, y = y, width = width, height = height, rx = 0, ry = 0, fill = defaultFill, stroke = defaultStroke })
 
+@lasher
 @unravel(DrawingUnravel.🧶rounded_rect)
 rounded_rect :: Float -> Float -> Float -> Float -> Float -> Node
 rounded_rect x y width height cornerRadius =
     shape (Rect { x = x, y = y, width = width, height = height, rx = cornerRadius, ry = cornerRadius, fill = defaultFill, stroke = defaultStroke })
 
+@lasher
 @unravel(DrawingUnravel.🧶circle)
 circle :: Float -> Float -> Float -> Node
 circle centerX centerY radius =
     shape (Circle { cx = centerX, cy = centerY, r = radius, fill = defaultFill, stroke = defaultStroke })
 
+@lasher
 @unravel(DrawingUnravel.🧶ellipse)
 ellipse :: Float -> Float -> Float -> Float -> Node
 ellipse centerX centerY radiusX radiusY =
     shape (Ellipse { cx = centerX, cy = centerY, rx = radiusX, ry = radiusY, fill = defaultFill, stroke = defaultStroke })
 
+@lasher
 @unravel(DrawingUnravel.🧶line)
 line :: Float -> Float -> Float -> Float -> Node
 line startX startY endX endY =
@@ -153,6 +158,7 @@ polygon points =
 path :: List PathCommand -> Node
 path commands = shape (Path { commands = commands, fill = defaultFill, stroke = defaultStroke })
 
+@lasher
 @unravel(DrawingUnravel.🧶text)
 text :: Float -> Float -> String -> Node
 text x y content =

@@ -10,6 +10,7 @@ mod callbacks;
 mod candidates;
 mod higher_order;
 mod lash;
+pub use lash::Strategy;
 mod list_route;
 mod passes;
 mod locks;
@@ -74,6 +75,7 @@ pub struct SourceEditor {
     products: Vec<ProductRule>,
     libraries: knot_core::Program,
     bundled: Vec<knot_checker::program::TypedProgram>,
+    strategy: Strategy,
 }
 /// Reusable checked-query environment, scoped to one immutable snapshot.
 /// Retains bounded checked code and optionally an immutable runtime baseline.
@@ -136,6 +138,7 @@ impl SourceEditor {
             adapters: vec![],
             constructor_rules: vec![],
             products: vec![],
+            strategy: Strategy::default(),
             bundled: knot_canonical::prelude::library_modules()
                 .iter()
                 .map(|(name, _)| {
@@ -159,6 +162,14 @@ impl SourceEditor {
     pub fn with_request_adapters(mut self, adapters: Vec<RequestAdapter>) -> Self {
         self.adapters = adapters;
         self
+    }
+    /// How a request prefers to be met: see [`Strategy`].
+    pub fn with_strategy(mut self, strategy: Strategy) -> Self {
+        self.strategy = strategy;
+        self
+    }
+    pub fn set_strategy(&mut self, strategy: Strategy) {
+        self.strategy = strategy;
     }
     /// Ordinary unravel contracts, in attachment order for each constructor.
     pub fn with_constructor_rules(mut self, rules: Vec<ConstructorRule>) -> Self {
@@ -359,6 +370,8 @@ impl SourceEditor {
         roots: &[std::path::PathBuf],
         limits: EditLimits,
         snag: &lash::SnagSlot,
+        growth: &lash::SnagSlot,
+        halt: Option<&lash::Halt>,
     ) -> Result<SourceEdit, EditError> {
         if requests.is_empty() {
             return unsupported("a source transaction needs at least one output request");
@@ -415,6 +428,8 @@ impl SourceEditor {
             spliced: Default::default(),
             patch_via: BTreeMap::new(),
             snag: snag.clone(),
+            halt: halt.cloned(),
+            growth: growth.clone(),
             stepping: false,
             stepped: false,
             reversed: false,
@@ -729,6 +744,10 @@ struct Walker<'a> {
     patch_via: BTreeMap<(u32, u32), Arc<syntax::Caller>>,
     /// Where a lasher could be added after the first snag of this attempt.
     snag: lash::SnagSlot,
+    /// Lash first: stop at the first place a lasher could go.
+    halt: Option<lash::Halt>,
+    /// The first list literal this attempt added an element to.
+    growth: lash::SnagSlot,
     /// Solving in passes: each pass stops at the first source value it
     /// changes, so the next starts from fresh values. See `passes.rs`.
     stepping: bool,
@@ -913,6 +932,7 @@ impl Walker<'_> {
             candidate_source: false,
             via: None,
             lash: None,
+            cleat: None,
             synthetic: false,
             projections: vec![],
             module: entry.clone(),
@@ -1038,12 +1058,23 @@ impl Walker<'_> {
                 (r, t) = self.product_requests(&s, r, t)?;
             }
             return match &s.expr.node {
-                CExpr::Annotated(_, e) => {
-                    s = Site {
+                CExpr::Annotated(annotations, e) => {
+                    let mut inner = Site {
                         ty: s.ty.clone(),
                         lash: Some(s.lash_root()),
+                        cleat: s.cleat.clone(),
                         ..s.child(e)
                     };
+                    if annotations.iter().any(|a| a.key == "cleat") {
+                        // A lasher goes right after the marked expression,
+                        // which itself stays as written.
+                        self.halt_at(&s, true)?;
+                        // The first cleat passed is the outermost one.
+                        if inner.cleat.is_none() {
+                            inner.cleat = Some(Arc::new(s.clone()));
+                        }
+                    }
+                    s = inner;
                     continue;
                 }
                 CExpr::Var(Ref::Local(n)) => {
@@ -1059,6 +1090,7 @@ impl Walker<'_> {
                     // it is bound to, so it continues the use's chain.
                     if s.lash.is_some() {
                         next.lash = s.lash.clone();
+                        next.cleat = s.cleat.clone();
                     }
                     s = next;
                     continue;
@@ -1077,6 +1109,7 @@ impl Walker<'_> {
                                 candidate_source: false,
                                 via: s.via.clone(),
                                 lash: Some(s.lash_root()),
+                                cleat: s.cleat.clone(),
                                 synthetic: false,
                                 projections: vec![],
                                 module: g.module,
@@ -1097,6 +1130,7 @@ impl Walker<'_> {
                     let mut selected = s.child(if taken { yes } else { no });
                     selected.ty = s.ty.clone();
                     selected.lash = Some(s.lash_root());
+                    selected.cleat = s.cleat.clone();
                     s = selected;
                     continue;
                 }
@@ -1153,15 +1187,17 @@ impl Walker<'_> {
                 CExpr::List(_) => self.list(&s, r, t),
                 CExpr::App(_, _) | CExpr::BinOp(_, _, _) => self.call(s, r, t),
                 CExpr::Let(bs, b) => {
-                    let root = s.lash_root();
+                    let (root, cleat) = (s.lash_root(), s.cleat.clone());
                     s = self.let_site(&s, bs, b)?;
                     s.lash = Some(root);
+                    s.cleat = cleat;
                     continue;
                 }
                 CExpr::Case(value, arms) => {
-                    let root = s.lash_root();
+                    let (root, cleat) = (s.lash_root(), s.cleat.clone());
                     s = self.case_site(&s, value, arms)?;
                     s.lash = Some(root);
+                    s.cleat = cleat;
                     continue;
                 }
                 CExpr::FieldAccess(base, name) => {
@@ -1192,6 +1228,7 @@ impl Walker<'_> {
     }
     fn materialize(&mut self, s: &Site, r: &TypedValue, t: &Ty) -> Result<(), EditError> {
         self.reject_partial_solver_pin(s)?;
+        self.note_growth(s);
         if s.synthetic {
             return self.materialize_recipe(s, r, t);
         }
@@ -1402,6 +1439,7 @@ impl Walker<'_> {
                     candidate_source: false,
                     via: Some(caller),
                     lash: Some(s.lash_root()),
+                    cleat: s.cleat.clone(),
                     synthetic: false,
                     projections: vec![],
                     module: name.module,
@@ -1423,6 +1461,7 @@ impl Walker<'_> {
         if let Some(last) = args.last_mut() {
             if last.ty.is_some() && last.ty == Some(output_type.clone()) {
                 last.lash = Some(s.lash_root());
+                last.cleat = s.cleat.clone();
             }
         }
         self.apply_rule(&s, &t, args, r, input, &expression)
@@ -1455,6 +1494,7 @@ impl Walker<'_> {
         input: Ty,
         expression: &str,
     ) -> Result<(), EditError> {
+        self.halt_at(site, false)?;
         let pins = self.retain_argument_pins(&args)?;
         let mut values = self.source_arguments(&args)?;
         let mut parameters = (0..args.len())

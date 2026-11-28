@@ -319,6 +319,7 @@ impl Walker<'_> {
                 candidate_source: false,
                 via: None,
                 lash: None,
+                cleat: None,
                 synthetic: false,
                 expr: factory.body.clone(),
                 module: checked.canonical.name.clone(),

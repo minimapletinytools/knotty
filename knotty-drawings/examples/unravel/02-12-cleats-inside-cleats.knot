@@ -1,0 +1,13 @@
+-- story: A cleat inside a cleat
+-- group: 2. Setters and optional properties
+-- status: works
+-- try: Change the stroke width. Two cleats are on the way back. The outer one is met first, so the
+--   setter goes after it and the inner one is not used.
+-- check: edit 0 stroke.width 6
+-- source: |> set_fill tomato) |> set_stroke_width (6.0) |> set_opacity 0.8
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 [@cleat (@cleat (rect 40 40 160 80) |> set_fill tomato) |> set_opacity 0.8]

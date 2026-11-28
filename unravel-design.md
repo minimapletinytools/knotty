@@ -161,14 +161,20 @@ A function that can be lashed on is annotated with `@lasher`. The type being las
 set_stroke :: Color -> Node -> Node
 ```
 
-The engine picks the first lasher whose rule, given the request, returns a request for the last argument that already `fits` the current value of `e`. If part of the request is still unmet it repeats with what remains. The application can also name the function to lash.
+The engine tries the lashers in the order they are declared and keeps the first one that the request goes through. If part of the request is still unmet it repeats with what remains.
 
-By default a lash goes at the very end, on the outermost expression that produces the value. A `@cleat` can flag other expressions that produce the value as places to lash onto. Where the lashing happens depends on teh unravel strategy.
+By default a lash goes at the very end, on the outermost expression that produces the value. A `@cleat` flags an expression that produces the value as the place to lash onto instead. The lash goes right after the cleat and the expression inside the cleat is not changed. e.g. asking for a blue fill
 
 ```knot
-
 @cleat (circle 120 80 30 |> set_fill tomato) |> rotate 30
+-- becomes
+@cleat (circle 120 80 30 |> set_fill tomato) |> set_fill blue |> rotate 30
 ```
+
+- a setter after the cleat is reached before the cleat, so asking for green next edits the `set_fill blue`. Lashings do not pile up behind a cleat
+- for the same reason a setter after the cleat is never protected, e.g. in `@cleat (e) |> set_fill paint` asking for blue changes `paint`. Put it inside the cleat to keep it
+- cleats can be nested, the outermost one on the way back is the one used
+- a cleat in a definition the value comes from counts, e.g. `base = @cleat (circle 120 80 30)` and `program = [base |> rotate 30]`
 
 Creating a value with a library function is similar. Only the result type of the lasher must match type of the expression being created.  e.g.
 
@@ -182,6 +188,8 @@ the engine creates `circle default default default` if possible and then unravel
 
 - every argument type needs a `Default`, otherwise that lasher can not be used to create
 - the engine picks the first lasher whose rule answers `Unravel` for the request, e.g. for a circle request `🧶rect` snags and `🧶circle` answers
+- a lasher only changes how the new value is written. If the value could not be added as data (e.g. the list does not accept new elements) then no lasher is tried
+- if no lasher takes the request the value is written as data
 
 
 FUTURE named cleats e.g. `@cleat("style")` so that a request can aim at one of several
@@ -191,11 +199,13 @@ FUTURE named lashers e.g. `@lasher("meowmeow")` so that a request can aim at a s
 
 The application sends a strategy along with its request:
 
-- unravel first (default): unravel all the way back. If that snags, lash at the first cleat that was passed (the outermost one), or at the very end if there is none
-- lash first: at the first cleat reached (or at the very end if there is none) try the lashers. If none takes the request, carry on unravelling
+- unravel first (default): unravel all the way back. If that snags, lash after the first cleat that was passed (the outermost one), or at the very end if there is none
+- lash first: at the first cleat reached (or at the very end if there is none) try the lashers. A lasher is only kept if its own arguments are the only thing that changes. If none takes the request, unravel as usual
 - splice here: replace the expression the request lands on
 
-Lash first can leave 2 setters behind, e.g. with `set_fill red` inside the cleat, asking for blue adds a `set_fill blue` at the cleat and keeps the red one. A setter outside the cleat is reached first and is edited as usual.
+Lash first leaves 2 setters behind, e.g. with `set_fill red` inside the cleat, asking for blue adds a `set_fill blue` after the cleat and keeps the red one. A setter outside the cleat is reached first and is edited as usual, so the next request edits the `set_fill blue`.
+
+TODO lash first with no cleat adds another setter at the very end every time. Should the engine write the cleat itself the first time? e.g. `e |> set_fill paint` becomes `@cleat (e |> set_fill paint) |> set_fill blue`
 
 TODO what is "Splice here" do we need/want that?
 TODO what are other unravel startegies we might want? e.g. no lash strategy, no bubbling up splices in reda onyl libraries, etc

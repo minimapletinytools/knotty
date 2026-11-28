@@ -45,7 +45,11 @@ impl Fixture {
             .clone()
     }
     fn apply(&mut self, key: &str, field: &str, value: Value) -> Value {
+        self.apply_with(key, field, value, false)
+    }
+    fn apply_with(&mut self, key: &str, field: &str, value: Value, lash: bool) -> Value {
         let request = EditRequest {
+            lash,
             snapshot: self.snapshot(),
             key: key.into(),
             field: field.into(),
@@ -299,6 +303,7 @@ fn combined_geometry_previews_are_atomic_cancelable_and_one_undo_step() {
         let result = f.editor.preview(
             &mut f.drawing,
             PreviewRequest::Update {
+                lash: false,
                 session: "drag".into(),
                 snapshot,
                 value,
@@ -312,6 +317,7 @@ fn combined_geometry_previews_are_atomic_cancelable_and_one_undo_step() {
     let result = f.editor.preview(
         &mut f.drawing,
         PreviewRequest::Update {
+            lash: false,
             session: "drag".into(),
             snapshot,
             value: json!({"x":99,"y":30,"width":-1,"height":50}),
@@ -353,6 +359,7 @@ fn combined_geometry_previews_are_atomic_cancelable_and_one_undo_step() {
         f.editor.preview(
             &mut f.drawing,
             PreviewRequest::Update {
+                lash: false,
                 session: "drag2".into(),
                 snapshot,
                 value: json!({"x":40,"y":50,"width":30,"height":40})
@@ -471,7 +478,7 @@ fn circle_creation_is_opt_in_atomic_reeditable_and_undoable() {
         "{created}"
     );
     assert!(
-        created.contains("Types.ShapeNode") && created.contains("cx = (40.0)"),
+        created.contains("[circle (40.0) (60.0) (15.0), circle (40.0) (60.0) (15.0)]"),
         "{created}"
     );
     assert_eq!(
@@ -984,7 +991,7 @@ program = svg 200 200 dots
     };
     let update = |f: &mut Fixture, value: Value| {
         let snapshot = f.snapshot();
-        f.editor.preview(&mut f.drawing, PreviewRequest::Update { session: "whip".into(), snapshot, value })
+        f.editor.preview(&mut f.drawing, PreviewRequest::Update { session: "whip".into(), snapshot, value, lash: false })
     };
     // An anchored control still needs its object; an unanchored one needs none.
     assert_eq!(begin(&mut f, 0, None)["ok"], false);
@@ -1149,6 +1156,8 @@ fn unravel_stories_behave_as_their_headers_say() {
             let optional = |w: &str| (w != "-").then(|| w.to_owned());
             let result = match words.as_slice() {
                 ["edit", key, name, value] => f.apply(key, name, serde_json::from_str(value).unwrap()),
+                // The same edit, sent with the lash-first strategy.
+                ["lash", key, name, value] => f.apply_with(key, name, serde_json::from_str(value).unwrap(), true),
                 // One drag: every geometry field of the shape at once.
                 ["geometry", key, value] => {
                     let begin = PreviewRequest::BeginGeometry {
@@ -1159,6 +1168,7 @@ fn unravel_stories_behave_as_their_headers_say() {
                     let mut result = f.editor.preview(&mut f.drawing, begin);
                     if result["ok"] == true {
                         let update = PreviewRequest::Update {
+                            lash: false,
                             session: "story".into(),
                             snapshot: f.snapshot(),
                             value: serde_json::from_str(value).unwrap(),

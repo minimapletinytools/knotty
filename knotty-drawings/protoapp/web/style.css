@@ -452,3 +452,4 @@ button, select, input { font: inherit; color: inherit; }
 .split-handle { position: absolute; z-index: 4; top: 0; bottom: 0; left: -4px; width: 8px; cursor: col-resize; touch-action: none; }
 .split-handle:hover, .split-handle:focus-visible, .split-handle.dragging { background: linear-gradient(to right, transparent 3px, var(--accent) 3px 5px, transparent 5px); outline: none; }
 @media (max-width: 900px) { .split-handle { display: none; } }
+.lash-first-label { display: block; font-size: 12px; color: var(--muted); }

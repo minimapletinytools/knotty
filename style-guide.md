@@ -125,7 +125,7 @@ settled.
 | tension, slack, taut | Evaluation order, or whether a field is under demand |
 | tug | A rope-themed replacement for "request" |
 | stock | `@stock`, a per-function override of `Default` |
-| cleat, `@cleat` | The place in an expression where lashings attach. It parses and is ignored for now |
+| cleat, `@cleat` | The place in an expression where lashings attach: right after the marked expression, in preference to the very end |
 
 ## Annotations
 
@@ -138,7 +138,7 @@ name directly, so `@cleat (e)` marks the expression `(e)`.
 | `@whip(control)` | A top-level binding | A control the application binds to that value |
 | `@position(x, y)` | An expression or definition | Where its knot sits in Tangle |
 | `@story("Group")` | A definition | Lists it in the Tangle storybook |
-| `@lasher` | A function | It may be lashed on: added around an expression to answer a request the expression cannot |
+| `@lasher` | A function | It may be lashed on: added around an expression to answer a request the expression cannot, or written as a call to make a new value |
 
 Whip controls are named for what the control is (`IntSlider`, `ScaleHandle`),
 and their anchors for where it appears (`OnNode`, `OnNodes`).

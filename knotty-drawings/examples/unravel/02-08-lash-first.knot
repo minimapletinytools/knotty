@@ -1,0 +1,18 @@
+-- story: Lash first: change one shape and leave the shared colour
+-- group: 2. Setters and optional properties
+-- status: works
+-- try: Both rects read paint. Open the fill of the first rect and tick "Add a new setter" before
+--   picking a colour. A set_fill is added to that rect alone and paint stays as it is. Without the
+--   tick the same edit changes paint, and both rects with it.
+-- check: lash 0 fill.paint [10,120,200]
+-- source: paint = tomato
+-- source: |> set_fill paint |> set_fill
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+paint :: Color
+paint = tomato
+
+program = svg 240 160 [rect 20 40 90 80 |> set_fill paint, rect 130 40 90 80 |> set_fill paint]

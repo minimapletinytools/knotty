@@ -17,6 +17,9 @@ pub(super) struct Site {
     /// start of the chain of calls that each pass the value on as their last
     /// argument. A lasher is added there. `None` when this is that expression.
     pub lash: Option<Arc<Site>>,
+    /// The first `@cleat` expression passed on the way down this chain, with
+    /// its mark: a lasher goes right after it, in preference to the very end.
+    pub cleat: Option<Arc<Site>>,
     /// Synthesized aggregate shell with original child spans, never a patch target.
     pub synthetic: bool,
     /// Candidate AST spans belong to the checked new revision. Original lexical
@@ -40,6 +43,7 @@ impl Site {
         Self {
             synthetic: false,
             lash: None,
+            cleat: None,
             via: self.via.clone(),
             candidate_source: self.candidate_source,
             recipe: None,

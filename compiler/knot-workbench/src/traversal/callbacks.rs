@@ -207,6 +207,7 @@ impl Walker<'_> {
                                 candidate_source: false,
                                 via: None,
                                 lash: None,
+                                cleat: None,
                                 synthetic: false,
                                 projections: vec![],
                                 module: g.module,

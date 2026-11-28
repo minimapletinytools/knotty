@@ -29,6 +29,9 @@ pub enum PreviewRequest {
         session: String,
         snapshot: String,
         value: Value,
+        /// Lash first: add a new setter in preference to changing what is written.
+        #[serde(default)]
+        lash: bool,
     },
     Accept {
         session: String,
@@ -119,7 +122,8 @@ impl Editor {
                 session,
                 snapshot,
                 value,
-            } => self.preview_update(drawing, &session, &snapshot, &value),
+                lash,
+            } => self.preview_update(drawing, &session, &snapshot, &value, lash),
             PreviewRequest::Accept { session } => self.preview_finish(drawing, &session, true),
             PreviewRequest::Cancel { session } => self.preview_finish(drawing, &session, false),
         };
@@ -258,6 +262,7 @@ impl Editor {
         session: &str,
         snapshot: &str,
         value: &Value,
+        lash: bool,
     ) -> Result<Value, String> {
         let started = Instant::now();
         let preview = self
@@ -302,6 +307,10 @@ impl Editor {
         if self.engine.is_none() {
             self.engine = Some(crate::edit::new_engine().map_err(|e| e.to_string())?);
         }
+        self.engine
+            .as_mut()
+            .unwrap()
+            .set_strategy(crate::edit::strategy(lash));
         if preview.context.is_none() {
             let engine = self.engine.as_ref().unwrap();
             #[cfg(feature = "incremental")]
@@ -507,6 +516,7 @@ mod tests {
             self.editor.preview(
                 &mut self.drawing,
                 PreviewRequest::Update {
+                    lash: false,
                     session: "picker".into(),
                     snapshot,
                     value,
@@ -540,6 +550,7 @@ mod tests {
     fn previews_replace_one_undo_entry_and_cancel_preserves_prior_history() {
         let mut t = TestDrawing::new();
         let edit = EditRequest {
+            lash: false,
             snapshot: t.snapshot(),
             key: "0".into(),
             field: "cx".into(),
@@ -669,6 +680,7 @@ mod tests {
         let result = t.editor.preview(
             &mut t.drawing,
             PreviewRequest::Update {
+                lash: false,
                 session: "picker".into(),
                 snapshot: stale,
                 value: json!([1, 2, 3]),

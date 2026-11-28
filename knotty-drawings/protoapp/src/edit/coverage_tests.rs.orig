@@ -1219,3 +1219,30 @@ fn unravel_stories_behave_as_their_headers_say() {
     }
     assert!(failures.is_empty(), "\n{}", failures.join("\n"));
 }
+
+#[test]
+fn a_drag_on_one_axis_is_allowed_when_another_value_can_hold_the_other_axis() {
+    // x and y share `centre`. Moving along x alone asks y to stay, which only
+    // `drop` can arrange once `centre` has moved.
+    let mut f = Fixture::source(
+        "module Story exposing (..)\nimport KnottyDrawings exposing (..)\nimport Types exposing (..)\ncentre :: Float\ncentre = 80\ndrop :: Float\ndrop = 0\nprogram = svg 240 160 [circle centre (centre + drop) 30 |> set_fill tomato]\n".into(),
+    );
+    let snapshot = f.snapshot();
+    let probes = [
+        ("moveX", json!({"cx":81.0,"cy":80.0,"r":30.0})),
+        ("moveY", json!({"cx":80.0,"cy":81.0,"r":30.0})),
+        ("sizeX", json!({"cx":80.0,"cy":80.0,"r":31.5})),
+        ("sizeY", json!({"cx":80.0,"cy":80.0,"r":31.5})),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), v))
+    .collect();
+    let result = f.editor.geometry_check(
+        &mut f.drawing,
+        GeometryCheck { snapshot, key: "0".into(), probes },
+    );
+    for capability in ["moveX", "moveY"] {
+        assert_eq!(result["capabilities"][capability]["editable"], true, "{result}");
+    }
+    assert_eq!(std::fs::read_to_string(f.drawing.path()).unwrap(), f.original);
+}

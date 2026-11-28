@@ -1,0 +1,18 @@
+-- story: A setter after a cleat is not protected
+-- group: 2. Setters and optional properties
+-- status: works
+-- try: Here set_fill paint is written after the cleat. Change the fill of the first rect with "Add a
+--   new setter" ticked. The request meets that set_fill before it reaches the cleat, so paint
+--   changes and both rects with it. To keep paint, write the setter inside the parentheses.
+-- check: lash 0 fill.paint [10,120,200]
+-- source: paint = (Types.Rgb (10) (120) (200))
+-- source: [@cleat (rect 20 40 90 80) |> set_fill paint, @cleat
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+paint :: Color
+paint = tomato
+
+program = svg 240 160 [@cleat (rect 20 40 90 80) |> set_fill paint, @cleat (rect 130 40 90 80) |> set_fill paint]

@@ -18,7 +18,7 @@ file.
 unravel-design.md. The Prelude writes those records out in full; it has no such
 aliases yet.
 
-## 0. Next: splice, then lash
+## 0. Splice and lash
 
 ### Splice (implemented)
 
@@ -40,26 +40,42 @@ Still open on splice:
 - **Your own functions are not bubbled.** Only read-only source bubbles. A
   literal inside your own function is edited in place, for every caller.
 
-### Lash (first part implemented)
+### Lash (implemented)
 
 The design is in unravel-design.md §3. Splice throws an expression away and
 prints a value; lashing keeps the expression and adds a call around it.
 
-Implemented (`tests/lash.rs` in the engine, stories `02-02-no-setter` and
-`02-04-setter-cannot-clear`):
+Implemented (`tests/lash.rs` in the engine; stories `02-02-no-setter`,
+`02-04-setter-cannot-clear`, `02-07-a-cleat`, `02-08-lash-first`,
+`04-09-tidy-source-after-growth`):
 
-- `@lasher` marks a function that may be added. A bare `@name` annotation now
-  parses, with arguments only when `(` follows the name directly.
-- When a rule snags, the engine finds the outermost expression of that value's
-  pipeline, inserts `|> lasher default ...` there, and unravels the whole
-  request again through the new call. Lashers are tried in the order they are
-  declared.
-- A lasher that leaves the same request to snag again took nothing, and the
-  next one is tried. Several missing parts take several lashers, up to four.
-- The lashing and the unravel through it are reported as one edit.
-- The drawing library marks fifteen setters, and its shape rules now snag when
-  a request asks for style the shape function cannot provide. Before, they
-  answered for their geometry and the edit failed later in the final check.
+- `@lasher` marks a function that may be added. One that takes its result
+  type as its last argument (`set_fill`) is added around a value. Any other
+  (`circle`) makes a value from its arguments.
+- When a rule snags, the engine inserts `|> lasher default ...` and unravels
+  the whole request again through the new call. Lashers are tried in the order
+  they are declared. A lasher that leaves the same request to snag again took
+  nothing, and the next one is tried. Several missing parts take several
+  lashers, up to four.
+- `@cleat (e)` marks where the lasher goes: right after the marked expression,
+  `@cleat (e) |> lasher ...`, and `e` stays as written. The outermost cleat on
+  the chain of expressions that produce the value is used, including one in a
+  definition the value comes from. Without a cleat the lasher goes at the very
+  end. A setter lashed after a cleat is met first by the next request and is
+  edited like any other, so setters do not pile up behind a cleat.
+- The strategy is set on the engine (`SourceEditor::with_strategy`). With lash
+  first the engine stops at the first cleat reached, or at the end of the
+  first pipeline reached, and tries the lashers there before anything is
+  unravelled. A lasher is kept only when its own arguments are the only source
+  that changes. Otherwise the request is unravelled as usual. The editor's
+  property and colour dialogs have an "Add a new setter" tick for it.
+- When a list literal is given a new element, each maker is tried:
+  `circle default default default` is appended and the request unravelled
+  through it. The first one the request goes through is kept. If none takes
+  it the element is printed as data, as before.
+- The drawing library marks fifteen setters and six shape functions, and its
+  shape rules snag when a request asks for style the shape function cannot
+  provide.
 
 How it differs from the design text:
 
@@ -68,21 +84,40 @@ How it differs from the design text:
   and keeps the first for which the whole edit succeeds. The result is the
   same where both apply; the engine's way costs a re-check of the program per
   lasher tried.
-- **Only a snag triggers it.** A rule that answers `Unravel` but ignores part
-  of its request fails in the final check, and nothing is lashed. Rules have to
-  snag honestly for lashing to help.
+- **Only a snag triggers it** under unravel first. A rule that answers
+  `Unravel` but ignores part of its request fails in the final check, and
+  nothing is lashed. Rules have to snag honestly for lashing to help.
+- **A lash goes after the cleat, not inside it.** The design text puts it
+  inside the marked expression. A setter written after a cleat is therefore
+  never protected: lash first edits it, and whatever it shares.
+- **A pipeline with a cleat is lashed at the cleat or not at all** under lash
+  first. The engine decides this by looking for `@cleat` in the text of the
+  pipeline, so a cleat in a nested argument counts too.
+- **Lash first without a cleat piles up setters.** Every edit adds another at
+  the very end. Open: have the engine write the cleat itself the first time.
+- **Lash first without a cleat** looks past up to four places where no lasher
+  has the right type (a list, say) before it gives up and unravels.
+- **Makers do not decide whether a list may grow.** A maker is tried only
+  where the element could be added as data anyway, so a list that refuses to
+  grow still refuses. A type with no `materialize` can therefore not be
+  created through a maker yet.
 
 Not built yet:
 
-- `@cleat`. It parses, and the engine ignores it: a lash always goes at the
-  very end.
-- The strategy an application sends (unravel first, lash first, splice here).
-  Only unravel first exists.
-- Creating a value with a lasher (`circle default default default`), which is
-  what `04-09-tidy-source-after-growth` needs.
+- "Splice here". The design text itself asks whether it is wanted.
+- A strategy named by a whip (`@whip(LashFirst (ColourPicker "Outline"))`).
+  The application sets it per edit.
+- Named cleats and named lashers.
+- Lash first with a request that needs two lashers, or that also changes
+  something else: it falls back to unravelling.
+- A maker argument the request does not set stays `default` in the source.
 - Lashers whose arguments have no `Default` are skipped. In the drawing
-  library that leaves out `set_fill_paint`, the enum setters and the
-  transforms.
+  library that leaves out `set_fill_paint`, the enum setters, the transforms,
+  and the makers `polyline`, `polygon` and `path`.
+- `polyline`, `polygon`, `path` and `rounded_rect` rules do not snag on style,
+  so nothing is lashed onto them.
+- A new record or tuple element has no maker and is still printed as data,
+  with the list rebuilt in a `let` (`04-03-append-a-record`).
 - An unqualified name is used when the entry module exposes it; otherwise the
   module's name or alias is written in front.
 

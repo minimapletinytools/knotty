@@ -1,0 +1,14 @@
+-- story: Draw a shape, then colour it
+-- group: 8. Creating things
+-- status: works
+-- try: Draw a circle, then change its fill. The circle is written as a call to circle, and the fill
+--   is lashed onto that call as a set_fill, the way a person would write it.
+-- check: create circle - 160 80 25
+-- check: edit 1 fill.paint [10,120,200]
+-- source: , circle (160.0) (80.0) (25.0) |> set_fill (Types.Rgb (10) (120) (200))]
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 (editableShapes [] [circle 60 80 20 |> set_fill tomato])

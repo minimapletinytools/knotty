@@ -19,8 +19,14 @@ class PaintSession {
   }
   pick(value) {
     if (this.finishing) return;
-    this.pending = { value };
+    this.last = this.pending = { value };
     this.pump();
+  }
+  // Lash first: add a new setter in preference to changing what is written.
+  // The last pick is sent again so the preview shows the other strategy.
+  setLash(on) {
+    this.lash = on;
+    if (this.last) this.pick(this.last.value);
   }
   pump() {
     if (this.running) return this.running;
@@ -35,7 +41,7 @@ class PaintSession {
       const start = performance.now();
       this.status("Previewing change…", false);
       try {
-        const result = await this.request({ action: "update", session: this.session, snapshot: this.snapshot, value });
+        const result = await this.request({ action: "update", session: this.session, snapshot: this.snapshot, value, lash: Boolean(this.lash) });
         if (!result.ok) throw new Error(result.reason);
         const responseMs = performance.now() - start;
         this.snapshot = result.drawing.snapshot;

@@ -56,7 +56,7 @@ async function checkLanternWaddle(page) {
     assert.notEqual(added, beforeShapes);
     const dimension = kind === "rect" ? "width" : "rx";
     await page.locator("#field-" + dimension).click();
-    await page.locator("dialog input").fill("18");
+    await page.locator("dialog #property-value").fill("18");
     await page.waitForFunction(name => Number(findNode(state.selected)?.props[name]) === 18, dimension);
     await page.locator("dialog [data-action=ok]").click();
     await page.locator("dialog").waitFor({ state: "detached" });
@@ -121,7 +121,7 @@ async function checkLanternWaddle(page) {
   });
   await page.mouse.click(point.x, point.y);
   await page.locator("#field-r").click();
-  await page.locator("dialog input").fill("16");
+  await page.locator("dialog #property-value").fill("16");
   await page.waitForFunction(() => Number(document.querySelector("#leader > circle:last-of-type").getAttribute("r")) === 14);
   await page.locator("dialog [data-action=ok]").click();
   await page.locator("dialog").waitFor({ state: "detached" });
@@ -237,7 +237,7 @@ async function checkLanternWaddle(page) {
     await story.locator("#stage svg circle").waitFor();
     await story.locator("#stage svg circle").click({ force: true });
     await story.locator("#field-cx").click();
-    await story.locator("dialog input").fill("120");
+    await story.locator("dialog #property-value").fill("120");
     await story.locator("dialog [data-action=ok]").click();
     await story.locator("dialog").waitFor({ state: "detached" });
     await page.waitForFunction(() => /circle \(120/.test(document.querySelector("#drawing").contentDocument.querySelector(".view-lines")?.innerText.replaceAll("\u00a0", " ")));
@@ -283,7 +283,7 @@ async function checkLanternWaddle(page) {
     await page.locator("#comment-status", { hasText: "Copied 2" }).waitFor();
     const notes = await page.evaluate(() => navigator.clipboard.readText());
     assert.match(notes, /^# Review comments on the Unravelling stories\n\n2 of \d+ stories have a comment\./);
-    assert.match(notes, /## Tidy source after a list grows \(needs work\)\nFile: knotty-drawings\/examples\/unravel\/\S+\.knot\nStory: unravel\/\?story=tidy-source-after-growth\n\nWrap the new element\.\nSecond line\./);
+    assert.match(notes, /## A new shape is written as a call \(works\)\nFile: knotty-drawings\/examples\/unravel\/\S+\.knot\nStory: unravel\/\?story=tidy-source-after-growth\n\nWrap the new element\.\nSecond line\./);
     assert.match(notes, /\(needs work\)\nFile: \S+\nStory: unravel\/\?story=the-bezier-shapes\n\nThe handles should scale every shape\./);
     await page.goto(base + "unravel/?story=the-bezier-shapes");
     assert.equal(await page.getByLabel("Notes on this story").inputValue(), "The handles should scale every shape.");
@@ -302,7 +302,7 @@ async function checkLanternWaddle(page) {
     const original = await code.innerText();
     for (const finish of ["cancel", "ok"]) {
       await page.locator("#field-r").click();
-      await page.locator("dialog input").fill("42");
+      await page.locator("dialog #property-value").fill("42");
       await page.waitForFunction(() => Number(document.querySelector("#stage svg circle").getAttribute("r")) === 42);
       await page.waitForFunction(lines => /radius = \(42/.test(lines.innerText.replaceAll("\u00a0", " ")), sourceLines);
       await page.locator(`dialog [data-action=${finish}]`).click();
@@ -328,7 +328,7 @@ async function checkLanternWaddle(page) {
     assert.equal(await radius(), 30);
     assert.match(await page.locator("#file-status").textContent(), /Up to date/);
     await page.locator("#field-r").click();
-    await page.locator("dialog input").fill("35");
+    await page.locator("dialog #property-value").fill("35");
     await page.locator("dialog [data-action=ok]").click();
     await page.locator("dialog").waitFor({ state: "detached" });
     await page.waitForFunction(lines => /radius = \(35/.test(lines.innerText.replaceAll(" ", " ")), sourceLines);

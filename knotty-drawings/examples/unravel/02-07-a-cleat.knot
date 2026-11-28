@@ -1,0 +1,15 @@
+-- story: A cleat says where a setter goes
+-- group: 2. Setters and optional properties
+-- status: works
+-- try: Change the stroke width. The source never sets one, so a set_stroke_width is added. It goes
+--   right after the parentheses marked @cleat, and not after set_opacity at the very end. What is
+--   inside the parentheses stays as written. Change the width again: the new setter is edited.
+-- check: edit 0 stroke.width 6
+-- check: edit 0 stroke.width 9
+-- source: tomato) |> set_stroke_width (9.0) |> set_opacity 0.8
+module Story exposing (..)
+
+import KnottyDrawings exposing (..)
+import Types exposing (..)
+
+program = svg 240 160 [@cleat (rect 40 40 160 80 |> set_fill tomato) |> set_opacity 0.8]

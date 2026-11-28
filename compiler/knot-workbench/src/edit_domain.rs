@@ -223,7 +223,15 @@ impl EditDomain {
         // injects declarations. Require the entire replacement to be one checked
         // expression in its actual receiving context, not parsed in isolation.
         for expression in expressions(after) {
-            wanted.remove(&(expression.span.start, expression.span.end));
+            let (start, end) = (expression.span.start, expression.span.end);
+            wanted.remove(&(start, end));
+            // A complete expression in its own parentheses is one too.
+            if start > 0
+                && new.as_bytes().get(start as usize - 1) == Some(&b'(')
+                && new.as_bytes().get(end as usize) == Some(&b')')
+            {
+                wanted.remove(&(start - 1, end + 1));
+            }
         }
         if !wanted.is_empty() {
             return Err(violation(
